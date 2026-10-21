@@ -1,0 +1,12 @@
+{
+  "name": "thymer-freelance-os",
+  "version": "1.0.0",
+  "description": "Unified Freelance OS Dashboard for Thymer, replicating the Obsidian Freelance OS view.",
+  "main": "dist/plugin.js",
+  "scripts": {
+    "build": "node build.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

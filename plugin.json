@@ -1,0 +1,10 @@
+{
+  "ver": 1,
+  "name": "Freelance OS",
+  "icon": "layout-grid",
+  "item_name": "Freelance OS",
+  "description": "Executive dashboard: Recurring Revenue, Invoicing, Active Projects, and Agenda.",
+  "type": "app",
+  "show_sidebar_items": true,
+  "show_cmdpal_items": true
+}
