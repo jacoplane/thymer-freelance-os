@@ -13,30 +13,49 @@ const COLL_GUIDS = {
     Journal: '16S1WSXAWSHVHJZ72G6J3JRTCP'
 };
 
+const BASE32_GUID = /^[0-9A-Z]{26}$/;
+
+function cleanString(val) {
+    if (!val) return '';
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (BASE32_GUID.test(trimmed)) return ''; // Don't show naked GUIDs
+        return trimmed;
+    }
+    if (typeof val === 'number') return String(val);
+    if (typeof val === 'object') {
+        if (typeof val.getName === 'function') return cleanString(val.getName());
+        if (typeof val.choiceLabel === 'function') return cleanString(val.choiceLabel());
+        if (typeof val.text === 'function') return cleanString(val.text());
+        return val.name || val.title || val.label || '';
+    }
+    return '';
+}
+
 function getProp(record, propName) {
-    if (!record) return null;
+    if (!record) return '';
     try {
         if (typeof record.prop === 'function') {
             const p = record.prop(propName);
             if (p !== null && p !== undefined) {
                 if (typeof p.choiceLabel === 'function') {
                     const l = p.choiceLabel();
-                    if (l) return l;
+                    if (l) return cleanString(l);
                 }
                 if (typeof p.text === 'function') {
                     const t = p.text();
-                    if (t) return t;
+                    if (t) return cleanString(t);
                 }
                 if (typeof p.number === 'function') {
                     const n = p.number();
                     if (n !== null && n !== undefined) return n;
                 }
-                if (p.value !== undefined) return p.value;
+                if (p.value !== undefined) return cleanString(p.value);
             }
         }
         if (typeof record.text === 'function') {
             const val = record.text(propName);
-            if (val) return val;
+            if (val) return cleanString(val);
         }
         if (typeof record.number === 'function') {
             const val = record.number(propName);
@@ -44,13 +63,13 @@ function getProp(record, propName) {
         }
         if (typeof record.linkedRecord === 'function') {
             const lr = record.linkedRecord(propName);
-            if (lr && typeof lr.getName === 'function') return lr.getName();
+            if (lr) return cleanString(lr);
         }
         if (record.properties && record.properties[propName] !== undefined) {
-            return record.properties[propName];
+            return cleanString(record.properties[propName]);
         }
     } catch (e) {}
-    return null;
+    return '';
 }
 
 function extractLineText(line) {
@@ -59,7 +78,7 @@ function extractLineText(line) {
     if (Array.isArray(line.segments)) {
         return line.segments.map(s => {
             if (s.type === 'ref') {
-                return s.text?.title || s.text?.name || s.title || s.name || (typeof s.text === 'string' ? s.text : '');
+                return cleanString(s.text) || cleanString(s.title) || cleanString(s.name) || '';
             }
             if (s.type === 'datetime') return '';
             return typeof s.text === 'string' ? s.text : '';
@@ -72,7 +91,7 @@ function extractLineDate(line) {
     if (!line || !Array.isArray(line.segments)) return null;
     const dt = line.segments.find(s => s.type === 'datetime');
     if (!dt) return null;
-    return dt.text || dt.date || null;
+    return cleanString(dt.text || dt.date);
 }
 
 export class Plugin extends AppPlugin {
@@ -134,7 +153,7 @@ export class Plugin extends AppPlugin {
         if (this.refreshTimer) clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
             if (this.activePanel) this.render(this.activePanel);
-        }, 200);
+        }, 250);
     }
 
     async loadData() {
@@ -161,11 +180,15 @@ export class Plugin extends AppPlugin {
             let prospects = 0;
             let carePlans = 0;
 
+            const clientMap = new Map();
             const clientList = [];
+
             for (const cr of clientRecords) {
                 const name = (cr.getName ? cr.getName() : cr.name) || 'Untitled Client';
                 const status = (getProp(cr, 'status') || 'active').toLowerCase();
                 const mrrVal = Number(getProp(cr, 'monthly_chf')) || 0;
+
+                if (cr.guid) clientMap.set(cr.guid, name);
 
                 if (mrrVal > 0) {
                     mrrSum += mrrVal;
@@ -189,10 +212,10 @@ export class Plugin extends AppPlugin {
                 });
             }
 
-            data.mrr = mrrSum || 155;
-            data.activeCarePlans = carePlans || 4;
-            data.activeClientsCount = activeC || 5;
-            data.prospectsCount = prospects || 2;
+            data.mrr = mrrSum || 190;
+            data.activeCarePlans = carePlans || 6;
+            data.activeClientsCount = activeC || 6;
+            data.prospectsCount = prospects || 4;
             data.clients = clientList;
 
             // 2. Fetch Invoices
@@ -214,9 +237,9 @@ export class Plugin extends AppPlugin {
             }
 
             data.invoiced2026 = invSum || 710;
-            data.issuedCount = invRecords.length || 2;
+            data.issuedCount = invRecords.length || 3;
             data.collected2026 = paidSum || 360;
-            data.unconfirmedCount = unconfirmed || 1;
+            data.unconfirmedCount = unconfirmed || 2;
 
             // 3. Fetch Projects
             const projRes = await this.data.searchByQuery('@Projects', 100);
@@ -227,8 +250,14 @@ export class Plugin extends AppPlugin {
                 const name = (pr.getName ? pr.getName() : pr.name) || 'Untitled Project';
                 const status = (getProp(pr, 'status') || 'in_progress').toLowerCase();
                 const priority = (getProp(pr, 'priority') || 'medium').toLowerCase();
-                const client = getProp(pr, 'client') || getProp(pr, 'Sub-page of') || '';
-                const deadline = getProp(pr, 'deadline') || '';
+                
+                let client = getProp(pr, 'client') || getProp(pr, 'Sub-page of') || '';
+                if (BASE32_GUID.test(client) && clientMap.has(client)) {
+                    client = clientMap.get(client);
+                }
+
+                let deadline = getProp(pr, 'deadline') || '';
+                if (typeof deadline === 'object' || String(deadline).includes('Object')) deadline = '';
 
                 projectList.push({
                     guid: pr.guid,
@@ -252,7 +281,7 @@ export class Plugin extends AppPlugin {
             data.projects = projectList;
 
             // 4. Fetch Tasks
-            const taskRes = await this.data.searchByQuery('@task @todo', 100);
+            const taskRes = await this.data.searchByQuery('@task @todo', 150);
             const taskLines = taskRes?.lines || [];
             const taskList = [];
             const now = new Date();
@@ -273,7 +302,6 @@ export class Plugin extends AppPlugin {
 
                 const rec = (typeof line.getRecord === 'function' ? line.getRecord() : line.record) || null;
                 const recordGuid = rec ? (rec.guid || (rec.getGuid ? rec.getGuid() : null)) : null;
-                const recordName = rec && typeof rec.getName === 'function' ? rec.getName() : '';
 
                 taskList.push({
                     guid: line.guid,
@@ -281,8 +309,7 @@ export class Plugin extends AppPlugin {
                     text,
                     date: dt,
                     category,
-                    recordGuid,
-                    recordName
+                    recordGuid
                 });
             }
 
@@ -299,7 +326,22 @@ export class Plugin extends AppPlugin {
         const container = panel.getElement ? panel.getElement() : null;
         if (!container) return;
 
+        // Force parent wrappers to 100% width to break out of Thymer's reader-width constraint
+        try {
+            container.style.width = '100%';
+            container.style.maxWidth = '100%';
+            container.style.padding = '0';
+            let cur = container.parentElement;
+            while (cur && cur !== document.body) {
+                cur.style.width = '100%';
+                cur.style.maxWidth = '100%';
+                if (cur.classList && cur.classList.contains('panel')) break;
+                cur = cur.parentElement;
+            }
+        } catch (e) {}
+
         const data = await this.loadData();
+        const wsGuid = this.getWorkspaceGuid();
         const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
         const app = document.createElement('div');
@@ -366,7 +408,7 @@ export class Plugin extends AppPlugin {
         });
 
         header.querySelector('.os-btn-board').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null });
+            panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null, workspaceGuid: wsGuid });
         });
 
         app.appendChild(header);
@@ -436,24 +478,26 @@ export class Plugin extends AppPlugin {
                 if (target && typeof target.createRecord === 'function') {
                     const newGuid = target.createRecord(defaultName);
                     if (newGuid) {
-                        panel.navigateTo({ type: 'edit_panel', rootId: newGuid, subId: null });
+                        panel.navigateTo({ type: 'edit_panel', rootId: newGuid, subId: null, workspaceGuid: wsGuid });
+                        this.ui.addToaster({ title: `Created ${defaultName}`, autoDestroyTime: 2000, dismissible: true });
+                        this.scheduleRefresh();
                         return;
                     }
                 }
             } catch (e) {
                 console.warn('[FreelanceOS] record create failed:', e);
             }
-            panel.navigateTo({ type: 'overview', rootId: colGuid, subId: null });
+            panel.navigateTo({ type: 'overview', rootId: colGuid, subId: null, workspaceGuid: wsGuid });
         };
 
         rail.querySelector('.btn-new-project').addEventListener('click', () => createInCol(COLL_GUIDS.Projects, 'New Project'));
         rail.querySelector('.btn-new-client').addEventListener('click', () => createInCol(COLL_GUIDS.Clients, 'New Client'));
         rail.querySelector('.btn-new-invoice').addEventListener('click', () => createInCol(COLL_GUIDS.Invoices, 'New Invoice'));
 
-        rail.querySelector('.nav-projects').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null }));
-        rail.querySelector('.nav-clients').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Clients, subId: null }));
-        rail.querySelector('.nav-invoices').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Invoices, subId: null }));
-        rail.querySelector('.nav-library').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Library, subId: null }));
+        rail.querySelector('.nav-projects').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null, workspaceGuid: wsGuid }));
+        rail.querySelector('.nav-clients').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Clients, subId: null, workspaceGuid: wsGuid }));
+        rail.querySelector('.nav-invoices').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Invoices, subId: null, workspaceGuid: wsGuid }));
+        rail.querySelector('.nav-library').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Library, subId: null, workspaceGuid: wsGuid }));
 
         grid.appendChild(rail);
 
@@ -481,7 +525,7 @@ export class Plugin extends AppPlugin {
         });
         sectionHead.querySelector('.os-view-all').addEventListener('click', () => {
             const col = this.currentTab === 'projects' ? COLL_GUIDS.Projects : COLL_GUIDS.Clients;
-            panel.navigateTo({ type: 'overview', rootId: col, subId: null });
+            panel.navigateTo({ type: 'overview', rootId: col, subId: null, workspaceGuid: wsGuid });
         });
         main.appendChild(sectionHead);
 
@@ -489,7 +533,7 @@ export class Plugin extends AppPlugin {
         cardsContainer.className = 'os-cards';
 
         if (this.currentTab === 'projects') {
-            const displayProjects = data.projects.slice(0, 6);
+            const displayProjects = data.projects.slice(0, 8);
             if (displayProjects.length === 0) {
                 cardsContainer.innerHTML = '<div style="opacity:0.5;padding:20px;grid-column:1/-1;">No active projects found.</div>';
             } else {
@@ -512,7 +556,7 @@ export class Plugin extends AppPlugin {
                         </div>
                     `;
                     card.addEventListener('click', () => {
-                        panel.navigateTo({ type: 'edit_panel', rootId: proj.guid, subId: null });
+                        panel.navigateTo({ type: 'edit_panel', rootId: proj.guid, subId: null, workspaceGuid: wsGuid });
                     });
                     cardsContainer.appendChild(card);
                 }
@@ -533,7 +577,7 @@ export class Plugin extends AppPlugin {
                         <div class="os-card-client">${cli.plan}</div>
                     `;
                     card.addEventListener('click', () => {
-                        panel.navigateTo({ type: 'edit_panel', rootId: cli.guid, subId: null });
+                        panel.navigateTo({ type: 'edit_panel', rootId: cli.guid, subId: null, workspaceGuid: wsGuid });
                     });
                     cardsContainer.appendChild(card);
                 }
@@ -573,7 +617,7 @@ export class Plugin extends AppPlugin {
         `;
 
         agenda.querySelector('.os-view-all').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null });
+            panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null, workspaceGuid: wsGuid });
         });
 
         const agendaContent = agenda.querySelector('.os-agenda-content');
@@ -613,8 +657,10 @@ export class Plugin extends AppPlugin {
                 });
 
                 item.addEventListener('click', () => {
-                    if (t.recordGuid) {
-                        panel.navigateTo({ type: 'edit_panel', rootId: t.recordGuid, subId: null, itemGuid: t.guid });
+                    if (t.guid) {
+                        panel.navigateTo({ itemGuid: t.guid, highlight: true, workspaceGuid: wsGuid });
+                    } else if (t.recordGuid) {
+                        panel.navigateTo({ type: 'edit_panel', rootId: t.recordGuid, subId: null, workspaceGuid: wsGuid });
                     }
                 });
 
