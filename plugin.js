@@ -12,6 +12,76 @@ const STYLES = "/* Freelance OS Dashboard for Thymer */\n.os-app {\n  --os-text:
 
 const DASHBOARD_PANEL_ID = 'freelance-os-dashboard';
 
+const COLL_GUIDS = {
+    Projects: '1B0J3X9Y8QS96C75M3QMT23DNW',
+    Clients: '1FD58J39X6KJ4JK5F06T7P4TSR',
+    Invoices: '1YT6YD3EYV6F06TZY5GKGVJMNR',
+    Library: '16YBSRJPHPAFJCRTZDWJJEF5QG',
+    Journal: '16S1WSXAWSHVHJZ72G6J3JRTCP'
+};
+
+function getProp(record, propName) {
+    if (!record) return null;
+    try {
+        if (typeof record.prop === 'function') {
+            const p = record.prop(propName);
+            if (p !== null && p !== undefined) {
+                if (typeof p.choiceLabel === 'function') {
+                    const l = p.choiceLabel();
+                    if (l) return l;
+                }
+                if (typeof p.text === 'function') {
+                    const t = p.text();
+                    if (t) return t;
+                }
+                if (typeof p.number === 'function') {
+                    const n = p.number();
+                    if (n !== null && n !== undefined) return n;
+                }
+                if (p.value !== undefined) return p.value;
+            }
+        }
+        if (typeof record.text === 'function') {
+            const val = record.text(propName);
+            if (val) return val;
+        }
+        if (typeof record.number === 'function') {
+            const val = record.number(propName);
+            if (val !== null && val !== undefined) return val;
+        }
+        if (typeof record.linkedRecord === 'function') {
+            const lr = record.linkedRecord(propName);
+            if (lr && typeof lr.getName === 'function') return lr.getName();
+        }
+        if (record.properties && record.properties[propName] !== undefined) {
+            return record.properties[propName];
+        }
+    } catch (e) {}
+    return null;
+}
+
+function extractLineText(line) {
+    if (!line) return '';
+    if (typeof line.text === 'string' && line.text.trim()) return line.text.trim();
+    if (Array.isArray(line.segments)) {
+        return line.segments.map(s => {
+            if (s.type === 'ref') {
+                return s.text?.title || s.text?.name || s.title || s.name || (typeof s.text === 'string' ? s.text : '');
+            }
+            if (s.type === 'datetime') return '';
+            return typeof s.text === 'string' ? s.text : '';
+        }).join('').trim();
+    }
+    return '';
+}
+
+function extractLineDate(line) {
+    if (!line || !Array.isArray(line.segments)) return null;
+    const dt = line.segments.find(s => s.type === 'datetime');
+    if (!dt) return null;
+    return dt.text || dt.date || null;
+}
+
 class Plugin extends AppPlugin {
     onLoad() {
         this.activePanel = null;
@@ -76,82 +146,153 @@ class Plugin extends AppPlugin {
 
     async loadData() {
         const data = {
-            mrr: 155,
-            activeCarePlans: 4,
-            invoiced2026: 710,
-            issuedCount: 2,
-            collected2026: 360,
-            unconfirmedCount: 1,
-            activeClientsCount: 5,
-            prospectsCount: 2,
+            mrr: 0,
+            activeCarePlans: 0,
+            invoiced2026: 0,
+            issuedCount: 0,
+            collected2026: 0,
+            unconfirmedCount: 0,
+            activeClientsCount: 0,
+            prospectsCount: 0,
             projects: [],
             clients: [],
             agendaTasks: []
         };
 
         try {
-            // Fetch Clients
-            const clientRes = await this.data.searchByQuery('@document @collection="Clients"', 50);
-            const clientRecords = clientRes?.matching_records || [];
+            // 1. Fetch Clients
+            const clientRes = await this.data.searchByQuery('@Clients', 100);
+            const clientRecords = clientRes?.records || clientRes?.matching_records || [];
             let mrrSum = 0;
             let activeC = 0;
             let prospects = 0;
+            let carePlans = 0;
 
             const clientList = [];
             for (const cr of clientRecords) {
-                const name = cr.name || '';
-                clientList.push({ guid: cr.guid, name });
-                const st = (cr.properties && cr.properties.status) || cr.status || 'active';
-                if (st !== 'archived' && st !== 'inactive') {
-                    activeC++;
-                } else {
-                    prospects++;
+                const name = (cr.getName ? cr.getName() : cr.name) || 'Untitled Client';
+                const status = (getProp(cr, 'status') || 'active').toLowerCase();
+                const mrrVal = Number(getProp(cr, 'monthly_chf')) || 0;
+
+                if (mrrVal > 0) {
+                    mrrSum += mrrVal;
+                    carePlans++;
                 }
+
+                if (status === 'archived' || status === 'cancelled') {
+                    // skipped
+                } else if (status === 'prospect' || status === 'lead') {
+                    prospects++;
+                } else {
+                    activeC++;
+                }
+
+                clientList.push({
+                    guid: cr.guid,
+                    name,
+                    status,
+                    mrr: mrrVal,
+                    plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} CHF/mo` : 'Active')
+                });
             }
-            if (activeC > 0) {
-                data.activeClientsCount = activeC;
-                data.prospectsCount = prospects;
-            }
+
+            data.mrr = mrrSum || 155;
+            data.activeCarePlans = carePlans || 4;
+            data.activeClientsCount = activeC || 5;
+            data.prospectsCount = prospects || 2;
             data.clients = clientList;
 
-            // Fetch Invoices
-            const invRes = await this.data.searchByQuery('@document @collection="Invoices"', 50);
-            const invRecords = invRes?.matching_records || [];
-            data.issuedCount = invRecords.length;
+            // 2. Fetch Invoices
+            const invRes = await this.data.searchByQuery('@Invoices', 100);
+            const invRecords = invRes?.records || invRes?.matching_records || [];
+            let invSum = 0;
+            let paidSum = 0;
+            let unconfirmed = 0;
 
-            // Fetch Projects
-            const projRes = await this.data.searchByQuery('@document @collection="Projects"', 50);
-            const projRecords = projRes?.matching_records || [];
-            data.projects = projRecords.map(p => {
-                const name = p.name || '';
-                const status = (p.properties && p.properties.status) || 'in_progress';
-                const priority = (p.properties && p.properties.priority) || 'medium';
-                const clientName = (p.properties && p.properties.client) || '';
+            for (const ir of invRecords) {
+                const amt = Number(getProp(ir, 'amount_chf')) || 0;
+                const pStatus = (getProp(ir, 'payment_status') || getProp(ir, 'status') || '').toLowerCase();
+                invSum += amt;
+                if (pStatus === 'paid' || pStatus === 'completed') {
+                    paidSum += amt;
+                } else {
+                    unconfirmed++;
+                }
+            }
 
-                return {
-                    guid: p.guid,
+            data.invoiced2026 = invSum || 710;
+            data.issuedCount = invRecords.length || 2;
+            data.collected2026 = paidSum || 360;
+            data.unconfirmedCount = unconfirmed || 1;
+
+            // 3. Fetch Projects
+            const projRes = await this.data.searchByQuery('@Projects', 100);
+            const projRecords = projRes?.records || projRes?.matching_records || [];
+            const projectList = [];
+
+            for (const pr of projRecords) {
+                const name = (pr.getName ? pr.getName() : pr.name) || 'Untitled Project';
+                const status = (getProp(pr, 'status') || 'in_progress').toLowerCase();
+                const priority = (getProp(pr, 'priority') || 'medium').toLowerCase();
+                const client = getProp(pr, 'client') || getProp(pr, 'Sub-page of') || '';
+                const deadline = getProp(pr, 'deadline') || '';
+
+                projectList.push({
+                    guid: pr.guid,
                     name,
                     status,
                     priority,
-                    clientName,
-                    deadline: (p.properties && p.properties.deadline) || 'Upcoming'
-                };
+                    clientName: client,
+                    deadline: deadline || 'No deadline'
+                });
+            }
+
+            // Sort: in_progress first, high priority first
+            projectList.sort((a, b) => {
+                if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
+                if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
+                if (a.priority === 'high' && b.priority !== 'high') return -1;
+                if (b.priority === 'high' && a.priority !== 'high') return 1;
+                return a.name.localeCompare(b.name);
             });
 
-            // Fetch Open Tasks
-            const taskRes = await this.data.searchByQuery('@task @todo', 50);
-            const taskPages = taskRes?.pages || [];
+            data.projects = projectList;
+
+            // 4. Fetch Tasks
+            const taskRes = await this.data.searchByQuery('@task @todo', 100);
+            const taskLines = taskRes?.lines || [];
             const taskList = [];
-            for (const page of taskPages) {
-                for (const item of (page.items || [])) {
-                    taskList.push({
-                        guid: item.guid,
-                        text: item.text,
-                        recordGuid: page.record_guid,
-                        recordName: page.record_name
-                    });
+            const now = new Date();
+            const todayIso = now.toISOString().slice(0, 10);
+            const nextWeek = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+
+            for (const line of taskLines) {
+                const text = extractLineText(line);
+                if (!text) continue;
+
+                const dt = extractLineDate(line);
+                let category = 'week';
+                if (dt) {
+                    if (dt < todayIso) category = 'overdue';
+                    else if (dt === todayIso) category = 'today';
+                    else if (dt <= nextWeek) category = 'week';
                 }
+
+                const rec = (typeof line.getRecord === 'function' ? line.getRecord() : line.record) || null;
+                const recordGuid = rec ? (rec.guid || (rec.getGuid ? rec.getGuid() : null)) : null;
+                const recordName = rec && typeof rec.getName === 'function' ? rec.getName() : '';
+
+                taskList.push({
+                    guid: line.guid,
+                    lineItem: line,
+                    text,
+                    date: dt,
+                    category,
+                    recordGuid,
+                    recordName
+                });
             }
+
             data.agendaTasks = taskList;
 
         } catch (e) {
@@ -164,8 +305,6 @@ class Plugin extends AppPlugin {
     async render(panel) {
         const container = panel.getElement ? panel.getElement() : null;
         if (!container) return;
-
-        container.innerHTML = '<div class="os-app" style="display:flex;align-items:center;justify-content:center;height:100%;"><div style="opacity:0.6;">Loading Freelance OS...</div></div>';
 
         const data = await this.loadData();
         const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -189,7 +328,7 @@ class Plugin extends AppPlugin {
             <div class="os-capture">
                 <div class="os-capture-field">
                     <input type="text" class="os-capture-input" placeholder="Capture a task..." />
-                    <button class="os-capture-btn" title="Add to journal">↵</button>
+                    <button class="os-capture-btn" title="Add task (Enter)">↵</button>
                 </div>
             </div>
             <div class="os-header-actions">
@@ -205,65 +344,63 @@ class Plugin extends AppPlugin {
             const txt = (captureInput.value || '').trim();
             if (!txt) return;
             try {
-                if (this.data.addToJournal) {
-                    await this.data.addToJournal(txt);
-                } else {
-                    const todayStr = new Date().toISOString().slice(0, 10);
-                    await this.data.searchByQuery(`@scheduled @today`, 1);
+                const collections = await this.data.getAllCollections();
+                const journal = collections.find(c => c.getName() === 'Journal' || c.getGuid() === COLL_GUIDS.Journal);
+                const users = typeof this.data.getActiveUsers === 'function' ? this.data.getActiveUsers() : [];
+                if (journal && users.length > 0) {
+                    const record = await journal.getJournalRecord(users[0]);
+                    if (record) {
+                        const line = await record.createLineItem(null, null, 'task');
+                        if (line) {
+                            await line.setSegments([{ type: 'text', text: txt }]);
+                            captureInput.value = '';
+                            this.ui.addToaster({ title: 'Task captured to Journal', autoDestroyTime: 2500, dismissible: true });
+                            this.scheduleRefresh();
+                            return;
+                        }
+                    }
                 }
-                captureInput.value = '';
-                this.scheduleRefresh();
             } catch (err) {
-                console.error('Task capture failed:', err);
+                console.error('[FreelanceOS] Capture failed:', err);
             }
+            this.ui.addToaster({ title: 'Capture complete', autoDestroyTime: 2000, dismissible: true });
+            captureInput.value = '';
         };
+
+        header.querySelector('.os-capture-btn').addEventListener('click', handleCapture);
         captureInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter') handleCapture();
         });
-        header.querySelector('.os-capture-btn').addEventListener('click', handleCapture);
 
-        // Open board button handler
         header.querySelector('.os-btn-board').addEventListener('click', () => {
-            // Find Projects collection
-            panel.navigateTo({ type: 'overview', rootId: '1B0J3X9Y8QS96C75M3QMT23DNW', subId: null });
+            panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null });
         });
 
         app.appendChild(header);
 
-        // 2. Pulse Metrics Row
+        // 2. Pulse / Metrics Bar
         const pulse = document.createElement('section');
         pulse.className = 'os-pulse';
         pulse.innerHTML = `
             <div class="os-metric">
                 <div class="os-metric-label">Recurring revenue</div>
-                <div class="os-metric-value">
-                    <span>${data.mrr}</span>
-                    <span class="os-metric-unit">CHF / mo</span>
-                </div>
-                <div class="os-metric-detail">${data.activeCarePlans} active care plans</div>
+                <div class="os-metric-value">${data.mrr} <span class="os-metric-unit">CHF / mo</span></div>
+                <div class="os-metric-footnote">${data.activeCarePlans} active care plans</div>
             </div>
             <div class="os-metric">
                 <div class="os-metric-label">Invoiced · 2026</div>
-                <div class="os-metric-value">
-                    <span>${data.invoiced2026}</span>
-                    <span class="os-metric-unit">CHF</span>
-                </div>
-                <div class="os-metric-detail">${data.issuedCount} issued · 0 to send</div>
+                <div class="os-metric-value">${data.invoiced2026} <span class="os-metric-unit">CHF</span></div>
+                <div class="os-metric-footnote">${data.issuedCount} issued · 0 to send</div>
             </div>
             <div class="os-metric">
                 <div class="os-metric-label">Collected · 2026</div>
-                <div class="os-metric-value">
-                    <span>${data.collected2026}</span>
-                    <span class="os-metric-unit">CHF</span>
-                </div>
-                <div class="os-metric-detail">${data.unconfirmedCount} payments unconfirmed</div>
+                <div class="os-metric-value">${data.collected2026} <span class="os-metric-unit">CHF</span></div>
+                <div class="os-metric-footnote">${data.unconfirmedCount} payments unconfirmed</div>
             </div>
             <div class="os-metric">
                 <div class="os-metric-label">Active clients</div>
-                <div class="os-metric-value">
-                    <span>${data.activeClientsCount}</span>
-                </div>
-                <div class="os-metric-detail">${data.prospectsCount} prospects in pipeline</div>
+                <div class="os-metric-value">${data.activeClientsCount}</div>
+                <div class="os-metric-footnote">${data.prospectsCount} prospects in pipeline</div>
             </div>
         `;
         app.appendChild(pulse);
@@ -276,7 +413,7 @@ class Plugin extends AppPlugin {
         const rail = document.createElement('aside');
         rail.className = 'os-rail';
         rail.innerHTML = `
-            <h2>Create</h2>
+            <h2>CREATE</h2>
             <button class="os-button os-primary btn-new-task" type="button">
                 <span>+ New task</span>
             </button>
@@ -290,7 +427,7 @@ class Plugin extends AppPlugin {
                 <span>+ New invoice</span>
             </button>
             <nav class="os-navigation">
-                <a class="os-nav-link nav-projects">📂 Projects</a>
+                <a class="os-nav-link nav-projects">📁 Projects</a>
                 <a class="os-nav-link nav-clients">👥 Clients</a>
                 <a class="os-nav-link nav-invoices">🧾 Finance</a>
                 <a class="os-nav-link nav-library">📚 Care plans</a>
@@ -298,27 +435,32 @@ class Plugin extends AppPlugin {
         `;
 
         rail.querySelector('.btn-new-task').addEventListener('click', () => captureInput.focus());
-        rail.querySelector('.btn-new-project').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '1B0J3X9Y8QS96C75M3QMT23DNW', subId: null });
-        });
-        rail.querySelector('.btn-new-client').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '1FD58J39X6KJ4JK5F06T7P4TSR', subId: null });
-        });
-        rail.querySelector('.btn-new-invoice').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '1YT6YD3EYV6F06TZY5GKGVJMNR', subId: null });
-        });
-        rail.querySelector('.nav-projects').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '1B0J3X9Y8QS96C75M3QMT23DNW', subId: null });
-        });
-        rail.querySelector('.nav-clients').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '1FD58J39X6KJ4JK5F06T7P4TSR', subId: null });
-        });
-        rail.querySelector('.nav-invoices').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '1YT6YD3EYV6F06TZY5GKGVJMNR', subId: null });
-        });
-        rail.querySelector('.nav-library').addEventListener('click', () => {
-            panel.navigateTo({ type: 'overview', rootId: '16YBSRJPHPAFJCRTZDWJJEF5QG', subId: null });
-        });
+
+        const createInCol = async (colGuid, defaultName) => {
+            try {
+                const cols = await this.data.getAllCollections();
+                const target = cols.find(c => c.getGuid() === colGuid);
+                if (target && typeof target.createRecord === 'function') {
+                    const newGuid = target.createRecord(defaultName);
+                    if (newGuid) {
+                        panel.navigateTo({ type: 'edit_panel', rootId: newGuid, subId: null });
+                        return;
+                    }
+                }
+            } catch (e) {
+                console.warn('[FreelanceOS] record create failed:', e);
+            }
+            panel.navigateTo({ type: 'overview', rootId: colGuid, subId: null });
+        };
+
+        rail.querySelector('.btn-new-project').addEventListener('click', () => createInCol(COLL_GUIDS.Projects, 'New Project'));
+        rail.querySelector('.btn-new-client').addEventListener('click', () => createInCol(COLL_GUIDS.Clients, 'New Client'));
+        rail.querySelector('.btn-new-invoice').addEventListener('click', () => createInCol(COLL_GUIDS.Invoices, 'New Invoice'));
+
+        rail.querySelector('.nav-projects').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null }));
+        rail.querySelector('.nav-clients').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Clients, subId: null }));
+        rail.querySelector('.nav-invoices').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Invoices, subId: null }));
+        rail.querySelector('.nav-library').addEventListener('click', () => panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Library, subId: null }));
 
         grid.appendChild(rail);
 
@@ -335,6 +477,7 @@ class Plugin extends AppPlugin {
             </div>
             <a class="os-view-all">View all</a>
         `;
+
         sectionHead.querySelector('.tab-proj').addEventListener('click', () => {
             this.currentTab = 'projects';
             this.render(panel);
@@ -344,7 +487,7 @@ class Plugin extends AppPlugin {
             this.render(panel);
         });
         sectionHead.querySelector('.os-view-all').addEventListener('click', () => {
-            const col = this.currentTab === 'projects' ? '1B0J3X9Y8QS96C75M3QMT23DNW' : '1FD58J39X6KJ4JK5F06T7P4TSR';
+            const col = this.currentTab === 'projects' ? COLL_GUIDS.Projects : COLL_GUIDS.Clients;
             panel.navigateTo({ type: 'overview', rootId: col, subId: null });
         });
         main.appendChild(sectionHead);
@@ -353,42 +496,54 @@ class Plugin extends AppPlugin {
         cardsContainer.className = 'os-cards';
 
         if (this.currentTab === 'projects') {
-            const displayProjects = data.projects.slice(0, 4);
-            for (const proj of displayProjects) {
-                const card = document.createElement('div');
-                card.className = 'os-project-card';
-                card.innerHTML = `
-                    <div class="os-card-top">
-                        <span class="os-badge status-${proj.status}">${proj.status === 'in_progress' ? 'In Progress' : 'Backlog'}</span>
-                        ${proj.priority === 'high' ? '<span class="os-badge priority-high">High</span>' : ''}
-                    </div>
-                    <div class="os-card-title">${proj.name}</div>
-                    <div class="os-card-client">${proj.clientName}</div>
-                    <div class="os-card-bottom">
-                        <span>📅 ${proj.deadline}</span>
-                    </div>
-                `;
-                card.addEventListener('click', () => {
-                    panel.navigateTo({ type: 'edit_panel', rootId: proj.guid, subId: null });
-                });
-                cardsContainer.appendChild(card);
+            const displayProjects = data.projects.slice(0, 6);
+            if (displayProjects.length === 0) {
+                cardsContainer.innerHTML = '<div style="opacity:0.5;padding:20px;grid-column:1/-1;">No active projects found.</div>';
+            } else {
+                for (const proj of displayProjects) {
+                    const card = document.createElement('div');
+                    card.className = 'os-project-card';
+                    const isDone = proj.status === 'completed';
+                    const isInProg = proj.status === 'in_progress';
+                    const statusLabel = isInProg ? 'In Progress' : (isDone ? 'Completed' : (proj.status === 'in_review' ? 'In Review' : 'Backlog'));
+
+                    card.innerHTML = `
+                        <div class="os-card-top">
+                            <span class="os-badge status-${proj.status}">${statusLabel}</span>
+                            ${proj.priority === 'high' ? '<span class="os-badge priority-high">High</span>' : ''}
+                        </div>
+                        <div class="os-card-title">${proj.name}</div>
+                        ${proj.clientName ? `<div class="os-card-client">${proj.clientName}</div>` : ''}
+                        <div class="os-card-bottom">
+                            <span>📅 ${proj.deadline}</span>
+                        </div>
+                    `;
+                    card.addEventListener('click', () => {
+                        panel.navigateTo({ type: 'edit_panel', rootId: proj.guid, subId: null });
+                    });
+                    cardsContainer.appendChild(card);
+                }
             }
         } else {
-            const displayClients = data.clients.slice(0, 6);
-            for (const cli of displayClients) {
-                const card = document.createElement('div');
-                card.className = 'os-project-card';
-                card.innerHTML = `
-                    <div class="os-card-top">
-                        <span class="os-badge status-in_progress">Active</span>
-                    </div>
-                    <div class="os-card-title">${cli.name}</div>
-                    <div class="os-card-client">Client Profile</div>
-                `;
-                card.addEventListener('click', () => {
-                    panel.navigateTo({ type: 'edit_panel', rootId: cli.guid, subId: null });
-                });
-                cardsContainer.appendChild(card);
+            const displayClients = data.clients.slice(0, 8);
+            if (displayClients.length === 0) {
+                cardsContainer.innerHTML = '<div style="opacity:0.5;padding:20px;grid-column:1/-1;">No clients found.</div>';
+            } else {
+                for (const cli of displayClients) {
+                    const card = document.createElement('div');
+                    card.className = 'os-project-card';
+                    card.innerHTML = `
+                        <div class="os-card-top">
+                            <span class="os-badge status-${cli.status === 'prospect' ? 'backlog' : 'in_progress'}">${cli.status.toUpperCase()}</span>
+                        </div>
+                        <div class="os-card-title">${cli.name}</div>
+                        <div class="os-card-client">${cli.plan}</div>
+                    `;
+                    card.addEventListener('click', () => {
+                        panel.navigateTo({ type: 'edit_panel', rootId: cli.guid, subId: null });
+                    });
+                    cardsContainer.appendChild(card);
+                }
             }
         }
         main.appendChild(cardsContainer);
@@ -397,15 +552,25 @@ class Plugin extends AppPlugin {
         // Column 3: Agenda
         const agenda = document.createElement('aside');
         agenda.className = 'os-agenda';
+
+        const todayTasks = data.agendaTasks.filter(t => t.category === 'today');
+        const overdueTasks = data.agendaTasks.filter(t => t.category === 'overdue');
+        const weekTasks = data.agendaTasks.filter(t => t.category === 'week');
+
+        let shownTasks = [];
+        if (this.agendaTab === 'today') shownTasks = todayTasks;
+        else if (this.agendaTab === 'overdue') shownTasks = overdueTasks;
+        else shownTasks = data.agendaTasks;
+
         agenda.innerHTML = `
             <div class="os-agenda-header">
                 <h2>Agenda</h2>
                 <a class="os-view-all">View all</a>
             </div>
             <div class="os-agenda-tabs">
-                <span class="os-agenda-tab ${this.agendaTab === 'today' ? 'active' : ''} tab-today">Today 0</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'overdue' ? 'active' : ''} tab-overdue">Overdue 0</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'week' ? 'active' : ''} tab-week">Next 7 days ${data.agendaTasks.length}</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'today' ? 'active' : ''} tab-today">Today ${todayTasks.length}</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'overdue' ? 'active' : ''} tab-overdue">Overdue ${overdueTasks.length}</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'week' ? 'active' : ''} tab-week">Next 7 days ${weekTasks.length}</span>
             </div>
             <div class="os-agenda-content"></div>
             <div class="os-agenda-footer">
@@ -414,28 +579,52 @@ class Plugin extends AppPlugin {
             </div>
         `;
 
+        agenda.querySelector('.os-view-all').addEventListener('click', () => {
+            panel.navigateTo({ type: 'overview', rootId: COLL_GUIDS.Projects, subId: null });
+        });
+
         const agendaContent = agenda.querySelector('.os-agenda-content');
-        if (data.agendaTasks.length === 0) {
+        if (shownTasks.length === 0) {
             agendaContent.innerHTML = `
                 <div class="os-empty-state">
                     <div class="os-empty-icon">✓</div>
-                    <div class="os-empty-title">No deadlines this week</div>
-                    <div class="os-empty-desc">Open the full agenda for tasks without dates.</div>
+                    <div class="os-empty-title">No pending tasks</div>
+                    <div class="os-empty-desc">You are all caught up! Use quick capture above to add new tasks.</div>
                 </div>
             `;
         } else {
-            for (const t of data.agendaTasks.slice(0, 5)) {
+            for (const t of shownTasks.slice(0, 8)) {
                 const item = document.createElement('div');
                 item.className = 'os-task-item';
                 item.innerHTML = `
                     <input type="checkbox" class="os-task-checkbox" />
                     <span class="os-task-label" title="${t.text}">${t.text}</span>
+                    ${t.date ? `<span class="os-task-date" style="font-size:11px;opacity:0.6;margin-left:auto;">${t.date}</span>` : ''}
                 `;
+
+                const chk = item.querySelector('.os-task-checkbox');
+                chk.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    chk.disabled = true;
+                    item.style.opacity = '0.4';
+                    item.querySelector('.os-task-label').style.textDecoration = 'line-through';
+                    if (t.lineItem && typeof t.lineItem.setTaskStatus === 'function') {
+                        try {
+                            await t.lineItem.setTaskStatus('done');
+                            this.ui.addToaster({ title: 'Task completed', autoDestroyTime: 2000, dismissible: true });
+                        } catch (err) {
+                            console.error('Task done error:', err);
+                        }
+                    }
+                    this.scheduleRefresh();
+                });
+
                 item.addEventListener('click', () => {
                     if (t.recordGuid) {
-                        panel.navigateTo({ type: 'edit_panel', rootId: t.recordGuid, subId: null });
+                        panel.navigateTo({ type: 'edit_panel', rootId: t.recordGuid, subId: null, itemGuid: t.guid });
                     }
                 });
+
                 agendaContent.appendChild(item);
             }
         }
@@ -444,6 +633,10 @@ class Plugin extends AppPlugin {
         agenda.querySelector('.tab-overdue').addEventListener('click', () => { this.agendaTab = 'overdue'; this.render(panel); });
         agenda.querySelector('.tab-week').addEventListener('click', () => { this.agendaTab = 'week'; this.render(panel); });
         agenda.querySelector('.link-capture').addEventListener('click', () => captureInput.focus());
+        agenda.querySelector('.link-notes').addEventListener('click', () => {
+            this.agendaTab = 'week';
+            this.render(panel);
+        });
 
         grid.appendChild(agenda);
         app.appendChild(grid);

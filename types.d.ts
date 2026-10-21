@@ -1,0 +1,4789 @@
+declare global {
+class AppPlugin {
+
+    /**
+     * @public
+     * Get the plugin's configuration.
+     *
+     * @returns {PluginConfiguration}
+     */
+    public getConfiguration(): PluginConfiguration;
+
+    /**
+     * @public
+     * Get the plugin's GUID. Unique in this workspace.
+     *
+     * @returns {string}
+     */
+    public getGuid(): string;
+    /**
+     * @public
+     * Get the workspace GUID.
+     *
+     * @returns {string}
+     */
+    public getWorkspaceGuid(): string;
+    /**
+     * @public
+     *
+     * This is called when the plugin is initialized.
+     */
+    public onLoad(): void;
+    /**
+     * @public
+     *
+     * This is called when the plugin is unloaded.
+     */
+    public onUnload(): void;
+    /**
+     * @public
+     * Functions to interact with the UI.
+     */
+    public ui: UIAPI;
+    /**
+     * @public
+     * Functions to interact with data.
+     */
+    public data: DataAPI;
+    /**
+     * @public
+     * Functions for real-time WebSocket messaging.
+     */
+    public ws: WebSocketAPI;
+    /**
+     * @public
+     * Subscribe to data, UI, and lifecycle events.
+     */
+    public events: EventsAPI;
+
+}
+
+const COLLECTION_PRIMARY_ACTION_FIRST: "first";
+
+/**
+ * @typedef {Object} CollectionView
+ * @property {string} id - some unique ID (within this Plugin)
+ * @property {string} label
+ * @property {string} description
+ * @property {CollectionViewType} type
+ * @property {string} icon
+ * @property {boolean} shown - set to false to "delete"/"archive" a property while keeping all its data
+ * @property {boolean} read_only
+ * @property {string?} sort_field_id
+ * @property {PluginSortDir} sort_dir - see SortDir
+ * @property {string?} group_by_field_id
+ * @property {string} [group_by_field_bucket] - for Board views when group_by_field_id is a datetime field; one of "week" | "month" | "quarter" | "year"
+ * @property {string[]} field_ids - list of field ids (from PluginConfiguration.fields) we want to show in this view
+ * @property {string} [query] - search query for this view
+ * @property {string} [invalid_query] - the (syntax)error message for the query
+ * @property {string} [single_record_guid] - for use with COLLECTION_VIEW_SINGLE_RECORD
+ * @property {Object<string, any>} [opts] - view-specific options
+ *
+ * Dynamic Collection-specific view properties (LINE_TYPE_DYNCOLLECTION only):
+ * @property {string} [result_type] - what to query: currently always 'document'
+ * @property {string[]} [source_collections] - collection GUIDs to query, or ['*'] for all
+ */
+const COLLECTION_PRIMARY_ACTION_OVERVIEW: "overview";
+
+const COLLECTION_PRIMARY_ACTION_RECORD: "record";
+
+const COLLECTION_VIEW_BOARD: "board";
+
+const COLLECTION_VIEW_CALENDAR: "calendar";
+
+const COLLECTION_VIEW_CUSTOM: "custom";
+
+const COLLECTION_VIEW_GALLERY: "gallery";
+
+const COLLECTION_VIEW_SINGLE_RECORD: "record";
+
+const COLLECTION_VIEW_TABLE: "table";
+
+class CollectionPlugin {
+
+    /**
+     * @public
+     * Get the plugin's configuration.
+     *
+     * @returns {PluginConfiguration}
+     */
+    public getConfiguration(): PluginConfiguration;
+    /**
+     * @public
+     * Get the name of the collection
+     *
+     * @returns {string}
+     */
+    public getName(): string;
+    /**
+     * @public
+     *
+     * Sets a custom function that computes the title of records in this collection.
+     * The function will be called whenever the title needs to be displayed.
+     *
+     * @example
+     * // Simple custom title based on a property
+     * this.customizeRecordTitle(({record}) => {
+     *     const title = record.text("Title"); // gets the built-in title property
+     *     const rating = record.prop("Rating").choiceLabel();
+     *     return title + " - " + rating;
+     * });
+     *
+     * @param {({record}: {record: PluginRecord}) => string|null} fn - Function that computes the record title.
+     *   Return a string for a custom title, or null/undefined to use the default title.
+     */
+    public customizeRecordTitle(fn: ({ record }: {
+        record: PluginRecord;
+    }) => string | null): void;
+    customRecordTitleFunction: (row: any) => string;
+    /**
+     * @public
+     * Register a custom sidebar rendering hook for this collection. When the
+     * collection's sidebar display mode is set to "Custom", this function is
+     * called to produce the sidebar contents.
+     *
+     * Return an array of PluginSidebarNode objects. Each node can have children
+     * for tree rendering, or be a divider for group headings.
+     *
+     * @example
+     * this.customizeSidebarItems(async ({records}) => {
+     *     const nodes = [];
+     *     for (const record of records) {
+     *         nodes.push({
+     *             label: record.text("Title"),
+     *             icon: "ti-file",
+     *             recordGuid: record.guid(),
+     *         });
+     *     }
+     *     return nodes;
+     * });
+     *
+     * @param {({records}: {records: PluginRecord[]}) => Promise<PluginSidebarNode[]>} fn
+     */
+    public customizeSidebarItems(fn: ({ records }: {
+        records: PluginRecord[];
+    }) => Promise<PluginSidebarNode[]>): void;
+    customSidebarHook: () => Promise<PluginSidebarNode[]>;
+    /**
+     * @public
+     * Register a custom sidebar widget that renders arbitrary UI above the
+     * collection's records in the sidebar. The widget is independent of the
+     * "Display in Sidebar" setting — records are still shown (or hidden)
+     * according to that setting, and the widget is rendered above them.
+     *
+     * The render function receives a container element and a context object
+     * with the collection's records and a refresh callback. Return a cleanup
+     * function to be called when the widget is removed or re-rendered.
+     *
+     * For global (non-collection) sidebar widgets, use this.ui.addSidebarWidget()
+     * instead.
+     *
+     * @example
+     * const widget = this.setSidebarWidget((container, {records, refresh}) => {
+     *     container.innerHTML = '<div class="my-widget">Hello</div>';
+     *     const onClick = () => { ... };
+     *     container.addEventListener('click', onClick);
+     *     return () => container.removeEventListener('click', onClick);
+     * });
+     *
+     * // Later: widget.remove() or widget.refresh()
+     *
+     * @param {(container: HTMLElement, context: {records: PluginRecord[], refresh: () => void}) => (() => void) | void} render
+     * @returns {{remove: () => void, refresh: () => void}}
+     */
+    public setSidebarWidget(render: (container: HTMLElement, context: {
+        records: PluginRecord[];
+        refresh: () => void;
+    }) => (() => void) | void): {
+        remove: () => void;
+        refresh: () => void;
+    };
+    widgetSidebarHook: any;
+    /**
+     * @public
+     *
+     * Adds a navigation button to the collection's panel navigation bar
+     * @param {Object} options Navigation button options
+     * @param {string} [options.label] Text label to display in the navigation button
+     * @param {string} [options.htmlLabel] If non-null, render this HTML as-is instead of the text label
+     * @param {IconName} [options.icon] Icon class name (e.g. "ti-bug")
+     * @param {string} [options.tooltip] Tooltip text shown on hover
+     * @param {boolean} [options.onlyWhenExpanded] Whether to only show this button when the navigation bar is expanded
+     * @param {({ev, record, panel, element, button}: {ev: Event, record: PluginRecord?, panel: PluginPanel, element: HTMLElement, button: PluginNavigationButton}) => void} [options.onClick] Click handler function
+     * @returns {PluginNavigationButton} The created navigation button
+     */
+    public addCollectionNavigationButton({ label, htmlLabel, icon, tooltip, onlyWhenExpanded, onClick }: {
+        label?: string;
+        htmlLabel?: string;
+        icon?: IconName;
+        tooltip?: string;
+        onlyWhenExpanded?: boolean;
+        onClick?: ({ ev, record, panel, element, button }: {
+            ev: Event;
+            record: PluginRecord | null;
+            panel: PluginPanel;
+            element: HTMLElement;
+            button: PluginNavigationButton;
+        }) => void;
+    }): PluginNavigationButton;
+    /**
+     * @public
+     *
+     * This is called when the plugin is initialized.
+     */
+    public onLoad(): void;
+    /**
+     * @public
+     *
+     * This is called when the plugin is unloaded.
+     */
+    public onUnload(): void;
+    /**
+     * @public
+     * Access to your own collection. Use this to get records, create records,
+     * and access collection-level settings.
+     *
+     * @example
+     * const records = await this.collection.getAllRecords();
+     * const newGuid = this.collection.createRecord("New Record");
+     */
+    public collection: PluginCollectionAPI;
+    /**
+     * @public
+     * Functions to interact with the properties.
+     */
+    public properties: PropertiesAPI;
+    /**
+     * @public
+     * Functions to interact with the views.
+     */
+    public views: ViewsAPI;
+    /**
+     * @public
+     * Functions to interact with the UI.
+     */
+    public ui: UIAPI;
+    /**
+     * @public
+     * Functions to interact with data.
+     */
+    public data: DataAPI;
+    /**
+     * @public
+     * Functions for real-time WebSocket messaging.
+     */
+    public ws: WebSocketAPI;
+    /**
+     * @public
+     * Subscribe to data, UI, and lifecycle events.
+     */
+    public events: EventsAPI;
+
+}
+
+type CollectionPrimaryAction = "overview" | "record" | "first";
+
+type CollectionView = {
+    /**
+     * - some unique ID (within this Plugin)
+     */
+    id: string;
+    label: string;
+    description: string;
+    type: CollectionViewType;
+    icon: string;
+    /**
+     * - set to false to "delete"/"archive" a property while keeping all its data
+     */
+    shown: boolean;
+    read_only: boolean;
+    sort_field_id: string | null;
+    /**
+     * - see SortDir
+     */
+    sort_dir: PluginSortDir;
+    group_by_field_id: string | null;
+    /**
+     * - for Board views when group_by_field_id is a datetime field; one of "week" | "month" | "quarter" | "year"
+     */
+    group_by_field_bucket?: string;
+    /**
+     * - list of field ids (from PluginConfiguration.fields) we want to show in this view
+     */
+    field_ids: string[];
+    /**
+     * - search query for this view
+     */
+    query?: string;
+    /**
+     * - the (syntax)error message for the query
+     */
+    invalid_query?: string;
+    /**
+     * - for use with COLLECTION_VIEW_SINGLE_RECORD
+     */
+    single_record_guid?: string;
+    /**
+     * - view-specific options
+     *
+     * Dynamic Collection-specific view properties (LINE_TYPE_DYNCOLLECTION only):
+     */
+    opts?: {
+        [x: string]: any;
+    };
+    /**
+     * - what to query: currently always 'document'
+     */
+    result_type?: string;
+    /**
+     * - collection GUIDs to query, or ['*'] for all
+     */
+    source_collections?: string[];
+};
+
+type CollectionViewType = "table" | "board" | "gallery" | "calendar" | "record" | "custom";
+
+class DataAPI {
+
+    /**
+     * @public
+     * Get all records in this workspace
+     *
+     * @returns {PluginRecord[]}
+     */
+    public getAllRecords(): PluginRecord[];
+    /**
+     * @public
+     * Create a new record
+     *
+     * Returns null if creation failed or is not supported, like on Global Plugins or Dynamic Collections.
+     *
+     * @param {string} title
+     * @returns {string?} - guid of new record
+     */
+    public createNewRecord(title: string): string | null;
+    /**
+     * @public
+     * Get a record by its GUID
+     *
+     * @param {string} guid
+     * @returns {PluginRecord?}
+     */
+    public getRecord(guid: string): PluginRecord | null;
+    /**
+     * @public
+     * Get all collections in this workspace
+     *
+     * @returns {Promise<PluginCollectionAPI[]>}
+     */
+    public getAllCollections(): Promise<PluginCollectionAPI[]>;
+    /**
+     * @public
+     * Get all global plugins in this workspace
+     *
+     * @returns {Promise<PluginGlobalPluginAPI[]>}
+     */
+    public getAllGlobalPlugins(): Promise<PluginGlobalPluginAPI[]>;
+    /**
+     * @public
+     * Get all dynamic collections in this workspace
+     *
+     * @returns {Promise<PluginDynamicCollectionAPI[]>}
+     */
+    public getAllDynamicCollections(): Promise<PluginDynamicCollectionAPI[]>;
+    /**
+     * @public
+     * Create a new global plugin
+     *
+     * @returns {Promise<PluginGlobalPluginAPI|null>}
+     */
+    public createGlobalPlugin(): Promise<PluginGlobalPluginAPI | null>;
+    /**
+     * @public
+     * Create a new collection
+     *
+     * @returns {Promise<PluginCollectionAPI|null>}
+     */
+    public createCollection(): Promise<PluginCollectionAPI | null>;
+    /**
+     * @public
+     * Get a plugin by its GUID
+     *
+     * @param {string} guid
+     * @returns {PluginGlobalPluginAPI|PluginCollectionAPI|PluginDynamicCollectionAPI|null}
+     */
+    public getPluginByGuid(guid: string): PluginGlobalPluginAPI | PluginCollectionAPI | PluginDynamicCollectionAPI | null;
+    /**
+     * @public
+     * Get all active users in this workspace
+     *
+     * @returns {PluginUser[]}
+     */
+    public getActiveUsers(): PluginUser[];
+    /**
+     * @public
+     * Search for items in the workspace using a query string.
+     *
+     * @example
+     * // Search for all tasks due today
+     * const results = await this.data.searchByQuery("@task @today");
+     * console.log(`Found ${results.lines.length} matching lines`);
+     *
+     * @example
+     * // Search for text
+     * const results = await this.data.searchByQuery("project meeting notes");
+     * for (const record of results.records) {
+     *     console.log(record.getName());
+     * }
+     *
+     * @param {string} query - The search query string (supports text search and query syntax like @task, @due, @today, etc.)
+     * @param {number} [maxResults=100] - Maximum number of results to return
+     * @returns {Promise<PluginSearchResult>}
+     */
+    public searchByQuery(query: string, maxResults?: number): Promise<PluginSearchResult>;
+    /**
+     * @public
+     * Upload a file and create a new PluginBlob.
+     *
+     * @example
+     * const file = new File(["hello"], "hello.txt", {type: "text/plain"});
+     * const blob = await this.data.uploadBlob(file);
+     * if (blob) {
+     *     console.log("Uploaded:", blob.fileName, blob.guid);
+     * }
+     *
+     * @param {File} file - The file to upload
+     * @returns {Promise<PluginBlob?>} - The uploaded blob, or null on failure
+     */
+    public uploadBlob(file: File): Promise<PluginBlob | null>;
+    /**
+     * @public
+     * Get a PluginBlob from a PropertyFileValue. Returns null if the PropertyFileValue
+     * has no blob GUID set (e.g. it uses imgData, imgUrl, or imgClass instead).
+     *
+     * @param {PropertyFileValue} fileValue
+     * @returns {Promise<PluginBlob?>}
+     */
+    public getBlobFromPropertyFileValue(fileValue: PropertyFileValue): Promise<PluginBlob | null>;
+    #private;
+}
+
+/**
+ * @public
+ * A class for working with dates and times in Thymer.
+ *
+ * ## How DateTimes work
+ *
+ * A DateTime can represent:
+ * - **Date only** — e.g. "January 15, 2024" (no time component)
+ * - **Date + time** — e.g. "January 15, 2024 at 2:30pm"
+ * - **Time only** — e.g. "2:30pm" (no date component)
+ * - **Date range** — e.g. "January 15 to January 20, 2024"
+ * - **Date+time range** — e.g. "January 15 at 9am to January 20 at 5pm"
+ *
+ * ## Timezones
+ *
+ * When a DateTime has a time component, that time is stored with a timezone.
+ * The timezone is automatically set to the browser's local timezone and cannot
+ * be changed via this API. When you read an existing DateTime that was created
+ * in a different timezone, the time is converted to your browser's timezone.
+ *
+ * Use `setTime(null)` to remove the time component (and timezone) and keep only the date.
+ * Use `setRangeEnd(endDateTime)` to create a date range.
+ *
+ * @example
+ * // Date + time
+ * const dt = new DateTime(new Date(2024, 0, 15, 14, 30));
+ * record.prop("Due Date").set(dt.value());
+ *
+ * @example
+ * // Date only (remove time component)
+ * const dt = new DateTime(new Date(2024, 0, 15));
+ * dt.setTime(null);
+ * record.prop("Due Date").set(dt.value());
+ *
+ * @example
+ * // Modify time on existing DateTime
+ * const dt = new DateTime(new Date());
+ * dt.setTime(18, 0);   // Set time to 6pm
+ * dt.setTime(null);    // Remove time component
+ *
+ * @example
+ * // Date range (multi-day event)
+ * const start = DateTime.dateOnly(2024, 0, 15);
+ * const end = DateTime.dateOnly(2024, 0, 20);
+ * start.setRangeEnd(end); // Creates a date range from Jan 15 to Jan 20
+ * record.prop("Event Period").set(start.value());
+ */
+class DateTime {
+    /**
+     * @public
+     * Create a date-only DateTime (no time component, no timezone).
+     *
+     * @param {number} year - Full year (e.g. 2024)
+     * @param {number} month - Month (0-11, where 0 = January)
+     * @param {number} day - Day of month (1-31)
+     * @returns {DateTime}
+     *
+     * @example
+     * const dt = DateTime.dateOnly(2024, 0, 15); // Jan 15, 2024 (date only)
+     * record.prop("Due Date").set(dt.value());
+     */
+    public static dateOnly(year: number, month: number, day: number): DateTime;
+    /**
+     * @public
+     * Create a time-only DateTime (no date component).
+     *
+     * @param {number} hours - Hours (0-23)
+     * @param {number} [minutes=0] - Minutes (0-59)
+     * @param {number} [seconds=0] - Seconds (0-59)
+     * @returns {DateTime}
+     *
+     * @example
+     * const dt = DateTime.timeOnly(14, 30); // 2:30pm (time only)
+     * record.prop("Reminder Time").set(dt.value());
+     */
+    public static timeOnly(hours: number, minutes?: number, seconds?: number): DateTime;
+    /**
+     * @public
+     * Create a date+time DateTime from numeric parts.
+     *
+     * @param {number} year - Full year (e.g. 2024)
+     * @param {number} month - Month (0-11, where 0 = January)
+     * @param {number} day - Day of month (1-31)
+     * @param {number} hours - Hours (0-23)
+     * @param {number} minutes - Minutes (0-59)
+     * @param {number} seconds - Seconds (0-59)
+     * @returns {DateTime}
+     *
+     * @example
+     * const dt = DateTime.fromYMDHMS(2024, 0, 15, 14, 30, 0); // Jan 15, 2024 14:30
+     * record.prop("Due Date").set(dt.value());
+     */
+    public static dateAndTime(year: number, month: number, day: number, hours: number, minutes: number, seconds: number): DateTime;
+    /**
+     * @public
+     * Parse a human-readable date/time string exactly like Thymer does.
+     *
+     * @param {string} input
+     * @returns {DateTime|null}
+     *
+     * @example
+     * // Regular date formats
+     * DateTime.parseDateTimeString("2024-01-15")
+     * DateTime.parseDateTimeString("1/15/2024")
+     * DateTime.parseDateTimeString("aug 13")
+     * DateTime.parseDateTimeString("13 aug")
+     *
+     * // Time formats
+     * DateTime.parseDateTimeString("13:35")
+     * DateTime.parseDateTimeString("1:35pm")
+     * DateTime.parseDateTimeString("3pm")
+     *
+     * // Date and time combined
+     * DateTime.parseDateTimeString("2024-01-15 14:30")
+     * DateTime.parseDateTimeString("aug 13 3pm")
+     *
+     * // Natural language
+     * DateTime.parseDateTimeString("today")
+     * DateTime.parseDateTimeString("tomorrow")
+     * DateTime.parseDateTimeString("monday")
+     * DateTime.parseDateTimeString("monday 3pm")
+     *
+     * // Ranges
+     * DateTime.parseDateTimeString("monday to friday")
+     * DateTime.parseDateTimeString("1:35pm to 2:35pm")
+     * DateTime.parseDateTimeString("last monday 3pm to today 3pm")
+     */
+    public static parseDateTimeString(input: string): DateTime | null;
+    /**
+     * @public
+     * Create a new DateTime object.
+     *
+     * @param {Date|DateTimeValue|undefined} value -
+     *   - A Date object in browser's local timezone
+     *   - A DateTimeValue object
+     *   - undefined to use the current date and time
+     *
+     * @example
+     * const dt1 = new DateTime(); // Current date and time
+     * const dt2 = new DateTime(new Date(2024, 0, 15)); // Specific date
+     *
+     * // To get a DateTime from a property, use .datetime() instead:
+     * const dt3 = record.prop("Due Date").datetime();
+     */
+    constructor(value: Date | DateTimeValue | undefined);
+    /**
+     * @public
+     * Get the DateTimeValue that can be used with property.set().
+     *
+     * @returns {DateTimeValue} - DateTimeValue object
+     *
+     * @example
+     * const dt = new DateTime(new Date());
+     * record.prop("Due Date").set(dt.value());
+     */
+    public value(): DateTimeValue;
+    /**
+     * @public
+     * Convert to a JavaScript Date in the browser's local timezone.
+     *
+     * @returns {Date}
+     */
+    public toDate(): Date;
+    /**
+     * @public
+     * Get the individual date and time parts.
+     *
+     * Returns (year, month, day) when the DateTime has a date component.
+     * Returns (hours, minutes, seconds) when the DateTime has a time component.
+     *
+     * @returns {{
+             *   year?: number,
+             *   month?: number,
+             *   day?: number,
+             *   hours?: number,
+             *   minutes?: number,
+             *   seconds?: number
+             * }}
+     *
+     * @example
+     * const dt = DateTime.dateOnly(2024, 0, 15);
+     * const parts = dt.getParts();
+     * // { year: 2024, month: 0, day: 15 }
+     *
+     * @example
+     * const dt = DateTime.timeOnly(14, 30, 0);
+     * const parts = dt.getParts();
+     * // { hours: 14, minutes: 30, seconds: 0 }
+     *
+     * @example
+     * const dt = DateTime.dateAndTime(2024, 0, 15, 14, 30, 0);
+     * const parts = dt.getParts();
+     * // { year: 2024, month: 0, day: 15, hours: 14, minutes: 30, seconds: 0 }
+     */
+    public getParts(): {
+        year?: number;
+        month?: number;
+        day?: number;
+        hours?: number;
+        minutes?: number;
+        seconds?: number;
+    };
+    /**
+     * @public
+     * Set or remove the time component of this DateTime.
+     *
+     * @param {number|null} hours - Hours (0-23), or null to remove the time component
+     * @param {number} [minutes=0] - Minutes (0-59)
+     * @param {number} [seconds=0] - Seconds (0-59)
+     *
+     * @example
+     * const dt = new DateTime(new Date(2024, 0, 15));
+     * dt.setTime(14, 30);       // Set time to 2:30pm
+     * dt.setTime(9, 0);         // Set time to 9:00am
+     * dt.setTime(9, 0, 30);     // Set time to 9:00:30am
+     * dt.setTime(null);         // Remove time, keep only the date
+     */
+    public setTime(hours: number | null, minutes?: number, seconds?: number): this;
+    /**
+     * @public
+     * Set a date range from this DateTime to another DateTime.
+     *
+     * @param {DateTime|null} endDateTime - The end of the range (another DateTime object)
+     *
+     * @example
+     * const start = DateTime.dateOnly(2024, 0, 15);
+     * const end = DateTime.dateOnly(2024, 0, 20);
+     * start.setRangeEnd(end); // Creates a date range from Jan 15 to Jan 20
+     */
+    public setRangeEnd(endDateTime: DateTime | null): this;
+    /**
+     * @public
+     * Get the end of the date range as a new DateTime, or null if no range is set.
+     *
+     * @returns {DateTime|null} - A new DateTime representing the range end, or null
+     *
+     * @example
+     * const start = DateTime.dateOnly(2024, 0, 15);
+     * start.setRangeEnd(DateTime.dateOnly(2024, 0, 20));
+     * const rangeEnd = start.getRangeEnd(); // DateTime for Jan 20
+     *
+     * const noRange = DateTime.dateOnly(2024, 0, 15);
+     * noRange.getRangeEnd(); // null
+     */
+    public getRangeEnd(): DateTime | null;
+
+    #private;
+}
+
+/**
+ * Opaque type for datetime values. Use the DateTime class methods to work with these.
+ */
+type DateTimeValue = object;
+
+/**
+ * Base class for Dynamic Collection plugins. Extends the internal DynamicCollectionPlugin
+ * (which provides virtual fields, source plugin delegation, and unified field resolution)
+ * with the same public API surface as CollectionPlugin.
+ *
+ * Users write: class Plugin extends DynCollectionPlugin { onLoad() { ... } }
+ */
+class DynCollectionPlugin {
+
+    /**
+     * @public
+     * Get the plugin's configuration.
+     *
+     * @returns {PluginConfiguration}
+     */
+    public getConfiguration(): PluginConfiguration;
+    /**
+     * @public
+     * Get the name of the collection
+     *
+     * @returns {string}
+     */
+    public getName(): string;
+    /**
+     * @public
+     *
+     * This is called when the plugin is initialized.
+     */
+    public onLoad(): void;
+    /**
+     * @public
+     *
+     * This is called when the plugin is unloaded.
+     */
+    public onUnload(): void;
+    /**
+     * @public
+     * Access to your own dynamic collection.
+     */
+    public collection: PluginDynamicCollectionAPI;
+    /**
+     * @public
+     * Functions to interact with the properties.
+     */
+    public properties: PropertiesAPI;
+    /**
+     * @public
+     * Functions to interact with the views.
+     */
+    public views: ViewsAPI;
+    /**
+     * @public
+     * Functions to interact with the UI.
+     */
+    public ui: UIAPI;
+    /**
+     * @public
+     * Functions to interact with data.
+     */
+    public data: DataAPI;
+    /**
+     * @public
+     * Functions for real-time WebSocket messaging.
+     */
+    public ws: WebSocketAPI;
+    /**
+     * @public
+     * Subscribe to data, UI, and lifecycle events.
+     */
+    public events: EventsAPI;
+
+}
+
+/** @type {EnumColors} */
+const ENUM_COLORS: EnumColors;
+
+type EnumColors = {
+    red: "0";
+    orange: "1";
+    green: "2";
+    cyan: "3";
+    blue: "4";
+    purple: "5";
+    pink: "6";
+    fuchsia: "7";
+    rose: "8";
+    stone: "9";
+    teal: "10";
+    sky: "11";
+    indigo: "12";
+    zinc: "13";
+    yellow: "14";
+};
+
+/**
+ * @public
+ * Event system for plugins.
+ *
+ * Exposed as `this.events` on CollectionPlugin and AppPlugin.
+ *
+ * Notes when using the EventsAPI:
+ *
+ * - Events are only delivered while the plugin is loaded. When the user switches
+ *   workspace, the plugin is unloaded, so you only ever see events for the
+ *   currently active workspace. As changes are made by clients with an active workspace,
+ *   the client making the change should be able to pick up the event which caused the change.
+ *
+ * - The syncer may reload plugin state (e.g. conflict resolution, plugin updates,
+ *   or a very busy workspace). When that happens, a 'reload' event is fired and
+ *   your view of the data may have been re-applied from the server. The recommended
+ *   model is: (1) compute any derived state you need in onLoad and again in your
+ *   'reload' handler, and (2) apply deltas from incoming change events between
+ *   reloads. That way you stay correct across reloads without re-scanning everything
+ *   on every small change.
+ *
+ * - Be careful not to introduce infinite loops. For example, updating a line item in
+ *   response to an update to the line item (which you've just triggered yourself).
+ *
+ * - See note on class PluginEvent about writing event handlers.
+ */
+class EventsAPI {
+
+
+
+
+
+    /**
+     * @public
+     * Subscribe to a plugin event.
+     *
+     * @overload@overload
+     * @param {'collection.created'|'collection.updated'|'global-plugin.created'|'global-plugin.updated'} eventName
+     * @param {(event: PluginEventPluginUpdated) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string} handler ID (pass to `.off()` to unsubscribe)
+     */
+    on(eventName: "collection.created" | "collection.updated" | "global-plugin.created" | "global-plugin.updated", callback: (event: PluginEventPluginUpdated) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'record.created'|'record.moved'|'record.updated'} eventName
+     * @param {(event: PluginEventRecord) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "record.created" | "record.moved" | "record.updated", callback: (event: PluginEventRecord) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'lineitem.created'|'lineitem.moved'|'lineitem.undeleted'|'lineitem.updated'} eventName
+     * @param {(event: PluginEventLineItem) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "lineitem.created" | "lineitem.moved" | "lineitem.undeleted" | "lineitem.updated", callback: (event: PluginEventLineItem) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'lineitem.deleted'} eventName
+     * @param {(event: PluginEventLineItemDeleted) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "lineitem.deleted", callback: (event: PluginEventLineItemDeleted) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'blob.updated'} eventName
+     * @param {(event: PluginEventBlobUpdated) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "blob.updated", callback: (event: PluginEventBlobUpdated) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'user.updated'} eventName
+     * @param {(event: PluginEventUserUpdated) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "user.updated", callback: (event: PluginEventUserUpdated) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'panel.navigated'|'panel.closed'|'panel.focused'} eventName
+     * @param {(event: PluginEventPanel) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "panel.navigated" | "panel.closed" | "panel.focused", callback: (event: PluginEventPanel) => void, options?: PluginEventOptions): string;
+    /**
+     * @overload@overload
+     * @param {'reload'} eventName
+     * @param {(event: PluginEventReload) => void} callback
+     * @param {PluginEventOptions} [options]
+     * @returns {string}
+     */
+    on(eventName: "reload", callback: (event: PluginEventReload) => void, options?: PluginEventOptions): string;
+    /**
+     * @public
+     * Unsubscribe from a previously registered event handler.
+     *
+     * @param {string} handlerId - the ID returned by `.on()`
+     */
+    public off(handlerId: string): void;
+
+    #private;
+}
+
+namespace ExampleConfigurationJSON {
+    let name: string;
+    let icon: string;
+    let description: string;
+    let item_name: string;
+    let ver: number;
+    let show_sidebar_items: boolean;
+    let show_cmdpal_items: boolean;
+    let home: boolean;
+    export namespace default_banner {
+        let guid: string;
+        let name_1: string;
+            { name_1 as name };
+        let imgData: string;
+        let imgClass: string;
+        let imgUrl: any;
+        let error: string;
+    }
+    export namespace sidebar_action {
+        let guid_1: any;
+            { guid_1 as guid };
+        let action: string;
+    }
+    export namespace managed {
+        let fields: boolean;
+        let views: boolean;
+        let sidebar: boolean;
+    }
+    let sidebar_record_sort_field_id: string;
+    let sidebar_record_sort_dir: string;
+    let fields_1: ({
+        id: string;
+        label: string;
+        type: string;
+        icon: string;
+        many: boolean;
+        read_only: boolean;
+        active: boolean;
+        choices?: undefined;
+    } | {
+        id: string;
+        label: string;
+        type: string;
+        icon: string;
+        many: boolean;
+        read_only: boolean;
+        active: boolean;
+        choices: {
+            id: string;
+            label: string;
+            icon: string;
+            active: boolean;
+            color: string;
+        }[];
+    })[];
+        { fields_1 as fields };
+    let views_1: ({
+        id: string;
+        label: string;
+        description: string;
+        icon: string;
+        type: string;
+        shown: boolean;
+        read_only: boolean;
+        field_ids: string[];
+        sort_field_id: string;
+        sort_dir: string;
+        group_by_field_id: string;
+        query: string;
+        opts: {
+            date_field_id?: undefined;
+        };
+    } | {
+        id: string;
+        label: string;
+        description: string;
+        icon: string;
+        type: string;
+        shown: boolean;
+        read_only: boolean;
+        field_ids: string[];
+        sort_field_id: string;
+        sort_dir: string;
+        group_by_field_id: any;
+        query: string;
+        opts: {
+            date_field_id: string;
+        };
+    })[];
+        { views_1 as views };
+    export namespace custom {
+        let api_key: string;
+        let webhook_url: string;
+        export namespace settings {
+            let auto_assign: boolean;
+            let notifications_enabled: boolean;
+            let default_priority: string;
+        }
+    }
+}
+
+const GALLERY_STYLE_COVER: "cover";
+
+const GALLERY_STYLE_COVER_BANNER: "cover-banner";
+
+const GALLERY_STYLE_COVER_BOOKS: "cover-books";
+
+const GALLERY_STYLE_PREVIEW: "preview";
+
+const GALLERY_STYLE_PREVIEW_FEATURED: "preview-featured";
+
+/**
+ * Available icons:
+ * "file-text": "Document",
+ * "pin": "Pin",
+ * "camera": "Camera",
+ * "barrier-block": "Under Construction / Barrier",
+ * "calendar-event": "Calendar event",
+ * "globe": "Globe",
+ * "heart": "Heart",
+ * "music": "Music note",
+ * "flower": "Flower",
+ * "car": "Car",
+ * "book": "Book",
+ * "puzzle": "Puzzle",
+ * "basket": "Basket",
+ * "user": "User",
+ * "tag": "Tag",
+ * "sun": "Sun",
+ * "star": "Star",
+ * "briefcase": "Case",
+ * "lifebuoy": "Support / Lifebuoy",
+ * "lamp": "Lamp",
+ * "sparkles": "Sparkles",
+ * "lock": "Lock",
+ * "wand": "Wand / Magic / AI",
+ * "sofa": "Couch / Furniture",
+ * "shield": "Shield / Security",
+ * "beach": "Beach / Vacation",
+ * "world": "World / Earth",
+ * "glass-cocktail": "Drink / Beverage",
+ * "currency-dollar": "Dollar",
+ * "currency-euro": "Euro",
+ * "cash": "Cash",
+ * "tools": "Tools / Project",
+ * "settings": "Settings",
+ * "search": "Search",
+ * "home": "Home",
+ * "gift": "Gift",
+ * "eye": "Eye",
+ * "droplet": "Droplet",
+ * "clock": "Clock",
+ * "cloud": "Cloud",
+ * "box": "Box",
+ * "coin": "Coin",
+ * "chart-bar": "Bar chart",
+ * "battery": "Battery",
+ * "anchor": "Anchor",
+ * "alert-triangle": "Alert",
+ * "zoom-in": "Zoom in",
+ * "wallet": "Wallet",
+ * "truck": "Truck",
+ * "trophy": "Trophy",
+ * "thermometer": "Thermometer",
+ * "target": "Target",
+ * "sunrise": "Sunrise",
+ * "sunset": "Sunset",
+ * "smart-home": "Smart home",
+ * "skull": "Skull",
+ * "sock": "Sock",
+ * "ship": "Ship",
+ * "share": "Share",
+ * "shirt": "Shirt",
+ * "scissors": "Scissors",
+ * "ruler": "Ruler",
+ * "rocket": "Rocket",
+ * "robot": "Robot",
+ * "chef-hat": "Chef / Cooking",
+ * "refresh": "Recycle",
+ * "tools-kitchen": "Kitchen",
+ * "radio": "Radio",
+ * "printer": "Printer",
+ * "pool": "Pool",
+ * "microphone": "Microphone",
+ * "pizza": "Pizza",
+ * "pill": "Pill",
+ * "photo": "Photo",
+ * "phone-call": "Phone call",
+ * "pencil": "Pencil",
+ * "paw": "Paw",
+ * "confetti": "Confetti / Party",
+ * "parking": "Parking",
+ * "paint": "Paint",
+ * "package": "Package",
+ * "outlet": "Outlet",
+ * "graph": "Graph",
+ * "notes": "Notes",
+ * "books": "Books",
+ * "notebook": "Notebook / Journal",
+ * "news": "News",
+ * "movie": "Movie",
+ * "motorbike": "Motorbike",
+ * "moon": "Moon",
+ * "mouse-2": "Mouse",
+ * "microscope": "Microscope",
+ * "cpu": "Microchip / CPU",
+ * "map": "Map",
+ * "mail": "Mail",
+ * "magnet": "Magnet",
+ * "lungs": "Lungs",
+ * "luggage": "Luggage",
+ * "lollipop": "Lollipop",
+ * "bug": "Bug",
+ * "ticket": "Ticket",
+ * "location": "Location",
+ * "list": "List",
+ * "bulb": "Lightbulb",
+ * "server": "Server",
+ * "devices": "Devices",
+ * "device-laptop": "Laptop",
+ * "key": "Key",
+ * "keyboard": "Keyboard",
+ * "device-gamepad": "Gamepad / Joystick",
+ * "diamond": "Diamond",
+ * "infinity": "Infinity",
+ * "ice-cream": "Ice cream",
+ * "fire-extinguisher": "Fire Extinguisher",
+ * "hexagon": "Hexagon",
+ * "helmet": "Helmet",
+ * "help": "Help",
+ * "letter-t": "Text",
+ * "abc": "Name",
+ * "headphones": "Headphones",
+ * "hammer": "Hammer",
+ * "hanger": "Hanger",
+ * "piano": "Piano",
+ * "gauge": "Gauge / Dial / Dashboard",
+ * "bolt": "Energy / Bolt / Fuel",
+ * "friends": "Friends",
+ * "fridge": "Fridge",
+ * "forklift": "Forklift",
+ * "folder": "Folder",
+ * "fish": "Fish",
+ * "fingerprint": "Fingerprint",
+ * "fence": "Fence",
+ * "feather": "Feather",
+ * "engine": "Engine",
+ * "egg": "Egg",
+ * "school": "School / Education",
+ * "download": "Download",
+ * "dog": "Dog",
+ * "dna": "DNA",
+ * "disc": "Disc",
+ * "id": "Badge / ID",
+ * "database": "Database",
+ * "dice": "Dice",
+ * "shopping-cart": "Shopping Cart",
+ * "cylinder": "Cylinder",
+ * "crown": "Crown",
+ * "trees": "Trees / Park",
+ * "filter": "Filter",
+ * "moon-stars": "Moon / Stars",
+ * "credit-card": "Credit card",
+ * "crane": "Crane",
+ * "files": "Files",
+ * "compass": "Compass",
+ * "coffee": "Coffee",
+ * "cloud-upload": "Cloud upload",
+ * "clipboard-check": "Clipboard check",
+ * "chess": "Chess",
+ * "check": "Check",
+ * "chart-pie": "Chart pie",
+ * "chart-line": "Chart line",
+ * "chalkboard": "Chalkboard",
+ * "certificate": "Certificate",
+ * "candy": "Candy",
+ * "plane": "Plane",
+ * "calendar": "Calendar",
+ * "calculator": "Calculator",
+ * "butterfly": "Butterfly",
+ * "bulldozer": "Bulldozer",
+ * "brush": "Brush",
+ * "bow": "Bow",
+ * "bookmark": "Bookmark",
+ * "bone": "Bone",
+ * "bomb": "Bomb",
+ * "bluetooth": "Bluetooth",
+ * "bell": "Bell",
+ * "backpack": "Backpack",
+ * "axe": "Axe",
+ * "atom": "Atom",
+ * "ambulance": "Ambulance",
+ * "alarm": "Alarm",
+ * "adjustments": "Adjustments / Settings",
+ * "activity": "Activity",
+ * "barbell": "Barbell / Weight",
+ * "baby-carriage": "Stroller",
+ * "speakerphone": "Megaphone",
+ * "leaf": "Leaf",
+ * "scuba-mask": "Scuba",
+ * "building-skyscraper": "Business / Building",
+ * "satellite": "Satellite",
+ * "currency-pound": "Pound",
+ * "currency-yen": "Yen",
+ * "currency-krone-swedish": "Krona",
+ * "currency-yuan": "Yuan",
+ * "picnic-table": "Picnic",
+ * "meat": "Meat",
+ * "tools-kitchen-2": "Knife / Fork",
+ * "bowl-spoon": "Bowl / Spoon",
+ * "run": "Running",
+ * "scale": "Scale",
+ * "heartbeat": "Heartbeat",
+ * "temperature": "Temperature",
+ * "carrot": "Carrot / Vegetable",
+ * "ball-football": "Football",
+ * "ball-american-football": "American Football",
+ * "bed": "Bed",
+ * "burger": "Hamburger / Food",
+ * "sum": "Sum / Total",
+ * "math-function": "Math / Function",
+ * "math": "Math",
+ * "math-x-divide-y": "Division",
+ * "decimal": "Decimal",
+ * "salad": "Salad / Food",
+ * "soup": "Soup / Food",
+ * "table": "Table",
+ * "layout-kanban": "Kanban Board",
+ * "layout-dashboard": "Dashboard",
+ * "layout-grid": "Grid",
+ * "layout-cards": "Card",
+ * "layout-list": "List",
+ * "file-invoice": "Invoice",
+ * "file-description": "Description",
+ * "article": "Article",
+ * "clipboard-text": "Clipboard",
+ * "message-circle": "Discussion / Comment",
+ * "presentation": "Presentation",
+ * "analyze": "Analysis",
+ * "mood-happy": "Mood",
+ * "hourglass": "Hourglass / Time",
+ * "medal": "Medal / Achievement",
+ * "flame": "Streak / Habit / Flame",
+ * "receipt": "Receipt / Log",
+ * "stack": "Stack",
+ * "quote": "Quote",
+ * "paperclip": "Paperclip / Attachment",
+ */
+type IconName = string;
+
+const NAVIGATION_PANEL_COLLECTIONVIEW: "overview";
+
+const NAVIGATION_PANEL_EDITOR: "edit_panel";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_BOLD: "bold";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_CODE: "code";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_DATETIME: "datetime";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_HASHTAG: "hashtag";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_ICON: "icon";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_ITALIC: "italic";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_LINK: "link";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_LINKOBJ: "linkobj";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_MENTION: "mention";
+
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_REF: "ref";
+
+/**
+ * @typedef {PLUGIN_TASK_STATUS_NONE|
+ * PLUGIN_TASK_STATUS_DONE|
+ * PLUGIN_TASK_STATUS_STARTED|
+ * PLUGIN_TASK_STATUS_WAITING|
+ * PLUGIN_TASK_STATUS_BILLABLE|
+ * PLUGIN_TASK_STATUS_IMPORTANT|
+ * PLUGIN_TASK_STATUS_DISCUSS|
+ * PLUGIN_TASK_STATUS_ALERT|
+ * PLUGIN_TASK_STATUS_STARRED|
+ * PLUGIN_TASK_STATUS_CANCELED} PluginTaskStatus
+ */
+const PLUGIN_LINE_ITEM_SEGMENT_TYPE_TEXT: "text";
+
+const PLUGIN_LINE_ITEM_TYPE_ASCII_BANNER: "ascii-banner";
+
+const PLUGIN_LINE_ITEM_TYPE_BLOCK: "block";
+
+const PLUGIN_LINE_ITEM_TYPE_BR: "br";
+
+const PLUGIN_LINE_ITEM_TYPE_COLLECTION: "app";
+
+const PLUGIN_LINE_ITEM_TYPE_EMPTY: "empty";
+
+const PLUGIN_LINE_ITEM_TYPE_ERROR: "error";
+
+const PLUGIN_LINE_ITEM_TYPE_FILE: "file";
+
+const PLUGIN_LINE_ITEM_TYPE_GLOBAL_PLUGIN: "gplugin";
+
+const PLUGIN_LINE_ITEM_TYPE_HEADING: "heading";
+
+const PLUGIN_LINE_ITEM_TYPE_IMAGE: "image";
+
+const PLUGIN_LINE_ITEM_TYPE_MEDIA: "media";
+
+const PLUGIN_LINE_ITEM_TYPE_OLIST: "olist";
+
+const PLUGIN_LINE_ITEM_TYPE_QUERY: "query";
+
+const PLUGIN_LINE_ITEM_TYPE_QUOTE: "quote";
+
+const PLUGIN_LINE_ITEM_TYPE_RECORD: "document";
+
+const PLUGIN_LINE_ITEM_TYPE_REF: "ref";
+
+const PLUGIN_LINE_ITEM_TYPE_TABLE: "table";
+
+const PLUGIN_LINE_ITEM_TYPE_TABLE_CELL: "table-cell";
+
+const PLUGIN_LINE_ITEM_TYPE_TABLE_ROW: "table-row";
+
+const PLUGIN_LINE_ITEM_TYPE_TASK: "task";
+
+const PLUGIN_LINE_ITEM_TYPE_TEXT: "text";
+
+const PLUGIN_LINE_ITEM_TYPE_TRANSCLUSION: "transclusion";
+
+const PLUGIN_LINE_ITEM_TYPE_ULIST: "ulist";
+
+const PLUGIN_TASK_STATUS_ALERT: "alert";
+
+const PLUGIN_TASK_STATUS_BILLABLE: "billable";
+
+const PLUGIN_TASK_STATUS_CANCELED: "canceled";
+
+const PLUGIN_TASK_STATUS_DISCUSS: "discuss";
+
+const PLUGIN_TASK_STATUS_DONE: "done";
+
+const PLUGIN_TASK_STATUS_IMPORTANT: "important";
+
+/**
+ * @typedef {PLUGIN_LINE_ITEM_TYPE_COLLECTION|
+ * PLUGIN_LINE_ITEM_TYPE_GLOBAL_PLUGIN|
+ * PLUGIN_LINE_ITEM_TYPE_RECORD|
+ * PLUGIN_LINE_ITEM_TYPE_EMPTY|
+ * PLUGIN_LINE_ITEM_TYPE_ERROR|
+ * PLUGIN_LINE_ITEM_TYPE_BR|
+ * PLUGIN_LINE_ITEM_TYPE_TEXT|
+ * PLUGIN_LINE_ITEM_TYPE_TASK|
+ * PLUGIN_LINE_ITEM_TYPE_HEADING|
+ * PLUGIN_LINE_ITEM_TYPE_ASCII_BANNER|
+ * PLUGIN_LINE_ITEM_TYPE_QUOTE|
+ * PLUGIN_LINE_ITEM_TYPE_BLOCK|
+ * PLUGIN_LINE_ITEM_TYPE_OLIST|
+ * PLUGIN_LINE_ITEM_TYPE_ULIST|
+ * PLUGIN_LINE_ITEM_TYPE_IMAGE|
+ * PLUGIN_LINE_ITEM_TYPE_FILE|
+ * PLUGIN_LINE_ITEM_TYPE_REF|
+ * PLUGIN_LINE_ITEM_TYPE_TABLE|
+ * PLUGIN_LINE_ITEM_TYPE_TABLE_CELL|
+ * PLUGIN_LINE_ITEM_TYPE_TABLE_ROW|
+ * PLUGIN_LINE_ITEM_TYPE_TRANSCLUSION|
+ * PLUGIN_LINE_ITEM_TYPE_QUERY|
+ * PLUGIN_LINE_ITEM_TYPE_MEDIA} PluginLineItemType
+ */
+const PLUGIN_TASK_STATUS_NONE: "none";
+
+const PLUGIN_TASK_STATUS_STARRED: "starred";
+
+const PLUGIN_TASK_STATUS_STARTED: "started";
+
+const PLUGIN_TASK_STATUS_WAITING: "waiting";
+
+/**
+ * @public
+ * Represents a back-reference from another record to this record, with details
+ * about how the reference is made.
+ */
+class PluginBackReference {
+
+    /** @type {PluginRecord} */
+    record: PluginRecord;
+    /** @type {"line" | "property"} */
+    kind: "line" | "property";
+    /** @type {string?} */
+    lineItemGuid: string | null;
+    /** @type {string?} */
+    propertyId: string | null;
+}
+
+/**
+ * @public
+ * Class to manage physical files (blobs) stored in the workspace.
+ *
+ * Use `this.data.uploadBlob()` to create a new PluginBlob from a File,
+ * or access blobs from file properties using `property.fileBlob()`.
+ */
+class PluginBlob {
+
+    /** @type {string} */
+    guid: string;
+    /** @type {string} */
+    fileName: string;
+    /** @type {string} */
+    contentType: string;
+    /** @type {number} */
+    fileSize: number;
+    /**
+     * @public
+     * Get the creation date of this blob.
+     *
+     * @returns {Date|null}
+     */
+    public getCreatedAt(): Date | null;
+    /**
+     * @public
+     * Download the blob data. Returns the file data as an ArrayBuffer and its content type,
+     * or null on failure.
+     *
+     * @returns {Promise<ArrayBuffer?>}
+     */
+    public download(): Promise<ArrayBuffer | null>;
+    #private;
+}
+
+type PluginBlockStyle = "" | "quote" | "warning" | "note" | "row";
+
+class PluginCollectionAPI extends PluginPluginAPIBase {
+    /**
+     * @public
+     * Get the code, config, and CSS currently used by the plugin.
+     *
+     * @returns {{code: string, css: string, json: PluginConfiguration}}
+     */
+    public getExistingCodeAndConfig(): {
+        code: string;
+        css: string;
+        json: PluginConfiguration;
+    };
+    /**
+     * @public
+     * Get the name of the collection
+     *
+     * @returns {string}
+     */
+    public getName(): string;
+    /**
+     * @public
+     * Get the plugin's configuration.
+     *
+     * @returns {PluginConfiguration}
+     */
+    public getConfiguration(): PluginConfiguration;
+    /**
+     * @public
+     * Create a new record in this collection.
+     *
+     * @param {string} recordName - name of the new record
+     *
+     * @returns {string?} - guid of the new record, or null if creation failed
+     */
+    public createRecord(recordName?: string): string | null;
+    /**
+     * @public
+     * Get the guid of the collection
+     *
+     * @returns {string}
+     */
+    public getGuid(): string;
+    /**
+     * @public
+     * Get all records in the collection
+     *
+     * @returns {Promise<PluginRecord[]>}
+     */
+    public getAllRecords(): Promise<PluginRecord[]>;
+    /**
+     * @public
+     * Check if this collection is a Journal plugin.
+     *
+     * @returns {boolean}
+     */
+    public isJournalPlugin(): boolean;
+    /**
+     * @public
+     * Get a journal page record for a user on a specific date.
+     * Only works on Journal plugins - returns null for other collections.
+     *
+     * Journal pages are created lazily - the page is automatically created when first written to.
+     *
+     * @param {PluginUser} user - The user whose journal to get
+     * @param {DateTime} [date] - The date (defaults to today)
+     * @returns {Promise<PluginRecord|null>} - The journal page or null when not a journal plugin
+     *
+     * @example
+     * // Get all collections, find the journal, get next week's record
+     * const collections = await this.data.getAllCollections();
+     * const journal = collections.find(c => c.isJournalPlugin());
+     * if (journal) {
+     *     const user = this.data.getActiveUsers()[0];
+     *     const record = await journal.getJournalRecord(user, DateTime.parseDateTimeString('next week'));
+     *     if (record) {
+     *         const line = await record.createLineItem(null, null, 'task');
+     *         line.setSegments([{type: 'text', text: 'Plan for next week'}]);
+     *     }
+     * }
+     */
+    public getJournalRecord(user: PluginUser, date?: DateTime): Promise<PluginRecord | null>;
+    /**
+     * @public
+     * Get the collection's banner image as a PropertyFileValue.
+     * This is the default banner used by all records in the collection
+     * (unless a record has its own banner set).
+     *
+     * @returns {PropertyFileValue?}
+     */
+    public getBanner(): PropertyFileValue | null;
+    /**
+     * @public
+     * Set the collection's banner image from a PluginBlob.
+     *
+     * @param {PluginBlob} blob
+     * @returns {boolean} true if set successfully
+     */
+    public setBannerFromBlob(blob: PluginBlob): boolean;
+    /**
+     * @public
+     * Set the collection's banner image from a PropertyFileValue.
+     *
+     * @param {PropertyFileValue} fileValue
+     */
+    public setBanner(fileValue: PropertyFileValue): void;
+    /**
+     * @public
+     * Check whether sub-pages are enabled for this collection.
+     *
+     * @returns {boolean}
+     */
+    public hasSubPages(): boolean;
+    /**
+     * @public
+     * Enable or disable sub-pages for this collection.
+     * When enabled, records can be nested under other records using
+     * `record.setSubPageOf(parentGuid)`.
+     *
+     * @param {boolean} enabled
+     * @returns {Promise<boolean>} true if the change was saved successfully
+     */
+    public enableSubPages(enabled: boolean): Promise<boolean>;
+}
+
+type PluginCommandPaletteCommand = {
+    remove: () => void;
+};
+
+type PluginConfiguration = {
+    /**
+     * - for future compat
+     */
+    ver: number;
+    /**
+     * - collection icon
+     */
+    icon: string;
+    /**
+     * - collection color (index into ENUM_COLORS, null for default)
+     */
+    color?: number | null;
+    /**
+     * - collection name
+     */
+    name: string;
+    /**
+     * - name for item in collection
+     */
+    item_name: string;
+    /**
+     * - collection description
+     */
+    description: string;
+    /**
+     * - global plugin only: when true, plugin code is not loaded/executed
+     */
+    off?: boolean;
+    /**
+     * - show items in sidebar? (legacy, use sidebar_display_mode when hasNewSidebarNav)
+     */
+    show_sidebar_items: boolean;
+    /**
+     * - show items in command palette?
+     */
+    show_cmdpal_items: boolean;
+    /**
+     * - how to display pages in the sidebar (new sidebar nav)
+     */
+    sidebar_display_mode?: SidebarDisplaySettings;
+    /**
+     * - Optional. Was configurable in Sidebar tab in Collection Dialog (see 'id--action-select' in dialogs.js), now only configurable in config/code (e.g. Journal plugin uses it)
+     */
+    sidebar_action?: {
+        guid: string | null;
+        action: CollectionPrimaryAction;
+    };
+    /**
+     * - Override to use as collection's default banner. Null by default (use banner image user selects in Change Banner dialog).
+     */
+    default_banner?: PropertyFileValue | null;
+    views: CollectionView[];
+    /**
+     * - [PropertyField,]
+     */
+    fields: PropertyField[];
+    /**
+     * - Optional, not used at the moment (used before property view dropdown was added)
+     */
+    page_field_ids?: string[];
+    /**
+     * - one of [field.id for field in fields]
+     */
+    sidebar_record_sort_field_id: string;
+    /**
+     * - see SortDir
+     */
+    sidebar_record_sort_dir: PluginSortDir;
+    /**
+     * - specify which parts user can change in dialog and which should be shown as "managed" by the plugin code
+     */
+    managed: {
+        fields: boolean;
+        views: boolean;
+        sidebar: boolean;
+    };
+    /**
+     * - custom configuration for user's plugin code (like API keys and so on)
+     */
+    custom?: {
+        [x: string]: any;
+    };
+    home: boolean;
+    /**
+     * - query for Related Template shown at top of each page
+     */
+    related_query?: string;
+};
+
+/**
+ * @public
+ * PluginConfiguration Documentation
+ * =================================
+ *
+ * A plugin's PluginConfiguration JSON is defined in the plugin.json file.
+ *
+ * Collection Plugins vs Global Plugins
+ * ----------------------------------
+ * - Collection Plugins: The full configuration is used, including properties, views, and collection settings
+ * - Global Plugins: Only basic fields like name and icon are relevant, as global plugins don't have properties or views
+ *
+ * Key Configuration Areas
+ * ----------------------
+ * 1. Collection Properties
+ *    - Define data fields/properties that items (records) in the collection can have
+ *    - Specify field types, labels, icons, and behavior
+ *
+ * 2. Collection Views
+ *    - Configure how data is displayed in the collection (table, board, gallery, etc.)
+ *    - Set default sorting, grouping, and visible fields
+ *
+ * 3. Behavior Settings
+ *    - Control sidebar visibility
+ *    - Enable/disable command palette integration
+ *    - Configure default banners and actions
+ *
+ * 4. Custom Configuration
+ *    - Add plugin-specific settings via the "custom" field
+ *    - Store API tokens, UI preferences, or any other plugin settings
+ *
+ * Dynamic Configuration
+ * --------------------
+ * - The configuration can be modified programmatically or through the Edit Collection dialog
+ * - Changes made in the UI automatically update the underlying JSON
+ * - Combine with plugin code for advanced features (e.g., "dynamic" properties for which values are
+ *   being calcuated with formulas using this.properties.formula())
+ *
+ * See the example configuration below for a complete demonstration of available options.
+ *
+ * @type {PluginConfiguration?}
+ */
+const _PluginConfigurationDoc: PluginConfiguration | null;
+
+type PluginDropdown = {
+    /**
+     * Destroy the dropdown
+     */
+    destroy: () => void;
+};
+
+type PluginDropdownOption = {
+    /**
+     * Text label to display for this option
+     */
+    label: string;
+    /**
+     * Icon class name (e.g. "ti-bug")
+     */
+    icon?: IconName;
+    /**
+     * Function called when this option is selected
+     */
+    onSelected?: () => void;
+};
+
+class PluginDynamicCollectionAPI extends PluginPluginAPIBase {
+    /**
+     * @public
+     * Get the code, config, and CSS currently used by the plugin.
+     *
+     * @returns {{code: string, css: string, json: PluginConfiguration}}
+     */
+    public getExistingCodeAndConfig(): {
+        code: string;
+        css: string;
+        json: PluginConfiguration;
+    };
+    /**
+     * @public
+     * Get the guid of the dynamic collection
+     *
+     * @returns {string}
+     */
+    public getGuid(): string;
+    /**
+     * @public
+     * Get the plugin's configuration.
+     *
+     * @returns {PluginConfiguration}
+     */
+    public getConfiguration(): PluginConfiguration;
+    /**
+     * @public
+     * Get the name of the dynamic collection
+     *
+     * @returns {string}
+     */
+    public getName(): string;
+    /**
+     * @public
+     * Get all records matching a specific view's filters and source collections.
+     *
+     * Unlike a regular collection, a dynamic collection does not own any records.
+     * Instead, each view defines which source collections to pull from, what result
+     * type to show, and which query filters to apply. Because of this, "all records"
+     * only makes sense in the context of a particular view — different views can
+     * return completely different sets of records.
+     *
+     * @param {string} viewNameOrGuid - Name or guid of the View
+     * @returns {Promise<PluginRecord[]>}
+     */
+    public getAllRecords(viewNameOrGuid: string): Promise<PluginRecord[]>;
+}
+
+/**
+ * @typedef {'collection.created'|'collection.updated'|'global-plugin.created'|'global-plugin.updated'|'record.created'|'record.updated'|'record.moved'|'lineitem.created'|'lineitem.updated'|'lineitem.moved'|'lineitem.undeleted'|'lineitem.deleted'|'blob.updated'|'user.updated'|'panel.navigated'|'panel.closed'|'panel.focused'|'reload'} PluginEventName
+ */
+/**
+ * @typedef {Object} PluginEventSource@typedef {Object} PluginEventSource
+ * @property {boolean} isLocal - event was initiated by this client (this browser tab)
+ * @property {string|null} userId - when given, the guid of the user who sent this event (not set for local events)
+ */
+/**
+ * @typedef {Object} PluginEventOptions@typedef {Object} PluginEventOptions
+ * @property {string} [collection] - guid of a specific collection to listen to, or '*' for all collections.
+ *   In a CollectionPlugin, the current collection is used as the default filter when this is omitted;
+ *   pass '*' to receive events for all collections in the workspace.
+ * @property {string} [record] - guid of a specific record to listen to (implies its collection)
+ *
+ * **Scope filtering behavior by event:**
+ *
+ * Scoped events (respect collection/record filters):
+ * - `collection.created`, `collection.updated`
+ * - `global-plugin.created`, `global-plugin.updated`
+ * - `record.created`, `record.updated`
+ * - `lineitem.created`, `lineitem.updated`, `lineitem.undeleted`, `lineitem.deleted`
+ *
+ * Unscoped events (always delivered, filters ignored):
+ * - `record.moved`, `lineitem.moved` — bypass filters so handlers are notified
+ *   when items leave their scope, not just when they arrive. The event payload
+ *   carries the **destination** collection/record; compare against your own scope
+ *   to determine direction.
+ * - `blob.updated`, `user.updated` — workspace-global, not tied to a collection
+ * - `panel.navigated`, `panel.closed`, `panel.focused` — UI events, not scoped
+ * - `reload` — lifecycle event, always delivered
+ */
+/**
+ * @typedef {Object} PluginEventHandlerInfo@typedef {Object} PluginEventHandlerInfo
+ * @property {PluginEventName} eventName
+ * @property {Function} callback
+ * @property {PluginEventOptions} options
+ */
+/**
+ * Base class for all plugin events. Every event carries the event name and source info.
+ * Collection/record/lineItem guids are always available as plain strings; the corresponding
+ * objects can be resolved lazily via getter methods.
+ *
+ * ## Async ordering
+ *
+ * Event handlers are invoked synchronously, in order, for each event. If your handler uses
+ * `await` or `.then()`, control yields back to the event system and the next queued event
+ * may fire before your handler's continuation runs. This means that if you use any of the
+ * async helper methods, you need to be careful to not use stale state.
+ *
+ * As an example:
+ *
+ * ```javascript
+ * this.events.on('lineitem.created', (ev) => {
+ *   console.log(`Line item created: ${lineItem.guid}`);
+ * });
+ *
+ * this.events.on('lineitem.updated', (ev) => {
+ *   console.log(`Line item updated: ${ev.lineItemGuid}`);
+ * });
+ * ```
+ *
+ * This will always print "Line item created: <guid>" first, and then "Line item updated: <guid>" second.
+ *
+ * However, if you would use
+ *
+ * ```javascript
+ * this.events.on('lineitem.created', (ev) => {
+ *   somethingAsync.then(() => {
+ *     console.log(`Line item created: ${lineItem.guid}`);
+ *   });
+ * });
+ *
+ * this.events.on('lineitem.updated', (ev) => {
+ *   console.log(`Line item updated: ${ev.lineItemGuid}`);
+ * });
+ * ```
+ *
+ * This might print "Line item updated: <guid>" first, and then "Line item created: <guid>" second, so take
+ * that into account when using async code in event handlers.
+ *
+ */
+class PluginEvent {
+    /**
+     * @param {PluginEventName} eventName
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string|null} collectionGuid
+     * @param {string|null} recordGuid
+     * @param {string|null} lineItemGuid
+     */
+    constructor(eventName: PluginEventName, events: EventsAPI, source: PluginEventSource, collectionGuid: string | null, recordGuid: string | null, lineItemGuid: string | null);
+    /** @type {PluginEventName} */
+    eventName: PluginEventName;
+    /** @type {PluginEventSource} */
+    source: PluginEventSource;
+    /** @type {string|null} */
+    collectionGuid: string | null;
+    /** @type {string|null} */
+    recordGuid: string | null;
+    /** @type {string|null} */
+    lineItemGuid: string | null;
+    /**
+     * Get the collection that owns the affected item (lazy).
+     * @returns {PluginCollectionAPI|PluginGlobalPluginAPI|null}
+     */
+    getCollection(): PluginCollectionAPI | PluginGlobalPluginAPI | null;
+    /**
+     * Get the record that owns the affected item, or the record itself (lazy).
+     * @returns {PluginRecord|null}
+     */
+    getRecord(): PluginRecord | null;
+    /**
+     * Get the user who caused this event (lazy). Not set for local events (returns null).
+     * @returns {PluginUser|null}
+     */
+    getSourceUser(): PluginUser | null;
+    #private;
+}
+
+/**
+ * Fired when a blob (file/attachment) is created or updated.
+ *
+ * Event name: 'blob.updated'
+ */
+class PluginEventBlobUpdated extends PluginEvent {
+    /**
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string} blobGuid
+     * @param {string|null} fileName
+     * @param {string|null} contentType
+     * @param {number|null} fileSize
+     * @param {number|null} status
+     */
+    constructor(events: EventsAPI, source: PluginEventSource, blobGuid: string, fileName: string | null, contentType: string | null, fileSize: number | null, status: number | null);
+    /** @type {string} */
+    blobGuid: string;
+    /** @type {string|null} */
+    fileName: string | null;
+    /** @type {string|null} */
+    contentType: string | null;
+    /** @type {number|null} */
+    fileSize: number | null;
+    /** @type {number|null} - upload status (0=init, 1=pending, 2=done, 3=failed), or null if not changed */
+    status: number | null;
+}
+
+type PluginEventHandlerInfo = {
+    eventName: PluginEventName;
+    callback: Function;
+    options: PluginEventOptions;
+};
+
+/**
+ * Fired when a line item is created, moved, or updated.
+ *
+ * Event names: 'lineitem.created', 'lineitem.moved', 'lineitem.updated'
+ *
+ * For 'lineitem.created' and 'lineitem.moved': parentGuid, afterGuid, overindent, type are set.
+ * For 'lineitem.updated': metaProperties, properties, segments, status are set.
+ */
+class PluginEventLineItem extends PluginEvent {
+    /**
+     * @param {PluginEventName} eventName
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string} collectionGuid
+     * @param {string} recordGuid
+     * @param {string} lineItemGuid
+     * @param {{parentGuid?: string|null, afterGuid?: string|null, overindent?: number|null, type?: string|null, metaProperties?: {[key: string]: any}|null, properties?: {[key: string]: any}|null, rawSegments?: string[]|null, status?: PluginTaskStatus|null}} fields
+     */
+    constructor(eventName: PluginEventName, events: EventsAPI, source: PluginEventSource, collectionGuid: string, recordGuid: string, lineItemGuid: string, fields: {
+        parentGuid?: string | null;
+        afterGuid?: string | null;
+        overindent?: number | null;
+        type?: string | null;
+        metaProperties?: {
+            [key: string]: any;
+        } | null;
+        properties?: {
+            [key: string]: any;
+        } | null;
+        rawSegments?: string[] | null;
+        status?: PluginTaskStatus | null;
+    });
+    /** @type {string|null} - parent item guid */
+    parentGuid: string | null;
+    /** @type {string|null} - after-sibling guid */
+    afterGuid: string | null;
+    /** @type {number|null} - overindent level relative to after-sibling */
+    overindent: number | null;
+    /** @type {string|null} - line item type */
+    type: string | null;
+    /** @type {{[key: string]: any}|null} - meta properties changed (__mp), or null */
+    metaProperties: {
+        [key: string]: any;
+    } | null;
+    /** @type {{[key: string]: any}|null} - key-value properties changed (__kv), or null */
+    properties: {
+        [key: string]: any;
+    } | null;
+    /** @type {PluginTaskStatus|null} - task status shortcut from __mp.done, or null when not changed */
+    status: PluginTaskStatus | null;
+    /**
+     * Whether the line item's text segments (content) were changed in this event.
+     * @returns {boolean}
+     */
+    hasSegments(): boolean;
+    /**
+     * Get the updated segments as PluginLineItemSegment objects.
+     *
+     * Returns null if segments were not changed in this event.
+     * @returns {PluginLineItemSegment[]|null}
+     */
+    getSegments(): PluginLineItemSegment[] | null;
+    /**
+     * Get the full PluginLineItem object for this event from the data store.
+     *
+     * Note: As this is async, calling it inside an event handler, it will yield to the event
+     * loop, so subsequent events (e.g. `lineitem.updated` after `lineitem.created`) may
+     * fire before this resolves. Prefer synchronous event properties (`.lineItemGuid`,
+     * `.getSegments()`, `.status`, `.type`, etc.) when ordering matters, or use your own
+     * queuing logic to ensure the correct order of handling events.
+     *
+     * @returns {Promise<PluginLineItem|null>}
+     */
+    getLineItem(): Promise<PluginLineItem | null>;
+    #private;
+}
+
+/**
+ * Fired when a line item is deleted.
+ *
+ * Event name: 'lineitem.deleted'
+ */
+class PluginEventLineItemDeleted extends PluginEvent {
+    /**
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string} collectionGuid
+     * @param {string|null} recordGuid
+     * @param {string} lineItemGuid
+     */
+    constructor(events: EventsAPI, source: PluginEventSource, collectionGuid: string, recordGuid: string | null, lineItemGuid: string);
+}
+
+type PluginEventName = "collection.created" | "collection.updated" | "global-plugin.created" | "global-plugin.updated" | "record.created" | "record.updated" | "record.moved" | "lineitem.created" | "lineitem.updated" | "lineitem.moved" | "lineitem.undeleted" | "lineitem.deleted" | "blob.updated" | "user.updated" | "panel.navigated" | "panel.closed" | "panel.focused" | "reload";
+
+type PluginEventOptions = {
+    /**
+     * - guid of a specific collection to listen to, or '*' for all collections.
+     * In a CollectionPlugin, the current collection is used as the default filter when this is omitted;
+     * pass '*' to receive events for all collections in the workspace.
+     */
+    collection?: string;
+    /**
+     * - guid of a specific record to listen to (implies its collection)
+     *
+     * **Scope filtering behavior by event:**
+     *
+     * Scoped events (respect collection/record filters):
+     * - `collection.created`, `collection.updated`
+     * - `global-plugin.created`, `global-plugin.updated`
+     * - `record.created`, `record.updated`
+     * - `lineitem.created`, `lineitem.updated`, `lineitem.undeleted`, `lineitem.deleted`
+     *
+     * Unscoped events (always delivered, filters ignored):
+     * - `record.moved`, `lineitem.moved` — bypass filters so handlers are notified
+     * when items leave their scope, not just when they arrive. The event payload
+     * carries the **destination** collection/record; compare against your own scope
+     * to determine direction.
+     * - `blob.updated`, `user.updated` — workspace-global, not tied to a collection
+     * - `panel.navigated`, `panel.closed`, `panel.focused` — UI events, not scoped
+     * - `reload` — lifecycle event, always delivered
+     */
+    record?: string;
+};
+
+/**
+ * Fired for panel events.
+ *
+ * Event names: 'panel.navigated', 'panel.closed', 'panel.focused'
+ */
+class PluginEventPanel extends PluginEvent {
+    /**
+     * @param {PluginEventName} eventName
+     * @param {EventsAPI} events
+     * @param {PluginPanel} panel
+     */
+    constructor(eventName: PluginEventName, events: EventsAPI, panel: PluginPanel);
+    /** @type {PluginPanel} */
+    panel: PluginPanel;
+}
+
+/**
+ * Fired when a collection or global plugin root is created or updated
+ * (config/code/css changes, or trashed).
+ *
+ * Event names: 'collection.created', 'collection.updated',
+ *              'global-plugin.created', 'global-plugin.updated'
+ */
+class PluginEventPluginUpdated extends PluginEvent {
+    /**
+     * @param {PluginEventName} eventName
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string} collectionGuid
+     * @param {'collection'|'plugin'} type
+     * @param {Object|null} json
+     * @param {string|null} code
+     * @param {string|null} css
+     * @param {boolean|null} trashed
+     */
+    constructor(eventName: PluginEventName, events: EventsAPI, source: PluginEventSource, collectionGuid: string, type: "collection" | "plugin", json: any | null, code: string | null, css: string | null, trashed: boolean | null);
+    /** @type {'collection'|'plugin'} */
+    type: "collection" | "plugin";
+    /** @type {Object|null} - collection config JSON when updated, otherwise null */
+    json: any | null;
+    /** @type {string|null} - plugin code when updated, otherwise null */
+    code: string | null;
+    /** @type {string|null} - plugin CSS when updated, otherwise null */
+    css: string | null;
+    /** @type {boolean|null} - true when trashed, false when untrashed, null when not changed */
+    trashed: boolean | null;
+}
+
+/**
+ * Fired when a record is created, moved, or updated.
+ *
+ * Event names: 'record.created', 'record.moved', 'record.updated'
+ *
+ * For 'record.created' and 'record.moved': parentGuid, afterGuid, type are set from the InsMov operation.
+ * For 'record.updated': metaProperties, properties, trashed are set from the Update/SetKV operation.
+ */
+class PluginEventRecord extends PluginEvent {
+    /**
+     * @param {PluginEventName} eventName
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string} collectionGuid
+     * @param {string} recordGuid
+     * @param {{parentGuid?: string|null, afterGuid?: string|null, type?: string|null, metaProperties?: {[key: string]: any}|null, properties?: {[key: string]: any}|null, trashed?: boolean|null}} fields
+     */
+    constructor(eventName: PluginEventName, events: EventsAPI, source: PluginEventSource, collectionGuid: string, recordGuid: string, fields: {
+        parentGuid?: string | null;
+        afterGuid?: string | null;
+        type?: string | null;
+        metaProperties?: {
+            [key: string]: any;
+        } | null;
+        properties?: {
+            [key: string]: any;
+        } | null;
+        trashed?: boolean | null;
+    });
+    /** @type {string|null} - parent collection guid */
+    parentGuid: string | null;
+    /** @type {string|null} - after-sibling guid */
+    afterGuid: string | null;
+    /** @type {string|null} - record type */
+    type: string | null;
+    /** @type {{[key: string]: any}|null} - meta properties changed (__mp), or null */
+    metaProperties: {
+        [key: string]: any;
+    } | null;
+    /** @type {{[key: string]: any}|null} - key-value properties changed (__kv), or null */
+    properties: {
+        [key: string]: any;
+    } | null;
+    /** @type {boolean|null} - true=trashed, false=untrashed, null=not changed */
+    trashed: boolean | null;
+}
+
+/**
+ * Fired on full state reload.
+ *
+ * Event name: 'reload'
+ */
+class PluginEventReload extends PluginEvent {
+    /**
+     * @param {EventsAPI} events
+     */
+    constructor(events: EventsAPI);
+}
+
+type PluginEventSource = {
+    /**
+     * - event was initiated by this client (this browser tab)
+     */
+    isLocal: boolean;
+    /**
+     * - when given, the guid of the user who sent this event (not set for local events)
+     */
+    userId: string | null;
+};
+
+/**
+ * Fired when a user is updated.
+ *
+ * Event name: 'user.updated'
+ */
+class PluginEventUserUpdated extends PluginEvent {
+    /**
+     * @param {EventsAPI} events
+     * @param {PluginEventSource} source
+     * @param {string} userGuid
+     * @param {{[key: string]: any}|null} properties
+     */
+    constructor(events: EventsAPI, source: PluginEventSource, userGuid: string, properties: {
+        [key: string]: any;
+    } | null);
+    /** @type {string} */
+    userGuid: string;
+    /** @type {{[key: string]: any}|null} - updated key-value properties, or null */
+    properties: {
+        [key: string]: any;
+    } | null;
+    /**
+     * Get the PluginUser object for the updated user (lazy).
+     * @returns {PluginUser|null}
+     */
+    getUser(): PluginUser | null;
+    #private;
+}
+
+class PluginGlobalPluginAPI extends PluginPluginAPIBase {
+    /**
+     * @public
+     * Get the code, config, and CSS currently used by the plugin.
+     *
+     * @returns {{code: string, css: string, json: PluginConfiguration}}
+     */
+    public getExistingCodeAndConfig(): {
+        code: string;
+        css: string;
+        json: PluginConfiguration;
+    };
+    /**
+     * @public
+     * Get the guid of the global plugin
+     *
+     * @returns {string}
+     */
+    public getGuid(): string;
+    /**
+     * @public
+     * Get the plugin's configuration.
+     *
+     * @returns {PluginConfiguration}
+     */
+    public getConfiguration(): PluginConfiguration;
+    /**
+     * @public
+     * Get the name of the global plugin
+     *
+     * @returns {string}
+     */
+    public getName(): string;
+}
+
+type PluginHighlightLanguage = "bash" | "c" | "coffeescript" | "cpp" | "csharp" | "css" | "dart" | "diff" | "go" | "graphql" | "ini" | "java" | "javascript" | "json" | "kotlin" | "less" | "lua" | "makefile" | "markdown" | "objectivec" | "perl" | "php" | "php-template" | "plaintext" | "powershell" | "python" | "python-repl" | "r" | "ruby" | "rust" | "scala" | "scss" | "shell" | "sql" | "swift" | "typescript" | "vbnet" | "wasm" | "xml" | "yaml";
+
+/**
+ * @typedef {{ [key: string]: any }} PluginLineItemProps
+ */
+/**
+ * @typedef {'flames'|'outline'|'link-icons'|'link-buttons'} PluginLinkStyle
+ */
+/**
+ * @typedef {'bash'|'c'|'coffeescript'|'cpp'|'csharp'|'css'|'dart'|'diff'|'go'|'graphql'|'ini'|'java'|'javascript'|'json'|'kotlin'|'less'|'lua'|'makefile'|'markdown'|'objectivec'|'perl'|'php'|'php-template'|'plaintext'|'powershell'|'python'|'python-repl'|'r'|'ruby'|'rust'|'scala'|'scss'|'shell'|'sql'|'swift'|'typescript'|'vbnet'|'wasm'|'xml'|'yaml'} PluginHighlightLanguage
+ */
+/**
+ * @typedef {''|'quote'|'warning'|'note'|'row'} PluginBlockStyle
+ */
+/**
+ * Represents a line item within a record. Setters return `Promise<boolean>`.
+ * Operations are processed in order, so you can await only the last one.
+ */
+class PluginLineItem {
+
+    /** @type {string} */
+    guid: string;
+    /** @type {PluginLineItemType} */
+    type: PluginLineItemType;
+    /** @type {PluginRecord} */
+    record: PluginRecord;
+    /** @type {string?} */
+    parent_guid: string | null;
+    /**
+     * @public
+     * Synchronous access to cached children. Returns null if children have not been loaded yet.
+     * Use `getChildren()` for guaranteed access (fetches from backend if needed).
+     * @type {PluginLineItem[]|null}
+     */
+    public get children(): PluginLineItem[] | null;
+    /** @type {PluginLineItemSegment[]} */
+    segments: PluginLineItemSegment[];
+    /** @type {PluginLineItemProps?} */
+    props: PluginLineItemProps | null;
+    /**
+     * @public
+     * Set the segments of the line item
+     *
+     * @param {PluginLineItemSegment[]} segments
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setSegments(segments: PluginLineItemSegment[]): Promise<boolean>;
+
+
+    /**
+     * @returns {Date?}
+     */
+    getCreatedAt(): Date | null;
+    /**
+     * @returns {Date?}
+     */
+    getUpdatedAt(): Date | null;
+    /**
+     * @returns {string?}
+     */
+    getCreatedByGuid(): string | null;
+    /**
+     * @returns {string?}
+     */
+    getUpdatedByGuid(): string | null;
+    /**
+     * @public
+     * Get the record this line item belongs to.
+     *
+     * @returns {PluginRecord}
+     */
+    public getRecord(): PluginRecord;
+    /**
+     * @public
+     * Get the direct children of this line item.
+     * Efficiently cached: returns instantly when children were loaded via getLineItems(),
+     * fetches from backend on demand otherwise.
+     *
+     * @returns {Promise<PluginLineItem[]>}
+     */
+    public getChildren(): Promise<PluginLineItem[]>;
+    /**
+     * @public
+     * Get the parent of this line item. Returns the parent PluginLineItem if nested,
+     * or the PluginRecord if this is a top-level item in its record.
+     *
+     * @returns {Promise<PluginLineItem|PluginRecord>}
+     */
+    public getParent(): Promise<PluginLineItem | PluginRecord>;
+    /**
+     * @public
+     * Get the tree context of this line item: its ancestors and descendants in a single call.
+     * Ancestors are ordered from immediate parent to the top-level item (stops at the record boundary).
+     * Descendants are in depth-first (pre-order) and include children, grandchildren, etc.
+     *
+     * All returned descendants (and this item itself) will have their children pre-cached (so
+     * `getChildren()` returns instantly) and `getParent()` wired up, so you can either iterate
+     * the flat list or walk the tree structure.
+     *
+     * @returns {Promise<{ancestors: PluginLineItem[], descendants: PluginLineItem[]}>}
+     *
+     * @example
+     * const { ancestors, descendants } = await lineItem.getTreeContext();
+     * // ancestors[0] is the immediate parent
+     * // descendants are in depth-first order; iterate flat or walk via getChildren()
+     */
+    public getTreeContext(): Promise<{
+        ancestors: PluginLineItem[];
+        descendants: PluginLineItem[];
+    }>;
+    /**
+     * @public
+     * Get the task status for task line items.
+     *
+     * @returns {PluginTaskStatus|null} The task status, or null if not a task
+     *
+     * @example
+     * if (lineItem.getTaskStatus() === PLUGIN_TASK_STATUS_DONE) {
+     *     console.log('Task is completed');
+     * }
+     */
+    public getTaskStatus(): PluginTaskStatus | null;
+    /**
+     * @public
+     * Check if this task is completed.
+     *
+     * @returns {boolean|null} true if completed, false if not completed, null if not a task
+     *
+     * @example
+     * const completedTasks = lineItems.filter(item => item.isTaskCompleted() === true);
+     */
+    public isTaskCompleted(): boolean | null;
+    /**
+     * @public
+     * Set the task status for task line items.
+     *
+     * @param {PluginTaskStatus} status - The status to set
+     * @returns {Promise<boolean>} true if successful, false if not a task or invalid status
+     *
+     * @example
+     * await lineItem.setTaskStatus(PLUGIN_TASK_STATUS_IMPORTANT);
+     */
+    public setTaskStatus(status: PluginTaskStatus): Promise<boolean>;
+    /**
+     * @public
+     * Set a single meta property on the line item.
+     *
+     * @param {string} prop - The property key
+     * @param {string|number|null} val - The value to set, or null to delete the property
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setMetaProperty(prop: string, val: string | number | null): Promise<boolean>;
+    /**
+     * @public
+     * Set multiple meta properties on the line item.
+     *
+     * - null value to delete a property
+     * - existing properties are overwritten
+     * - properties for which no keys are provided are not touched
+     * - meta properties are shared: any plugin may read or write them, so consider
+     *   namespacing keys meant only for your plugin and read defensively
+     *
+     * @param {Record<string, any>} props - Object with property key-value pairs
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setMetaProperties(props: Record<string, any>): Promise<boolean>;
+    /**
+     * For image and file line items, set the file which should be displayed on this line item.
+     * Uses the same meta keys as the editor (fileguid, filename, filesize; for images resized is cleared).
+     *
+     * @param {PluginBlob} blob
+     * @returns {Promise<boolean>}
+     *
+     * @example
+     * // Upload a file or image and insert it as a new line item on the current record (e.g. from a file input):
+     * const record = plugin.ui.getActivePanel()?.getActiveRecord();
+     * if (!record) return;
+     * const file = fileInputElement.files?.[0];
+     * if (!file) return;
+     * const blob = await plugin.data.uploadBlob(file);
+     * if (!blob) return;
+     * const lineItem = await record.createLineItem(null, null, 'image', null, null);
+     * if (lineItem) await lineItem.setBlob(blob);
+     *
+     * @example
+     * // Same for a file attachment (generic file line item):
+     * const lineItem = await record.createLineItem(null, null, 'file', null, null);
+     * if (lineItem) await lineItem.setBlob(blob);
+     */
+    setBlob(blob: PluginBlob): Promise<boolean>;
+    /**
+     * For image and file line items, get the file displayed on this line item.
+     * @returns {Promise<PluginBlob?>}
+     */
+    getBlob(): Promise<PluginBlob | null>;
+    /**
+     * @public
+     * Set the heading size (1-6) for heading line items.
+     *
+     * @param {number} size - Heading size from 1 (largest) to 6 (smallest)
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setHeadingSize(size: number): Promise<boolean>;
+    /**
+     * @public
+     * Get the heading size for heading line items.
+     *
+     * @returns {number} Heading size (1-6), defaults to 1
+     */
+    public getHeadingSize(): number;
+    /**
+     * @public
+     * Set the syntax highlighting language for code blocks.
+     *
+     * @param {PluginHighlightLanguage|null} language - Language identifier, or null to remove highlighting
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setHighlightLanguage(language: PluginHighlightLanguage | null): Promise<boolean>;
+    /**
+     * @public
+     * Get the syntax highlighting language for code blocks.
+     *
+     * @returns {PluginHighlightLanguage|null} Language identifier or null
+     */
+    public getHighlightLanguage(): PluginHighlightLanguage | null;
+    /**
+     * @public
+     * Set the block style.
+     *
+     * @param {PluginBlockStyle|null} style - Block style, or null to remove
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setBlockStyle(style: PluginBlockStyle | null): Promise<boolean>;
+    /**
+     * @public
+     * Get the block style.
+     *
+     * @returns {PluginBlockStyle|null} Block style or null
+     */
+    public getBlockStyle(): PluginBlockStyle | null;
+    /**
+     * @public
+     * Set the icon for a heading line item.
+     *
+     * @param {string|null} icon - Icon identifier (e.g. "ti-star"), or null to remove
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setIcon(icon: string | null): Promise<boolean>;
+    /**
+     * @public
+     * Get the icon for a line item.
+     *
+     * @returns {string|null} Icon identifier or null
+     */
+    public getIcon(): string | null;
+    /**
+     * @public
+     * Set the link style for heading line items.
+     *
+     * @param {PluginLinkStyle|null} style - Link style
+     * @returns {Promise<boolean>} true if successful
+     */
+    public setLinkStyle(style: PluginLinkStyle | null): Promise<boolean>;
+    /**
+     * @public
+     * Get the link style.
+     *
+     * @returns {PluginLinkStyle|null} Link style or null
+     */
+    public getLinkStyle(): PluginLinkStyle | null;
+    /**
+     * @public
+     * Delete this line item from the record.
+     *
+     * Note: If the item has children, the deletion will be rejected by the backend.
+     * Delete children first before deleting their parent.
+     *
+     * @returns {Promise<boolean>} true if deleted, false if deletion failed (e.g., has children)
+     */
+    public delete(): Promise<boolean>;
+    /**
+     * @public
+     * Move this line item to a new location.
+     *
+     * @param {PluginLineItem|PluginRecord|null} newParent - PluginLineItem to move under that item,
+     *   PluginRecord to move as a top-level item in that record, or null to keep the same parent
+     * @param {PluginLineItem|null} afterItem - insert after this item, or null to insert as first child
+     * @returns {Promise<PluginLineItem|null>} the moved item with updated data, or null if move failed
+     *
+     * @example
+     * // Move item to be the first child of another item
+     * const movedItem = await lineItem.move(parentItem, null);
+     *
+     * @example
+     * // Move item to be after a sibling (reorder within same parent)
+     * const movedItem = await lineItem.move(null, siblingItem);
+     *
+     * @example
+     * // Move item to be a top-level item in a record
+     * const movedItem = await lineItem.move(record, null);
+     */
+    public move(newParent: PluginLineItem | PluginRecord | null, afterItem: PluginLineItem | null): Promise<PluginLineItem | null>;
+    #private;
+}
+
+type PluginLineItemProps = {
+    [key: string]: any;
+};
+
+/**
+ * @typedef {PLUGIN_LINE_ITEM_SEGMENT_TYPE_TEXT|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_BOLD|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_ITALIC|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_CODE|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_LINK|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_ICON|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_HASHTAG|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_MENTION|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_REF|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_LINKOBJ|
+     * PLUGIN_LINE_ITEM_SEGMENT_TYPE_DATETIME} PluginLineItemSegmentType
+ */
+/**
+ * Each line item can have multiple segments. Each segment is a piece of text with a type.
+ *
+ * Segment types and their expected `text` values:
+ *
+ *   "text"      - Plain text. Value: string.
+ *   "bold"      - Bold text. Value: string.
+ *   "italic"    - Italic text. Value: string.
+ *   "code"      - Inline code. Value: string.
+ *   "link"      - Bare URL (auto-detected). Value: URL string, e.g. "https://example.com".
+ *   "linkobj"   - Link with display title. Value: object { link: string, title: string }.
+ *   "hashtag"   - Hash tag (auto-detected). Value: string including the #, e.g. "#project".
+ *   "icon"      - Inline icon. Value: icon class name string, e.g. "ti-star", "ti-heart".
+ *   "mention"   - Mention of a user. Value: user GUID string.
+ *   "ref"       - Inline reference to a record, collection view, or other line item. Must be an object
+ *                 { guid: string } with optional display options {viewId: string, title: string} . When 'title'
+ *                 is provided, it will be used as the display text of the reference. When 'viewId' is provided
+ *                 and 'guid' belongs to a collection, the reference will point to a specific View of the collection.
+ *
+ *   "datetime"  - Inline date/time tag. Value: DateTimeValue object (DateTime.value()),
+ *                 or a date string which is parsed automatically:
+ *                   Date only: "today", "tomorrow", "next monday", "aug 13", "apr 2025", "2026-02-14"
+ *                   Date+time: "monday 3pm", "tomorrow 15:30", "aug 13 9:30am"
+ *                   Time only: "3pm", "15:30"
+ *                   Relative: "3 days from now", "2 weeks ago", "last friday", "-3 days"
+ *                   Weeks: "week 10", "week 4 of 2023"
+ *                   Quarters: "Q1 2024", "Q3", "2025 Q2"
+ *                   Ranges: "monday to friday", "1pm to 3pm"
+ *
+ */
+class PluginLineItemSegment {
+    /**
+     * @param {string} type
+     * @param {string} text
+     */
+    constructor(type: string, text: string);
+    /** @type {PluginLineItemSegmentType} */
+    type: PluginLineItemSegmentType;
+    /** @type {string|object} */
+    text: string | object;
+}
+
+type PluginLineItemSegmentType = "text" | "bold" | "italic" | "code" | "link" | "icon" | "hashtag" | "mention" | "ref" | "linkobj" | "datetime";
+
+type PluginLineItemType = "app" | "gplugin" | "document" | "empty" | "error" | "br" | "text" | "task" | "heading" | "ascii-banner" | "quote" | "block" | "olist" | "ulist" | "image" | "file" | "ref" | "table" | "table-cell" | "table-row" | "transclusion" | "query" | "media";
+
+type PluginLinkStyle = "flames" | "outline" | "link-icons" | "link-buttons";
+
+type PluginNavigationButton = {
+    /**
+     * Remove the navigation button
+     */
+    remove: () => void;
+    /**
+     * Update the text label
+     */
+    setLabel: (newLabel: string) => void;
+    /**
+     * Update the HTML label
+     */
+    setHtmlLabel: (newHtmlLabel: string | null) => void;
+    /**
+     * Update the icon
+     */
+    setIcon: (newIcon: IconName | null) => void;
+    /**
+     * Update the tooltip text
+     */
+    setTooltip: (newTooltip: string) => void;
+    /**
+     * Update whether to only show when expanded
+     */
+    setOnlyWhenExpanded: (onlyWhenExpanded: boolean) => void;
+};
+
+/**
+ * PluginPanel provides a higher-level abstraction for interacting with panels
+ * without exposing all the underlying Panel functionality.
+ */
+class PluginPanel {
+
+
+    /**
+     * @public
+     * Get the panel's unique identifier
+     *
+     * @returns {string}
+     */
+    public getId(): string;
+    /**
+     * @public
+     * Get the panel's type
+     *
+     * @returns {string}
+     */
+    public getType(): string;
+    /**
+     * @public
+     * Check if this panel is currently focused/active
+     *
+     * @returns {boolean}
+     */
+    public isActive(): boolean;
+    /**
+     * @public
+     * Check if this panel is a sidebar panel
+     *
+     * @returns {boolean}
+     */
+    public isSidebar(): boolean;
+    /**
+     * @public
+     * Get the panel's navigation state
+     *
+     * @returns {Object}
+     */
+    public getNavigation(): any;
+    /**
+     * @public
+     * Navigate the panel to a new location.
+     *
+     * There are two ways to use this method:
+     *
+     * **Direct navigation** — provide `type` and `rootId` to navigate to a known location:
+     * ```
+     * panel.navigateTo({
+     *     type: NAVIGATION_PANEL_EDITOR,
+     *     rootId: someDocumentGuid,
+     *     workspaceGuid: wsguid,
+     * });
+     * ```
+     *
+     * **Item-based navigation** — provide `itemGuid` to automatically resolve the item's
+     * document root and navigate there. Combine with `highlight: true` to scroll to and
+     * highlight the item within its parent document:
+     * ```
+     * panel.navigateTo({
+     *     itemGuid: someLineItemGuid,
+     *     highlight: true,
+     * });
+     * ```
+     *
+     * When `itemGuid` is provided, `type`, `rootId`, and `workspaceGuid` are resolved
+     * automatically. Returns a Promise<boolean> in this case (true if the item was found).
+     *
+     * @param {Object} navigation Navigation state
+     * @param {string} navigation.type Panel type - use NAVIGATION_PANEL_EDITOR ('edit_panel') to open
+     *   a record in the editor, or NAVIGATION_PANEL_COLLECTIONVIEW ('overview') to open a collection view
+     * @param {string?} navigation.rootId Root ID (e.g. the record guid for NAVIGATION_PANEL_EDITOR)
+     * @param {string?} navigation.subId Sub ID
+     * @param {string?} navigation.workspaceGuid Workspace GUID
+     * @param {Object} [navigation.state] Additional state
+     * @param {string} [navigation.itemGuid] A line item guid to navigate to. Automatically resolves
+     *   the document root. When provided, `type`, `rootId`, and `workspaceGuid` are determined automatically.
+     * @param {boolean} [navigation.highlight] When true (and `itemGuid` is provided), scrolls to and
+     *   highlights the item within its parent document. Defaults to false.
+     * @returns {void | Promise<boolean>} void for direct navigation; Promise<boolean> when itemGuid is used
+     */
+    public navigateTo(navigation: {
+        type: string;
+        rootId: string | null;
+        subId: string | null;
+        workspaceGuid: string | null;
+        state?: any;
+        itemGuid?: string;
+        highlight?: boolean;
+    }): void | Promise<boolean>;
+    /**
+     * @public
+     * Navigate to a custom panel you registered using registerCustomPanel()
+     *
+     * @param {string} myPanelId - the ID of the panel to navigate to
+     */
+    public navigateToCustomType(myPanelId: string): void;
+    /**
+     * @public
+     * Navigate this panel to a user's journal page for a specific date.
+     *
+     * @param {PluginUser} user - The user whose journal to open
+     * @param {DateTime} [date] - The date (defaults to today)
+     * @returns {boolean} - True if navigation was successful, false if no journal plugin is active
+     *
+     * @example
+     * // Navigate to a user's journal for today
+     * const user = this.data.getActiveUsers()[0];
+     * const panel = this.ui.getActivePanel();
+     * panel.navigateToJournal(user, DateTime.parseDateTimeString('today'));
+     *
+     * @example
+     * // Navigate to journal for last monday
+     * panel.navigateToJournal(user, DateTime.parseDateTimeString('last monday'));
+     */
+    public navigateToJournal(user: PluginUser, date?: DateTime): boolean;
+    /**
+     * @public
+     * Get the panel's DOM element
+     *
+     * @returns {HTMLElement?}
+     */
+    public getElement(): HTMLElement | null;
+    /**
+     * @public
+     * Set the panel's title in the titlebar
+     *
+     * @param {string} title
+     */
+    public setTitle(title: string): void;
+    /**
+     * @public
+     * Get the active record loaded in this panel (if any)
+     *
+     * @returns {PluginRecord?}
+     */
+    public getActiveRecord(): PluginRecord | null;
+    /**
+     * @public
+     * Get the active collection loaded in this panel (if any)
+     *
+     * @returns {PluginCollectionAPI?}
+     */
+    public getActiveCollection(): PluginCollectionAPI | null;
+    #private;
+}
+
+type PluginPanelNavigation = {
+    /**
+     * Panel type
+     */
+    type: string;
+    /**
+     * Root ID
+     */
+    rootId: string | null;
+    /**
+     * Sub ID
+     */
+    subId: string | null;
+    /**
+     * Workspace GUID
+     */
+    workspaceGuid: string | null;
+    /**
+     * Additional state
+     */
+    state?: any;
+};
+
+/**
+ * @public
+ * An API for a plugin to manage (other) plugins
+ */
+class PluginPluginAPIBase {
+
+    /** @type {string} */
+    guid: string;
+    /**
+     * @public
+     * Preview a plugin with the given code, CSS, and config. Hot reloads the plugin without saving.
+     *
+     * @param {PluginConfiguration} conf
+     * @param {string} code
+     * @param {string} css
+     * @param {boolean} showEditDialog - if true, open the code editor for the user to review
+     */
+    public previewPlugin(conf: PluginConfiguration, code: string, css: string, showEditDialog: boolean): void;
+    trashPlugin(): void;
+    untrashPlugin(): void;
+    /**
+     * @public
+     * Discard preview and reload the plugin with the saved config and code.
+     */
+    public discardPreviewPlugin(): void;
+    /**
+     * @public
+     * Save and reload the plugin with the given code and config.
+     *
+     * Plugin is reloaded immediately; resolves when backend persistence completes.
+     * After save UI updates and component reloads (when necessary) are scheduled but not
+     * yet processed.
+     *
+     * @param {PluginConfiguration} conf
+     * @param {string} code
+     * @returns {Promise<boolean>}
+     */
+    public savePlugin(conf: PluginConfiguration, code: string): Promise<boolean>;
+    /**
+     * @public
+     * Save only the plugin configuration (leave code and CSS unchanged)
+     *
+     * @param {PluginConfiguration} conf
+     * @returns {Promise<boolean>}
+     */
+    public saveConfiguration(conf: PluginConfiguration): Promise<boolean>;
+    /**
+     * @public
+     * Save only the plugin code (leave configuration and CSS unchanged)
+     *
+     * @param {string} code
+     * @returns {Promise<boolean>}
+     */
+    public saveCode(code: string): Promise<boolean>;
+    /**
+     * @public
+     * Save only the plugin CSS (leave code and configuration unchanged)
+     *
+     * @param {string} css
+     * @returns {Promise<boolean>}
+     */
+    public saveCSS(css: string): Promise<boolean>;
+
+
+    #private;
+}
+
+/**
+ * @typedef {CollectionViewType} PluginViewType
+ * Available view types for plugins.
+ */
+/**
+ * @typedef {SORT_DIR_ASC|SORT_DIR_DESC} PluginSortDir
+ */
+class PluginProperty {
+
+    /** @type {string} */
+    name: string;
+    /** @type {string} */
+    guid: string;
+    /**
+     * @public
+     * Get the first property value as a number, or null if a number value is not available.
+     * For multi-value properties, only returns the first value.
+     * Use numbers() to get all values, or record.numbers(name) as a shorthand.
+     *
+     * @returns {number?}
+     */
+    public number(): number | null;
+    /**
+     * @public
+     * Get all property values as numbers, filtering out any that can't be parsed.
+     * For single-value properties, returns a one-element array (or empty if no value).
+     *
+     * @returns {number[]}
+     */
+    public numbers(): number[];
+    /**
+     * @public
+     * Get the first property value as a string, or null if a string value is not available.
+     * For multi-value properties, only returns the first value.
+     * Use texts() to get all values, or record.texts(name) as a shorthand.
+     *
+     * @returns {string?}
+     */
+    public text(): string | null;
+    /**
+     * @public
+     * Get all property values as strings.
+     * For single-value properties, returns a one-element array (or empty if no value).
+     *
+     * @returns {string[]}
+     */
+    public texts(): string[];
+    /**
+     * @public
+     * Get the "id" of the first selected choice (enum) value, or null if a choice value is not available.
+     * For multi-value choice properties, only returns the first selected value.
+     * Use selectedChoices() to get all selected choice IDs, or record.selectedChoices(name) as a shorthand.
+     *
+     * @returns {string?}
+     */
+    public choice(): string | null;
+    /**
+     * @public
+     * Get the label of the first selected choice (enum) value, or null if a choice value is not available.
+     * For multi-value choice properties, only returns the first selected label.
+     * Use selectedChoiceLabels() to get all selected choice labels.
+     *
+     * @example
+     * const statusLabel = record.prop("Status").choiceLabel(); // "In Progress"
+     * const statusId = record.prop("Status").choice(); // "in_progress"
+     *
+     * @returns {string?}
+     */
+    public choiceLabel(): string | null;
+    /**
+     * @public
+     * Get all selected choice IDs for a multi-value choice property.
+     * For single-value choice properties, returns a one-element array (or empty if no value).
+     * Returns empty array if this is not a choice-type property.
+     *
+     * @returns {string[]}
+     */
+    public selectedChoices(): string[];
+    /**
+     * @public
+     * Get all selected choice labels for a multi-value choice property.
+     * For single-value choice properties, returns a one-element array (or empty if no value).
+     * Returns empty array if this is not a choice-type property.
+     *
+     * @returns {string[]}
+     */
+    public selectedChoiceLabels(): string[];
+    /**
+     * @public
+     * Get all available choices for this choice/enum property field.
+     * Returns null if this is not a choice-type property.
+     *
+     * @returns {PropertyChoiceOption[]?}
+     */
+    public choices(): PropertyChoiceOption[] | null;
+    /**
+     * @public
+     * Set the property value. Accepts a single value or an array of values for multi-value
+     * properties. When an array is passed, all existing values are replaced. When a single
+     * value is passed on a multi-value property, it replaces all values with that one value.
+     *
+     * @param {any} v - a single value, or an array of values for multi-value properties
+     */
+    public set(v: any): void;
+    /**
+     * @public
+     * Add a value to a multi-value property. If the property does not support multiple values,
+     * this behaves like set().
+     *
+     * @param {any} v
+     */
+    public addValue(v: any): void;
+    /**
+     * @public
+     * Remove a value from a multi-value property by strict equality.
+     * For single-value properties, clears the value if it matches.
+     *
+     * @param {any} v
+     * @returns {boolean} true if a value was removed
+     */
+    public removeValue(v: any): boolean;
+    /**
+     * @public
+     * Remove a value from a multi-value property by index (0-based).
+     *
+     * @param {number} index
+     * @returns {boolean} true if a value was removed
+     */
+    public removeValueAt(index: number): boolean;
+    /**
+     * @public
+     * Shortcut for setting a date value from a JavaScript Date object.
+     * Accepts a single Date or an array of Dates for multi-value properties.
+     *
+     * @param {Date|Date[]} date
+     */
+    public setFromDate(date: Date | Date[]): void;
+    /**
+     * @public
+     * If this property is of type Choice, set the value to the choice/status/enum with the given
+     * choiceName. Accepts a single choice name or an array of choice names for multi-value properties.
+     *
+     * @example
+     * record.prop("Status").setChoice("Pending");
+     * record.prop("Categories").setChoice(["Bug", "Priority"]);
+     *
+     * @param {string|string[]} choiceName
+     * @returns {boolean} true if the choice(s) were set, false if the property is not a choice or a choice was not found
+     */
+    public setChoice(choiceName: string | string[]): boolean;
+    /**
+     * @public
+     * Add a choice value to a multi-value choice property.
+     *
+     * @param {string} choiceName - choice label or ID to add
+     * @returns {boolean} true if the choice was added
+     */
+    public addChoice(choiceName: string): boolean;
+    /**
+     * @public
+     * Remove a choice value from a multi-value choice property.
+     *
+     * @param {string} choiceName - choice label or ID to remove
+     * @returns {boolean} true if the choice was removed
+     */
+    public removeChoice(choiceName: string): boolean;
+    /**
+     * @public
+     * Get the first property value as a JavaScript Date object (in your browser's local timezone),
+     * or null if a datetime value is not available. For date ranges, returns the start date only.
+     * For multi-value properties, only returns the first value.
+     * Use dates() to get all values, or record.dates(name) as a shorthand.
+     *
+     * @returns {Date?}
+     */
+    public date(): Date | null;
+    /**
+     * @public
+     * Get all property values as JavaScript Date objects (in your browser's local timezone).
+     * For single-value properties, returns a one-element array (or empty if no value).
+     *
+     * @returns {Date[]}
+     */
+    public dates(): Date[];
+    /**
+     * @public
+     * Get the first property value as a DateTime object, or null if a datetime value is not available.
+     * For multi-value properties, only returns the first value.
+     * Use datetimes() to get all values, or record.datetimes(name) as a shorthand.
+     *
+     * @example
+     * const dt = record.prop("Due Date").datetime();
+     * if (dt) {
+     *     dt.setTime(null); // Remove time, keep date only
+     *     record.prop("Due Date").set(dt.value());
+     * }
+     *
+     * @returns {DateTime?}
+     */
+    public datetime(): DateTime | null;
+    /**
+     * @public
+     * Get all property values as DateTime objects.
+     * For single-value properties, returns a one-element array (or empty if no value).
+     *
+     * @returns {DateTime[]}
+     */
+    public datetimes(): DateTime[];
+    /**
+     * @public
+     * Get the first property value as a PropertyFileValue, or null if this property is not a file-type property
+     * (PROP_TYPE_FILE, PROP_TYPE_IMAGE, or PROP_TYPE_BANNER).
+     * For multi-value properties, only returns the first value.
+     * Use files() to get all values.
+     *
+     * @returns {PropertyFileValue?}
+     */
+    public file(): PropertyFileValue | null;
+    /**
+     * @public
+     * Get all property values as PropertyFileValue objects.
+     * For single-value file properties, returns a one-element array (or empty if no value).
+     * Returns empty array if this is not a file-type property.
+     *
+     * @returns {PropertyFileValue[]}
+     */
+    public files(): PropertyFileValue[];
+    /**
+     * @public
+     * Get the first property value as a PluginUser, or null if this is not a user-type property
+     * or no user is set.
+     * For multi-value properties, only returns the first value.
+     * Use users() to get all values, or record.users(name) as a shorthand.
+     *
+     * @example
+     * const assignee = record.prop("Assignee").user();
+     * if (assignee) console.log(assignee.getDisplayName());
+     *
+     * @returns {PluginUser?}
+     */
+    public user(): PluginUser | null;
+    /**
+     * @public
+     * Get all property values as PluginUser objects.
+     * For single-value properties, returns a one-element array (or empty if no value).
+     * Returns empty array if this is not a user-type property.
+     * Unresolvable user GUIDs (e.g. removed users) are silently skipped.
+     *
+     * @example
+     * const reviewers = record.prop("Reviewers").users();
+     * reviewers.forEach(u => console.log(u.getDisplayName()));
+     *
+     * @returns {PluginUser[]}
+     */
+    public users(): PluginUser[];
+    /**
+     * @public
+     * Get the first property value as a linked PluginRecord, or null if this is not a record-type
+     * property or no record is linked.
+     * For multi-value properties, only returns the first value.
+     * Use linkedRecords() to get all values, or record.linkedRecords(name) as a shorthand.
+     *
+     * @example
+     * const parent = record.prop("Parent Task").linkedRecord();
+     * if (parent) console.log(parent.getName());
+     *
+     * @returns {PluginRecord?}
+     */
+    public linkedRecord(): PluginRecord | null;
+    /**
+     * @public
+     * Get all property values as linked PluginRecord objects.
+     * For single-value properties, returns a one-element array (or empty if no value).
+     * Returns empty array if this is not a record-type property.
+     * Unresolvable record GUIDs (e.g. deleted records) are silently skipped.
+     *
+     * @example
+     * const deps = record.prop("Dependencies").linkedRecords();
+     * deps.forEach(r => console.log(r.getName()));
+     *
+     * @returns {PluginRecord[]}
+     */
+    public linkedRecords(): PluginRecord[];
+    /**
+     * @public
+     * Get the PluginBlob for this file property, or null if no blob GUID is set (in the case of a default
+     * banner value, for example).
+     * Only works for file-type properties (PROP_TYPE_FILE, PROP_TYPE_IMAGE, or PROP_TYPE_BANNER).
+     *
+     * @returns {Promise<PluginBlob?>}
+     */
+    public fileBlob(): Promise<PluginBlob | null>;
+    /**
+     * @public
+     * Set a file property value from a PluginBlob. Only works for file-type properties
+     * (PROP_TYPE_FILE, PROP_TYPE_IMAGE, or PROP_TYPE_BANNER).
+     *
+     * @param {PluginBlob} blob
+     * @returns {boolean} true if set successfully, false otherwise
+     */
+    public setFileFromBlob(blob: PluginBlob): boolean;
+    /**
+     * @public
+     * Set a file property value directly from a PropertyFileValue. Only works for file-type properties
+     * (PROP_TYPE_FILE, PROP_TYPE_IMAGE, or PROP_TYPE_BANNER).
+     *
+     * @param {PropertyFileValue} fileValue
+     * @returns {boolean} true if set successfully, false otherwise
+     */
+    public setFile(fileValue: PropertyFileValue): boolean;
+    /**
+     * @public
+     * Returns true if this property field supports multiple values.
+     *
+     * @returns {boolean}
+     */
+    public isMultiValue(): boolean;
+    /**
+     * @public
+     * Get the number of values currently set on this property.
+     * Returns 0 if no value is set.
+     *
+     * @returns {number}
+     */
+    public count(): number;
+    /**
+     * @public
+     * Get all raw property values as an array. Returns an empty array if no value is set.
+     * For single-value properties, returns a one-element array.
+     *
+     * @returns {any[]}
+     */
+    public values(): any[];
+    #private;
+}
+
+class PluginRecord {
+
+    /** @type {string} */
+    guid: string;
+
+
+    /**
+     * @public
+     * Get a raw markdown string for this record, including properties as YAML frontmatter. Please note that the
+     * resulting Markdown is still fairly basic, and not all items or segments are converted (and some features don't
+     * have a good Markdown equivalent), so don't use this for purposes such as backup (use the Export feature for that
+     * instead). Images/Attachments are not included either.
+     *
+     * This is still experimental and may change in the future. Pass {experimental: true} as parameter to use it.
+     *
+     * @example
+     * const result = await record.getAsMarkdown({experimental: true});
+     * if (result) {
+     *     console.log(result.filename, result.content);
+     * }
+     *
+     * @param {{experimental?: boolean}} options
+     * @returns {Promise<{filename: string, content: string}?>} - null on error
+     */
+    public getAsMarkdown(options?: {
+        experimental?: boolean;
+    }): Promise<{
+        filename: string;
+        content: string;
+    } | null>;
+    /**
+     * @public
+     * Get all records that reference this record or any of its line items.
+     *
+     * See also {@link getBackReferences} for a detailed variant that includes
+     * the reference kind, source line item guid, and property id.
+     *
+     * @returns {Promise<PluginRecord[]>}
+     */
+    public getBackReferenceRecords(): Promise<PluginRecord[]>;
+    /**
+     * @public
+     * Get detailed information about all references pointing to this record or any of its line items.
+     * Each result includes the source record, the kind of reference ("line" or "property"),
+     * and either the source line item guid (for line references) or the property id (for property references).
+     *
+     * See also {@link getBackReferenceRecords} for a simpler variant that only returns the
+     * source records without reference details.
+     *
+     * @returns {Promise<PluginBackReference[]>}
+     */
+    public getBackReferences(): Promise<PluginBackReference[]>;
+    /**
+     * @public
+     * Move this record to a different collection.
+     *
+     * Both the source and target collections must support creating items (e.g. you can't move
+     * records from or to a Journal). Custom properties from the source collection are exported
+     * and stored on the record so they're not lost after the move.
+     *
+     * @param {PluginCollectionAPI} targetCollection - The collection to move this record to
+     * @returns {Promise<boolean>} true if the move succeeded, false otherwise
+     *
+     * @example
+     * const collections = await this.data.getAllCollections();
+     * const target = collections.find(c => c.getName() === 'Archive');
+     * if (target) {
+     *     const success = await record.moveToCollection(target);
+     * }
+     */
+    public moveToCollection(targetCollection: PluginCollectionAPI): Promise<boolean>;
+    /**
+     * @public
+     * Get the name (title) of the record
+     *
+     * @returns {string}
+     */
+    public getName(): string;
+    /**
+     * @public
+     * Get the icon for this record.
+     *
+     * @param {boolean} [includeCollectionIcon=false] - If true, returns the collection's icon when the record doesn't have its own icon set.
+     * @returns {string|null} Icon class string (e.g. "ti-star"), or null when no icon is set and includeCollectionIcon is false
+     */
+    public getIcon(includeCollectionIcon?: boolean): string | null;
+    /**
+     * @public
+     * Get the creation date of this record.
+     *
+     * @returns {Date|null}
+     */
+    public getCreatedAt(): Date | null;
+    /**
+     * @public
+     * Get the last-updated date of this record.
+     *
+     * @returns {Date|null}
+     */
+    public getUpdatedAt(): Date | null;
+    /**
+     * @public
+     * If this record is a journal page, returns the user and date it represents.
+     * Returns null if this record does not belong to a journal plugin.
+     *
+     * This is the inverse of `PluginCollectionAPI.getJournalRecord(user, date)`.
+     *
+     * @example
+     * const details = record.getJournalDetails();
+     * if (details) {
+     *     console.log(`Journal page for ${details.userGuid} on ${details.date}`);
+     * }
+     *
+     * @returns {{userGuid: string, date: Date}?}
+     */
+    public getJournalDetails(): {
+        userGuid: string;
+        date: Date;
+    } | null;
+    /**
+     * @public
+     * Get the banner image for this record as a PropertyFileValue.
+     * Falls back to the collection banner, then the app-wide default banner.
+     *
+     * @returns {PropertyFileValue?}
+     */
+    public getBanner(): PropertyFileValue | null;
+    /**
+     * @public
+     * Set the banner image for this record from a PluginBlob.
+     *
+     * @param {PluginBlob} blob
+     * @returns {boolean} true if set successfully
+     */
+    public setBannerFromBlob(blob: PluginBlob): boolean;
+    /**
+     * @public
+     * Set the banner image for this record from a PropertyFileValue.
+     *
+     * @param {PropertyFileValue} fileValue
+     */
+    public setBanner(fileValue: PropertyFileValue): void;
+    /**
+     * @public
+     * Create a new line item in this record
+     *
+     * @param {PluginLineItem?} parentItem - null: use record as parent
+     * @param {PluginLineItem?} afterItem
+     * @param {PluginLineItemType} type
+     * @param {PluginLineItemSegment[]?} segments
+     * @param {PluginLineItemProps?} properties
+     * @returns {Promise<PluginLineItem?>} - returns new line item, null when failed
+     */
+    public createLineItem(parentItem: PluginLineItem | null, afterItem: PluginLineItem | null, type: PluginLineItemType, segments: PluginLineItemSegment[] | null, properties: PluginLineItemProps | null): Promise<PluginLineItem | null>;
+    /**
+     * @public
+     * Insert content parsed from an HTML string into this record.
+     *
+     * @param {string} html - HTML string to parse and insert
+     * @param {PluginLineItem?} parentItem - null: use record as parent
+     * @param {PluginLineItem?} afterItem - null: insert as first child
+     * @returns {Promise<boolean>} true if all operations succeeded
+     */
+    public insertFromHTML(html: string, parentItem: PluginLineItem | null, afterItem: PluginLineItem | null): Promise<boolean>;
+    /**
+     * @public
+     * Insert content parsed from a Markdown string into this record.
+     *
+     * @param {string} markdown - Markdown string to parse and insert
+     * @param {PluginLineItem?} parentItem - null: use record as parent
+     * @param {PluginLineItem?} afterItem - null: insert as first child
+     * @returns {Promise<boolean>} true if all operations succeeded
+     */
+    public insertFromMarkdown(markdown: string, parentItem: PluginLineItem | null, afterItem: PluginLineItem | null): Promise<boolean>;
+    /**
+     * @public
+     * Insert content from a plain text string into this record.
+     *
+     * @param {string} text - Plain text string to parse and insert
+     * @param {PluginLineItem?} parentItem - null: use record as parent
+     * @param {PluginLineItem?} afterItem - null: insert as first child
+     * @returns {Promise<boolean>} true if all operations succeeded
+     */
+    public insertFromPlainText(text: string, parentItem: PluginLineItem | null, afterItem: PluginLineItem | null): Promise<boolean>;
+    /**
+     * @public
+     * Get all line items in this record's document tree
+     *
+     * @param {boolean} expandReferences - if true (default), also include line items which are reference/transclusion targets of items in the tree
+     * @returns {Promise<PluginLineItem[]>}
+     */
+    public getLineItems(expandReferences?: boolean): Promise<PluginLineItem[]>;
+    /**
+     * @public
+     * Get properties of the record. If viewName is provided, only return properties that are visible
+     * in that view. If no viewName is provided, return all active properties of the record.
+     *
+     * @param {string?} viewName
+     * @returns {PluginProperty[]}
+     */
+    public getProperties(viewName: string | null): PluginProperty[];
+    /**
+     * @public
+     * Get all properties of the record, including properties that are not visible in any view.
+     *
+     * @returns {PluginProperty[]}
+     */
+    public getAllProperties(): PluginProperty[];
+    /**
+     * @public
+     * Get a PluginProperty for the given property name or guid.
+     * Use this to access multi-value methods like .numbers(), .texts(), .selectedChoices(),
+     * .addValue(), .removeValue(), etc.
+     *
+     * @example
+     * // Single value access
+     * const price = record.prop("Price").number();
+     * // Multi-value access
+     * const tags = record.prop("Tags").selectedChoices();
+     * record.prop("Tags").addChoice("Bug");
+     *
+     * @param {string} name - Name or guid of the Property (first tries to find by name, then by guid)
+     * @returns {PluginProperty?}
+     */
+    public prop(name: string): PluginProperty | null;
+    /**
+     * @public
+     * Shorthand for prop(name).number(). Returns the first value only.
+     * For multi-value properties, use record.numbers(name) instead.
+     *
+     * @example
+     * const price = record.number("Price");
+     *
+     * @param {string} name
+     * @returns {number?}
+     */
+    public number(name: string): number | null;
+    /**
+     * @public
+     * Shorthand for prop(name).date(). Returns the first value only.
+     * For multi-value properties, use record.dates(name) instead.
+     *
+     * @example
+     * const startDate = record.date("Start Date");
+     *
+     * @param {string} name
+     * @returns {Date?}
+     */
+    public date(name: string): Date | null;
+    /**
+     * @public
+     * Shorthand for prop(name).datetime(). Returns the first value only.
+     * For multi-value properties, use record.datetimes(name) instead.
+     *
+     * @example
+     * const dt = record.datetime("Due Date");
+     *
+     * @param {string} name
+     * @returns {DateTime?}
+     */
+    public datetime(name: string): DateTime | null;
+    /**
+     * @public
+     * Shorthand for prop(name).text(). Returns the first value only.
+     * For multi-value properties, use record.texts(name) instead.
+     *
+     * @example
+     * const name = record.text("Name");
+     *
+     * @param {string} name
+     * @returns {string?}
+     */
+    public text(name: string): string | null;
+    /**
+     * @public
+     * Shorthand for prop(name).choice(). Returns the first selected choice ID only.
+     * For multi-value choice properties, use record.selectedChoices(name) instead.
+     *
+     * @example
+     * const status = record.choice("Status");
+     *
+     * @param {string} name
+     * @returns {string?}
+     */
+    public choice(name: string): string | null;
+    /**
+     * @public
+     * Shorthand for prop(name).numbers(). Returns all values as numbers.
+     *
+     * @example
+     * const scores = record.numbers("Scores");
+     *
+     * @param {string} name
+     * @returns {number[]}
+     */
+    public numbers(name: string): number[];
+    /**
+     * @public
+     * Shorthand for prop(name).texts(). Returns all values as strings.
+     *
+     * @example
+     * const tags = record.texts("Tags");
+     *
+     * @param {string} name
+     * @returns {string[]}
+     */
+    public texts(name: string): string[];
+    /**
+     * @public
+     * Shorthand for prop(name).dates(). Returns all values as Date objects.
+     *
+     * @example
+     * const milestones = record.dates("Milestones");
+     *
+     * @param {string} name
+     * @returns {Date[]}
+     */
+    public dates(name: string): Date[];
+    /**
+     * @public
+     * Shorthand for prop(name).datetimes(). Returns all values as DateTime objects.
+     *
+     * @example
+     * const milestones = record.datetimes("Milestones");
+     *
+     * @param {string} name
+     * @returns {DateTime[]}
+     */
+    public datetimes(name: string): DateTime[];
+    /**
+     * @public
+     * Shorthand for prop(name).selectedChoices(). Returns all selected choice IDs.
+     *
+     * @example
+     * const labels = record.selectedChoices("Labels");
+     *
+     * @param {string} name
+     * @returns {string[]}
+     */
+    public selectedChoices(name: string): string[];
+    /**
+     * @public
+     * Shorthand for prop(name).user(). Returns the first linked user only.
+     * For multi-value properties, use record.users(name) instead.
+     *
+     * @example
+     * const assignee = record.user("Assignee");
+     *
+     * @param {string} name
+     * @returns {PluginUser?}
+     */
+    public user(name: string): PluginUser | null;
+    /**
+     * @public
+     * Shorthand for prop(name).users(). Returns all linked users.
+     *
+     * @example
+     * const reviewers = record.users("Reviewers");
+     *
+     * @param {string} name
+     * @returns {PluginUser[]}
+     */
+    public users(name: string): PluginUser[];
+    /**
+     * @public
+     * Shorthand for prop(name).linkedRecord(). Returns the first linked record only.
+     * For multi-value properties, use record.linkedRecords(name) instead.
+     *
+     * @example
+     * const parent = record.linkedRecord("Parent Task");
+     *
+     * @param {string} name
+     * @returns {PluginRecord?}
+     */
+    public linkedRecord(name: string): PluginRecord | null;
+    /**
+     * @public
+     * Shorthand for prop(name).linkedRecords(). Returns all linked records.
+     *
+     * @example
+     * const deps = record.linkedRecords("Dependencies");
+     *
+     * @param {string} name
+     * @returns {PluginRecord[]}
+     */
+    public linkedRecords(name: string): PluginRecord[];
+    /**
+     * @public
+     * Get the parent page of this record (the page it is a sub-page of).
+     * Returns null if sub-pages are not enabled for this collection,
+     * if no parent is set, or if the parent chain contains a cycle.
+     *
+     * @returns {PluginRecord|null}
+     */
+    public getSubPageOf(): PluginRecord | null;
+    /**
+     * @public
+     * Set the parent page of this record, making it a sub-page of another page.
+     * Pass null to move the record to the root level (remove parent).
+     * Returns false if sub-pages are not enabled, the target doesn't exist,
+     * the target is not in the same collection, or setting the parent would
+     * create a cycle.
+     *
+     * @param {string|null} parentGuid - guid of the parent record, or null to remove
+     * @returns {boolean}
+     */
+    public setSubPageOf(parentGuid: string | null): boolean;
+    /**
+     * @public
+     * Move this record to the trash.
+     */
+    public trash(): void;
+    #private;
+}
+
+type PluginSearchResult = {
+    /**
+     * - Error message if search failed, empty string otherwise
+     */
+    error: string;
+    /**
+     * - Records (pages/documents) that matched the query
+     */
+    records: PluginRecord[];
+    /**
+     * - Individual line items that matched the query
+     */
+    lines: PluginLineItem[];
+};
+
+type PluginSideBarItem = {
+    /**
+     * Remove the sidebar item
+     */
+    remove: () => void;
+    /**
+     * Update the label text
+     */
+    setLabel: (newLabel: string) => void;
+    /**
+     * Update the icon
+     */
+    setIcon: (newIcon: IconName | null) => void;
+    /**
+     * Update the tooltip text
+     */
+    setTooltip: (newTooltip: string) => void;
+};
+
+type PluginSidebarNode = {
+    /**
+     * - display label
+     */
+    label: string;
+    /**
+     * - icon class name (e.g. "ti-file")
+     */
+    icon?: string;
+    /**
+     * - if set, clicking navigates to this record (unless onOpen is provided)
+     */
+    recordGuid?: string;
+    /**
+     * - custom click/confirm handler. When provided, takes priority over recordGuid navigation.
+     */
+    onOpen?: () => void;
+    /**
+     * - nested children (creates expandable tree node)
+     */
+    children?: PluginSidebarNode[];
+    /**
+     * - if true, renders as a divider/group heading (non-clickable)
+     */
+    isDivider?: boolean;
+    /**
+     * - custom render callback: receives the sidebar item's DOM node after creation
+     */
+    renderContent?: (node: HTMLElement) => void;
+    /**
+     * - cleanup callback called when the node is removed from the sidebar
+     */
+    onDestroy?: () => void;
+};
+
+type PluginSortDir = "asc" | "desc";
+
+type PluginStatusBarItem = {
+    remove: () => void;
+    setHtmlLabel: (newHtmlLabel: string) => void;
+    setLabel: (newLabel: string) => void;
+    setIcon: (newIcon: IconName) => void;
+    setTooltip: (newTip: string) => void;
+    hide: () => void;
+    show: () => void;
+    getElement: () => HTMLElement | null;
+};
+
+type PluginTaskStatus = "none" | "done" | "started" | "waiting" | "billable" | "important" | "discuss" | "alert" | "starred" | "canceled";
+
+type PluginToaster = {
+    /**
+     * The toaster element
+     */
+    element: HTMLElement;
+    destroy: () => void;
+    bounce: () => void;
+    center: () => void;
+};
+
+class PluginUser {
+
+    /** @type {string} */
+    guid: string;
+    /** @type {string} */
+    workspaceGuid: string;
+    /**
+     * @public
+     * Get the user's avatar image as base64 data
+     *
+     * @returns {string?}
+     */
+    public getAvatar(): string | null;
+    isAdmin(): any;
+    isOwner(): any;
+    getLastSeenSeconds(): any;
+    getDisplayName(): any;
+    /**
+     * @public
+     * Get the user's email address
+     *
+     * @returns {string?}
+     */
+    public getEmail(): string | null;
+    #private;
+}
+
+class PluginViewConfig {
+
+    /** @type {string} */
+    name: string;
+    /** @type {string} */
+    guid: string;
+    /** @type {PluginViewType} */
+    type: PluginViewType;
+    /**
+     * @public
+     * Get the search query filter for this view, if any.
+     *
+     * @returns {string?}
+     */
+    public getQuery(): string | null;
+    /**
+     * @public
+     * Get the source collections for this view (dynamic collections only).
+     * Returns an array of PluginCollectionAPI objects for the source collections.
+     * Returns an empty array for non-dynamic collections.
+     * If the view is configured to pull from all collections, returns all
+     * regular collections in the workspace.
+     *
+     * @returns {PluginCollectionAPI[]}
+     */
+    public getSourceCollections(): PluginCollectionAPI[];
+    /**
+     * @public
+     * Get the sort property for this view, if any.
+     *
+     * @returns {{name: string, id: string}?}
+     */
+    public getSortProperty(): {
+        name: string;
+        id: string;
+    } | null;
+    /**
+     * @public
+     * Get the sort direction for this view.
+     *
+     * @returns {import("./plugin_api.js").PluginSortDir}
+     */
+    public getSortDirection(): PluginSortDir;
+    #private;
+}
+
+class PluginViewContext {
+
+    /** @type {string} - unique local ID for the instance of this view (i.e. stable while the view is open in the UI) */
+    instanceId: string;
+
+    /**
+     * @public
+     * Whether the view has been destroyed. Call this if you're doing any async work in any of your hooks before
+     * continuing interacting with the view.
+     *
+     * @example
+     * onRefresh: async ({records}) => {
+     *     await viewClass.doSomethingAsync();
+     *     if (viewClass.isDestroyed()) return; // view has been destroyed while async work was in progress
+     *     viewCtx.getElement().innerHTML = "Result of something async";
+     * }
+     *
+     * @returns {boolean}
+     */
+    public isDestroyed(): boolean;
+    /**
+     * @public
+     * The view is initially sorted by the given field as given in the view config.
+     * fieldName is the name or ID of the field as shown in the view config.
+     *
+     * @example
+     * this.views.setSortColumn("Name", "asc");
+     *
+     * @param {string} fieldName
+     * @param {PluginSortDir} dir
+     */
+    public setSortColumn(fieldName: string, dir: PluginSortDir): void;
+    /**
+     * @public
+     * Get the element of the view.
+     *
+     * @returns {HTMLElement}
+     */
+    public getElement(): HTMLElement;
+    /**
+     * @public
+     * Get IDs of all properties that are visible in the view.
+     *
+     * @returns {string[]}
+     */
+    public getVisiblePropertyIds(): string[];
+    /**
+     * @public
+     * Get all records in the view.
+     *
+     * @returns {PluginRecord[]}
+     */
+    public getAllRecords(): PluginRecord[];
+    /**
+     * @public
+     * Get the record with the given guid.
+     *
+     * @param {string} guid
+     * @returns {PluginRecord?}
+     */
+    public getRecord(guid: string): PluginRecord | null;
+    /**
+     * @public
+     * Use wide layout with no margins and full-width content area.
+     */
+    public makeWideLayout(): void;
+    /**
+     * @public
+     * Use normal layout with margins and fixed-width content area.
+     */
+    public makeNormalLayout(): void;
+    /**
+     * @public
+     * Whether the view supports creating new records.
+     *
+     * @returns {boolean}
+     */
+    public supportsCreateRecord(): boolean;
+    /**
+     * @public
+     * Get the name we give records in this collection, e.g. a "Note" or a "Contact"
+     *
+     * @returns {string}
+     */
+    public getRecordTypeName(): string;
+    /**
+     * @public
+     * Create a new record in the view. When record is created, the view will refresh and
+     * your onRefresh() hook will be called.
+     *
+     * @returns {string?} - guid of the new record, or null if creation failed
+     */
+    public createRecord(): string | null;
+    /**
+     * @public
+     * Return whether the view is viewing an old version of the collection (View History is active).
+     * We shouldn't allow the user to make changes to the collection when this is the case.
+     *
+     * @returns {boolean}
+     */
+    public isViewingOldVersion(): boolean;
+    /**
+     * @public
+     * Open the record in this panel.
+     *
+     * @param {string} guid
+     */
+    public openRecordInThisPanel(guid: string): void;
+    /**
+     * @public
+     * Open the record in another panel.
+     *
+     * @param {string} guid
+     */
+    public openRecordInOtherPanel(guid: string): void;
+    #private;
+}
+
+/**
+ * Available view types for plugins.
+ */
+type PluginViewType = CollectionViewType;
+
+type PluginWebSocketMessage = {
+    /**
+     * - Custom message type defined by plugin
+     */
+    type: string;
+    /**
+     * - Message payload
+     */
+    data: any;
+    /**
+     * - Sender's user GUID (set automatically on receive)
+     */
+    fromUserGuid?: string;
+    /**
+     * - Sender's plugin GUID (set automatically on receive)
+     */
+    fromPluginGuid?: string;
+};
+
+type PluginWebSocketMessageCallback = (msg: PluginWebSocketMessage) => void;
+
+type PROP_TYPE = typeof PROP_TYPE_CHOICE | typeof PROP_TYPE_NUMBER | typeof PROP_TYPE_PLAINTEXT | typeof PROP_TYPE_FILE | typeof PROP_TYPE_IMAGE | typeof PROP_TYPE_URL | typeof PROP_TYPE_RECORD | typeof PROP_TYPE_USER | typeof PROP_TYPE_HASHTAG | typeof PROP_TYPE_DATETIME | typeof PROP_TYPE_BANNER | typeof PROP_TYPE_DYNAMIC;
+
+const PROP_TYPE_BANNER: "banner";
+
+/**
+ * @typedef {COLLECTION_PRIMARY_ACTION_OVERVIEW|COLLECTION_PRIMARY_ACTION_RECORD|COLLECTION_PRIMARY_ACTION_FIRST} CollectionPrimaryAction
+ */
+const PROP_TYPE_CHOICE: "choice";
+
+const PROP_TYPE_DATETIME: "datetime";
+
+const PROP_TYPE_DYNAMIC: "dynamic";
+
+const PROP_TYPE_FILE: "file";
+
+const PROP_TYPE_HASHTAG: "hashtag";
+
+const PROP_TYPE_IMAGE: "image";
+
+const PROP_TYPE_NUMBER: "number";
+
+const PROP_TYPE_PLAINTEXT: "text";
+
+const PROP_TYPE_RECORD: "record";
+
+const PROP_TYPE_URL: "url";
+
+const PROP_TYPE_USER: "user";
+
+/**
+ * Properties API for Collection Plugins
+ */
+class PropertiesAPI {
+
+    /**
+     * @public
+     *
+     * Sets a formula function that computes the value of a Property.
+     * The formula function will be called whenever the Property needs to be recalculated.
+     *
+     * @example
+     * this.properties.formula("Total", ({record, prop}) => {
+     *     const quantity = record.number("Hours");
+     *     const unitPrice = record.number("Amount");
+     *     if (quantity === null || unitPrice === null) {
+     *         return null;
+     *     }
+     *     return quantity * unitPrice;
+     * });
+     *
+     * @param {string} name - Name or guid of the Property (first tries to find by name, then by guid)
+     * @param {({record, prop}: {record: PluginRecord, prop: PluginProperty}) => any} fn - Function that computes the Property value
+     */
+    public formula(name: string, fn: ({ record, prop }: {
+        record: PluginRecord;
+        prop: PluginProperty;
+    }) => any): void;
+    /**
+     * @public
+     *
+     * Sets a custom sort function for a property.
+     *
+     * @param {string} name - Name or guid of the Property (first tries to find by name, then by guid)
+     * @param {({records, propertyId, dir}: {records: PluginRecord[], propertyId: string, dir: PluginSortDir}) => PluginRecord[]} fn - Function that computes the Property value
+     */
+    public customSort(name: string, fn: ({ records, propertyId, dir }: {
+        records: PluginRecord[];
+        propertyId: string;
+        dir: PluginSortDir;
+    }) => PluginRecord[]): void;
+    /**
+     * @public
+     *
+     * Sets a function that overrides the default rendering of the property value.
+     *
+     * @param {string} name - Name or guid of the Property (first tries to find by name, then by guid)
+     * @param {({record, prop, view}: {record: PluginRecord?, prop: PluginProperty, view: PluginViewConfig?}) => HTMLElement?} fn - Function that renders the Property value. null: render as default.
+     */
+    public render(name: string, fn: ({ record, prop, view }: {
+        record: PluginRecord | null;
+        prop: PluginProperty;
+        view: PluginViewConfig | null;
+    }) => HTMLElement | null): void;
+    /**
+     * @public
+     *
+     * Sets a function that populates the choices shown in a choice/enum dropdown.
+     * The function will be called when the dropdown is opened for editing.
+     * You can filter, add, or completely replace the default choices.
+     *
+     * @example
+     * this.properties.populateChoices("Status", ({record, prop, defaultChoices}) => {
+     *     // Filter: hide choices with a star icon
+     *     const filtered = defaultChoices.filter(c => c.icon != 'ti-star');
+     *
+     *     // Add: include a dynamic option
+     *     return [...filtered, {id: "custom", label: "Custom Option", icon: "ti-star", active: true, color: "0"}];
+     * });
+     *
+     * @param {string} name - Name or guid of the Property (first tries to find by name, then by guid)
+     * @param {({record, prop, defaultChoices}: {record: PluginRecord?, prop: PluginProperty, defaultChoices: PropertyChoiceOption[]}) => PropertyChoiceOption[]} fn - Function that returns the choices to show in the dropdown
+     */
+    public populateChoices(name: string, fn: ({ record, prop, defaultChoices }: {
+        record: PluginRecord | null;
+        prop: PluginProperty;
+        defaultChoices: PropertyChoiceOption[];
+    }) => PropertyChoiceOption[]): void;
+    #private;
+}
+
+type PropertyChoiceOption = {
+    /**
+     * - some unique ID (within this Plugin). cannot be modified ("renaming" id is seen as new property column)
+     */
+    id: string;
+    label: string;
+    icon: string;
+    json?: {
+        avatar?: string | null;
+        displayName?: string | null;
+    };
+    /**
+     * - color value, always a number for now. see ENUM_COLORS
+     */
+    color: string;
+    /**
+     * - set to false to "delete"/"archive" a choice while keeping its details
+     */
+    active: boolean;
+};
+
+type PropertyField = {
+    /**
+     * - some unique ID (within this Plugin). cannot be modified ("renaming" id is seen as new property column)
+     */
+    id: string;
+    label: string;
+    type: any;
+    icon: string;
+    /**
+     * - set to false to "delete"/"archive" a property while keeping all its data
+     */
+    active: boolean;
+    /**
+     * - can user add multiple values for this property?
+     */
+    many: boolean;
+    /**
+     * // Type-specific options
+     */
+    read_only: boolean;
+    choices?: PropertyChoiceOption[];
+    min_length?: number;
+    /**
+     * - Format for PROP_TYPE_NUMBER: 'plain', 'formatted', or currency code ('USD', 'EUR', 'GBP', 'JPY', 'CAD', 'AUD', 'CHF', 'CNY', 'SEK', 'NOK'). Defaults to 'formatted'.
+     */
+    number_format?: string;
+    /**
+     * - For PROP_TYPE_RECORD: optional collection guid to filter records by. If set, only records from that collection are shown. If the collection doesn't exist or is trashed, no records are shown.
+     */
+    filter_colguid?: string;
+};
+
+type PropertyFileValue = {
+    /**
+     * - filename
+     */
+    name: string;
+    /**
+     * - in case of failed upload
+     *
+     * - the data for this file:
+     */
+    error: string | null;
+    /**
+     * - file data is in Blob with this GUID, OR
+     */
+    guid: string | null;
+    /**
+     * - file is an image, data is encoded in this string (used for small data, like a gradient image), OR
+     */
+    imgData: string | null;
+    /**
+     * - file is an image, data is at this URL
+     */
+    imgUrl: string | null;
+    /**
+     * - file is an image, rendered by this built-in class
+     */
+    imgClass: string | null;
+    /**
+     * - if this is a compressed/resized version of an image, this points to the original
+     */
+    original?: PropertyFileValue;
+};
+
+const SIDEBAR_DISPLAY_CUSTOM: "custom";
+
+const SIDEBAR_DISPLAY_DATE_CREATED: "date_created";
+
+const SIDEBAR_DISPLAY_DATE_MODIFIED: "date_modified";
+
+const SIDEBAR_DISPLAY_GROUP_BY_FIELD: "group_by_field";
+
+const SIDEBAR_DISPLAY_HIDDEN_COMPLETELY: "hidden_completely";
+
+const SIDEBAR_DISPLAY_HIDDEN_RECORDS: "hidden_records";
+
+const SIDEBAR_DISPLAY_LIST: "list";
+
+const SIDEBAR_DISPLAY_NEST_BY_FIELD: "nest_by_field";
+
+const SIDEBAR_DISPLAY_NESTED: "nested";
+
+type SidebarDisplayMode = typeof SIDEBAR_DISPLAY_HIDDEN_RECORDS | typeof SIDEBAR_DISPLAY_HIDDEN_COMPLETELY | typeof SIDEBAR_DISPLAY_LIST | typeof SIDEBAR_DISPLAY_NESTED | typeof SIDEBAR_DISPLAY_DATE_CREATED | typeof SIDEBAR_DISPLAY_DATE_MODIFIED | typeof SIDEBAR_DISPLAY_GROUP_BY_FIELD | typeof SIDEBAR_DISPLAY_NEST_BY_FIELD | typeof SIDEBAR_DISPLAY_CUSTOM;
+
+type SidebarDisplaySettings = {
+    mode: SidebarDisplayMode;
+    /**
+     * - field to group/nest by (for group_by_field and nest_by_field modes)
+     */
+    field_id?: string;
+};
+
+const SORT_DIR_ASC: "asc";
+
+const SORT_DIR_DESC: "desc";
+
+/**
+ * @typedef {Object} PluginSidebarNode@typedef {Object} PluginSidebarNode
+ * @property {string} label - display label
+ * @property {string} [icon] - icon class name (e.g. "ti-file")
+ * @property {string} [recordGuid] - if set, clicking navigates to this record (unless onOpen is provided)
+ * @property {() => void} [onOpen] - custom click/confirm handler. When provided, takes priority over recordGuid navigation.
+ * @property {PluginSidebarNode[]} [children] - nested children (creates expandable tree node)
+ * @property {boolean} [isDivider] - if true, renders as a divider/group heading (non-clickable)
+ * @property {(node: HTMLElement) => void} [renderContent] - custom render callback: receives the sidebar item's DOM node after creation
+ * @property {() => void} [onDestroy] - cleanup callback called when the node is removed from the sidebar
+ */
+class UIAPI {
+
+    /**
+     * @public
+     * @param {string} rawHtml
+     * @returns {HTMLElement} */
+    public $html(rawHtml: string): HTMLElement;
+    /**
+     * @public
+     * @param {string} name
+     * @returns {string}
+     */
+    public getSpinnerHtml(name: string): string;
+    /**
+     * @public
+     * @param {Element|HTMLElement} element
+     */
+    public bounce(element: Element | HTMLElement): void;
+    /**
+     * @public
+     *
+     * @param {string} html
+     * @returns {string} - HTML string with all special characters escaped
+     */
+    public htmlEscape(html: string): string;
+    /**
+     * @public
+     *
+     * Creates a button.
+     *
+     * @param {Object} options Button options
+     * @param {IconName} options.icon Icon class name (e.g. "ti-bug")
+     * @param {string} options.label Text label to display in the button
+     * @param {() => void} [options.onClick] Click handler function (when adding many buttons, consider a delegate function instead)
+     * @returns {HTMLElement} The created button
+     */
+    public createButton(options: {
+        icon: IconName;
+        label: string;
+        onClick?: () => void;
+    }): HTMLElement;
+    /**
+     * @public
+     *
+     * Creates an icon.
+     *
+     * @param {IconName} iconName
+     * @returns {HTMLElement} The created icon
+     */
+    public createIcon(iconName: IconName): HTMLElement;
+    /**
+     * @public
+     *
+     * Creates a dropdown menu with autocomplete options.
+     *
+     * @param {Object} options Dropdown options
+     * @param {HTMLElement} options.attachedTo Element to attach the dropdown to
+     * @param {PluginDropdownOption[]} options.options Array of dropdown options
+     * @param {string} [options.inputPlaceholder] Placeholder text for the search input (default: "Search...")
+     * @param {number} [options.width] Width of the dropdown in pixels (default: 300)
+     * @param {number} [options.extraMarginY] Additional vertical margin from the attached element
+     * @returns {PluginDropdown} The created dropdown
+     */
+    public createDropdown(options: {
+        attachedTo: HTMLElement;
+        options: PluginDropdownOption[];
+        inputPlaceholder?: string;
+        width?: number;
+        extraMarginY?: number;
+    }): PluginDropdown;
+    /**
+     * @public
+     * Add global CSS to the app.
+     * Use [data-plugin="Name"] to scope styles to a collection.
+     *
+     * @param {string} CSSString
+     */
+    public injectCSS(CSSString: string): void;
+    /**
+     * @public
+     *
+     * Adds a sidebar item to the app's sidebar
+     * @param {Object} options Sidebar item options
+     * @param {string} options.label Text label to display in the sidebar item
+     * @param {IconName} options.icon Icon class name (e.g. "ti-bug")
+     * @param {string} [options.tooltip] Tooltip text shown on hover
+     * @param {() => void} [options.onClick] Click handler function
+     * @returns {PluginSideBarItem} The created sidebar item
+     */
+    public addSidebarItem({ label, icon, tooltip, onClick }: {
+        label: string;
+        icon: IconName;
+        tooltip?: string;
+        onClick?: () => void;
+    }): PluginSideBarItem;
+    /**
+     * @public
+     *
+     * Adds a global widget to the sidebar (above collections). Use this for
+     * widgets that are not tied to a specific collection. For collection-scoped
+     * sidebar widgets, use CollectionPlugin.setSidebarWidget() instead.
+     *
+     * The render function receives a container element and a context with a
+     * refresh callback. Return a cleanup function from render to be called
+     * when the widget is removed or re-rendered.
+     *
+     * @example
+     * const widget = this.ui.addSidebarWidget((container, {refresh}) => {
+     *     container.innerHTML = '<div>My widget</div>';
+     *     return () => { /* cleanup *\/ };
+     * });
+     * // Later: widget.remove() or widget.refresh()
+     *
+     * @param {(container: HTMLElement, context: {refresh: () => void}) => (() => void) | void} render
+     * @returns {{remove: () => void, refresh: () => void}}
+     */
+    public addSidebarWidget(render: (container: HTMLElement, context: {
+        refresh: () => void;
+    }) => (() => void) | void): {
+        remove: () => void;
+        refresh: () => void;
+    };
+    /**
+     * @public
+     *
+     * Adds a status bar item to the app's status bar
+     * @param {Object} options Status bar item options
+     * @param {string} [options.label] Text label to display in the status bar item
+     * @param {string?} [options.htmlLabel] If non-null, render this HTML as-is instead of the text label
+     * @param {IconName} [options.icon] Icon class name (e.g. "ti-bug")
+     * @param {string} [options.tooltip] Tooltip text shown on hover
+     * @param {() => void} [options.onClick] Click handler function
+     * @returns {PluginStatusBarItem} The created status bar item
+     */
+    public addStatusBarItem({ label, htmlLabel, icon, tooltip, onClick }: {
+        label?: string;
+        htmlLabel?: string | null;
+        icon?: IconName;
+        tooltip?: string;
+        onClick?: () => void;
+    }): PluginStatusBarItem;
+    /**
+     * @public
+     *
+     * Shows a toaster notification to the user
+     * @param {Object} options Toaster options
+     * @param {string} options.title Title text for the toaster
+     * @param {string} [options.message] Message text (will be rendered as text)
+     * @param {string} [options.messageHTML] Message HTML (will be rendered as HTML, used instead of message if provided)
+     * @param {boolean} options.dismissible Show "X" close button in top right corner
+     * @param {number} [options.autoDestroyTime] Automatically fade out toaster after this many milliseconds
+     * @param {string} [options.primaryLabel] Label for primary button
+     * @param {string} [options.secondaryLabel] Label for secondary button
+     * @param {string} [options.cancelLabel] Label for cancel link
+     * @param {() => void} [options.onPrimary] Primary button click handler
+     * @param {() => void} [options.onSecondary] Secondary button click handler
+     * @param {() => void} [options.onCancel] Cancel link click handler
+     * @param {HTMLElement} [options.targetElement] Optional element to position the toaster relative to
+     * @returns {PluginToaster} The created toaster
+     */
+    public addToaster(options: {
+        title: string;
+        message?: string;
+        messageHTML?: string;
+        dismissible: boolean;
+        autoDestroyTime?: number;
+        primaryLabel?: string;
+        secondaryLabel?: string;
+        cancelLabel?: string;
+        onPrimary?: () => void;
+        onSecondary?: () => void;
+        onCancel?: () => void;
+        targetElement?: HTMLElement;
+    }): PluginToaster;
+    /**
+     * @public
+     *
+     * Adds a command to the global command palette
+     * @param {Object} options Command palette command options
+     * @param {string} options.label Text label to display in the command palette
+     * @param {IconName} options.icon Icon class name (e.g. "ti-bug")
+     * @param {() => void} options.onSelected Function to call when the command is selected
+     * @returns {PluginCommandPaletteCommand} The created command palette command
+     */
+    public addCommandPaletteCommand({ label, icon, onSelected }: {
+        label: string;
+        icon: IconName;
+        onSelected: () => void;
+    }): PluginCommandPaletteCommand;
+    /**
+     * @public
+     *
+     * Get the currently active/focused panel
+     *
+     * @returns {PluginPanel?} The active panel, or null if no panel is active
+     */
+    public getActivePanel(): PluginPanel | null;
+    /**
+     * @public
+     *
+     * Set the specified panel as the active/focused panel
+     *
+     * @param {PluginPanel} panel The panel to activate
+     */
+    public setActivePanel(panel: PluginPanel): void;
+    /**
+     * @public
+     *
+     * Close the specified panel
+     *
+     * @param {PluginPanel} panel The panel to close
+     */
+    public closePanel(panel: PluginPanel): void;
+    /**
+     * @public
+     *
+     * Get all currently open panels
+     *
+     * @returns {PluginPanel[]} Array of all open panels
+     */
+    public getPanels(): PluginPanel[];
+    /**
+     * @public
+     * Register a new panel type for this plugin
+     *
+     * Navigate to this custom panel by calling:
+     *
+     * this.ui.registerCustomPanelType("my-panel-id", (panel) => {
+     * 	panel.getElement().innerHTML = "Hello World";
+     * });
+     *
+     * const newPanel = await this.ui.createPanel()
+     * newPanel.navigateToCustomType("my-panel-id");
+     *
+     * @param {string} myPanelId - some unique ID (unique within this plugin) used to identify this panel type
+     * @param {(panel: PluginPanel) => void} fn - callback to be called when the panel is loaded
+     */
+    public registerCustomPanelType(myPanelId: string, fn: (panel: PluginPanel) => void): void;
+    /**
+     * @public
+     *
+     * Create a new panel
+     *
+     * @param {Object} [options] Panel creation options
+     * @param {PluginPanel} [options.afterPanel] Create the new panel after this panel
+     * @returns {Promise<PluginPanel?>} The created panel, or null if creation failed
+     */
+    public createPanel(options?: {
+        afterPanel?: PluginPanel;
+    }): Promise<PluginPanel | null>;
+    /**
+     * @public
+     * Register a vibe so it appears in Focus Mode / Vibe Shift. Call the returned function to unregister, or it is
+     * unregistered automatically when the plugin is destroyed.
+     *
+     * You must provide the CSS for your vibe via injectCSS. When a vibe is active, the <html>
+     * tag (document.documentElement), has class "vibe-shift" plus your vibeClass (e.g. "vibe-my-calm").
+     * Target selectors like `.vibe-shift.vibe-my-calm` or `html.vibe-shift.vibe-my-calm`.
+     *
+     * @param {Object} vibe
+     * @param {string} vibe.theme - theme ID from getThemes() (e.g. "thymer-dark-neon-noir")
+     * @param {string} vibe.vibeClass - CSS class added to the layout (e.g. "vibe-my-calm")
+     * @param {string} vibe.label - display name in the vibe picker
+     * @param {""|"empty"|"banner"|"animated"} vibe.cat - category to list vibe under: "empty" (very minimalistic),
+     * "banner" (image or wallpaper based), or "animated" (like a video or animation)
+     * @param {() => void} [vibe.onApplied] - optional callback when this vibe is applied
+     * @returns {() => void} call to unregister this vibe
+     *
+     * @example
+     * // Register a custom "Calm" vibe and inject its styles. The vibe appears in the
+     * // Focus Mode / Vibe Shift picker. CSS targets .vibe-shift plus your vibeClass.
+     * this.ui.injectCSS(`
+     *   .vibe-shift.vibe-my-calm .panel.has-focus {
+     *     background: linear-gradient(180deg, #1a1a2e 0%, #16213e 100%);
+     *   }
+     *   html.vibe-shift.vibe-my-calm .panel.has-focus::before {
+     *     display: none;
+     *   }
+     * `);
+     * this.ui.registerVibe({
+     *   theme: 'thymer-dark-neon-noir',
+     *   vibeClass: 'vibe-my-calm',
+     *   label: 'Calm',
+     *   cat: 'empty',
+     * });
+     */
+    public registerVibe(vibe: {
+        theme: string;
+        vibeClass: string;
+        label: string;
+        cat: "" | "empty" | "banner" | "animated";
+        onApplied?: () => void;
+    }): () => void;
+    /**
+     * @public
+     * List all available themes (built-in plus any from custom theme CSS).
+     * @returns {{id: string, name: string, appearance: 'light'|'dark'}[]}
+     */
+    public getThemes(): {
+        id: string;
+        name: string;
+        appearance: "light" | "dark";
+    }[];
+    /**
+     * @public
+     * Get the current theme configuration (light/dark slot ids and appearance).
+     * @returns {import("../../shared/types.js").ThemeConfig?}
+     */
+    public getCurrentTheme(): any | null;
+    /**
+     * @public
+     * Set the current theme by theme ID (e.g. "thymer-dark-neon-noir"). Saves for the active user when logged in.
+     * @param {string} themeId - theme id or name from getThemes()
+     * @returns {boolean} true if theme was found and applied
+     */
+    public setTheme(themeId: string): boolean;
+    #private;
+}
+
+/**
+ * Views API for Collection Plugins
+ */
+class ViewsAPI {
+
+    /**
+     * @public
+     * Get all views defined on this collection.
+     *
+     * @returns {PluginViewConfig[]}
+     */
+    public getAll(): PluginViewConfig[];
+    /**
+     * @public
+     * Get a view by name or guid.
+     *
+     * @param {string} nameOrGuid - Name or guid of the View
+     * @returns {PluginViewConfig?}
+     */
+    public getByName(nameOrGuid: string): PluginViewConfig | null;
+    /**
+     * @public
+     * Get all records for a view, with query filters applied and sorted using
+     * the view's sort settings.
+     *
+     * For dynamic collections this queries across source collections using the
+     * view's source_collections settings.
+     *
+     * @param {string} viewNameOrGuid - Name or guid of the View
+     * @returns {Promise<PluginRecord[]>}
+     */
+    public getAllRecordsInView(viewNameOrGuid: string): Promise<PluginRecord[]>;
+    /**
+     * @public
+     * Registers hooks for a custom view. The view must already exist in the plugin's JSON
+     * configuration with `"type": "custom"` before this method is called. This method attaches
+     * your rendering logic to that existing view.
+     *
+     * Two steps are required:
+     *
+     * 1. Add a view entry to your plugin's JSON configuration (via Edit as Code > Configuration,
+     *    or the Add View UI) with `"type": "custom"`:
+     *
+     *    ```json
+     *    { "id": "my_view", "label": "My View", "type": "custom", "shown": true }
+     *    ```
+     *
+     * 2. In your plugin's `onLoad()`, call `this.views.register()` with the matching label or ID:
+     *
+     *    ```js
+     *    this.views.register("My View", (viewCtx) => ({
+     *        onLoad: () => { ... },
+     *        onRefresh: ({records}) => { ... },
+     *        onDestroy: () => { ... },
+     *    }));
+     *    ```
+     *
+     * If no view with the given name or ID exists in the configuration, this method logs an
+     * error and does nothing.
+     *
+     * @param {string} viewName - Name or guid of the View (first tries to find by name, then by guid)
+     * @param {(viewContext: PluginViewContext) => {
+             *   onLoad: () => void,
+             *   onRefresh: ({records, invalidatedGuids}: {records: PluginRecord[], invalidatedGuids: Set<string>?}) => void | Promise<void>,
+             *   onPanelResize: () => void,
+             *   onDestroy: () => void,
+             *   onFocus: () => void,
+             *   onBlur: () => void,
+             *   onKeyboardNavigation: ({e}: {e: KeyboardEvent}) => void,
+             * }} createViewHooksFn -
+     * Function that returns view hook callbacks. onLoad is called before the first onRefresh. Tip: use closure scope to maintain state of your custom view.
+     *
+     * The `invalidatedGuids` parameter for `onRefresh()` indicates which records need to be re-rendered because they have been updated since the last onRefresh call:
+     *
+     * - `null`: All records need to be re-rendered (this happens on first `onRefresh` call)
+     * - Empty Set: No records have changed since last refresh
+     * - Set with GUIDs: Only records with those GUIDs need to be re-rendered
+     *
+     * You can use this parameter to optimize performance by only updating DOM nodes for records that have actually changed.
+     * For example, maintain a cache of DOM nodes keyed by record GUID and only rebuild nodes for invalidated records.
+     */
+    public register(viewName: string, createViewHooksFn: (viewContext: PluginViewContext) => {
+        onLoad: () => void;
+        onRefresh: ({ records, invalidatedGuids }: {
+            records: PluginRecord[];
+            invalidatedGuids: Set<string> | null;
+        }) => void | Promise<void>;
+        onPanelResize: () => void;
+        onDestroy: () => void;
+        onFocus: () => void;
+        onBlur: () => void;
+        onKeyboardNavigation: ({ e }: {
+            e: KeyboardEvent;
+        }) => void;
+    }): void;
+    /**
+     * @public
+     * Sets a function that overrides the default rendering of a board card by modifying the passed 'element' node.
+     * Only triggered when the board card is dirty and needs to be re-rendered.
+     *
+     * @example
+     * this.views.afterRenderBoardCard("Board", ({record, view, element}) => {
+     *     element.innerHTML += "<b>Hello World " + view.guid + "</b>";
+     * });
+     *
+     * @param {string?} viewName - Name or guid of the View (first tries to find by name, then by guid); null: for all views in collection
+     * @param {({record, view, element, columnElement, viewContext}: {record: PluginRecord, view: PluginViewConfig, element: HTMLElement, columnElement: HTMLElement, viewContext: PluginViewContext}) => void} fn - Function that renders the board card by making changes to 'element'
+     */
+    public afterRenderBoardCard(viewName: string | null, fn: ({ record, view, element, columnElement, viewContext }: {
+        record: PluginRecord;
+        view: PluginViewConfig;
+        element: HTMLElement;
+        columnElement: HTMLElement;
+        viewContext: PluginViewContext;
+    }) => void): void;
+    /**
+     * @public
+     * Sets a function that overrides the default rendering of a board column by modifying the passed 'columnElement' node.
+     *
+     * @param {string?} viewName - Name or guid of the View (first tries to find by name, then by guid); null: for all views in collection
+     * @param {({view, columnElement, choiceId, viewContext}: {view: PluginViewConfig, columnElement: HTMLElement, choiceId: string?, viewContext: PluginViewContext}) => void} fn - Function that renders the board column by making changes to 'columnElement'
+     */
+    public afterRenderBoardColumn(viewName: string | null, fn: ({ view, columnElement, choiceId, viewContext }: {
+        view: PluginViewConfig;
+        columnElement: HTMLElement;
+        choiceId: string | null;
+        viewContext: PluginViewContext;
+    }) => void): void;
+    /**
+     * @public
+     * Sets a function that overrides the default rendering of a gallery card by modifying the passed 'element' node.
+     *
+     * @param {string?} viewName - Name or guid of the View (first tries to find by name, then by guid); null: for all views in collection
+     * @param {({record, view, element, viewContext}: {record: PluginRecord, view: PluginViewConfig, element: HTMLElement, viewContext: PluginViewContext}) => void} fn - Function that renders the gallery card by making changes to 'element'
+     */
+    public afterRenderGalleryCard(viewName: string | null, fn: ({ record, view, element, viewContext }: {
+        record: PluginRecord;
+        view: PluginViewConfig;
+        element: HTMLElement;
+        viewContext: PluginViewContext;
+    }) => void): void;
+    /**
+     * @public
+     * Sets a function that overrides the default rendering of a table cell by modifying the passed 'node' node.
+     *
+     * @param {string?} viewName - Name or guid of the View (first tries to find by name, then by guid); null: for all views in collection
+     * @param {({record, view, node, viewContext}: {record: PluginRecord, view: PluginViewConfig, prop: PluginProperty, node: HTMLElement, viewContext: PluginViewContext}) => void} fn - Function that renders the table cell by making changes to 'node'
+     */
+    public afterRenderTableCell(viewName: string | null, fn: ({ record, view, node, viewContext }: {
+        record: PluginRecord;
+        view: PluginViewConfig;
+        prop: PluginProperty;
+        node: HTMLElement;
+        viewContext: PluginViewContext;
+    }) => void): void;
+    /**
+     * @public
+     * Sets a function that overrides the default rendering of a calendar event by modifying the passed 'element' node.
+     *
+     * @param {string?} viewName - Name or guid of the View (first tries to find by name, then by guid); null: for all views in collection
+     * @param {({record, view, element, dateVal, viewContext}: {record: PluginRecord, view: PluginViewConfig, element: HTMLElement, dateVal: Date, viewContext: PluginViewContext}) => void} fn - Function that renders the calendar event by making changes to 'element'
+     */
+    public afterRenderCalendarEvent(viewName: string | null, fn: ({ record, view, element, dateVal, viewContext }: {
+        record: PluginRecord;
+        view: PluginViewConfig;
+        element: HTMLElement;
+        dateVal: Date;
+        viewContext: PluginViewContext;
+    }) => void): void;
+    #private;
+}
+
+/**
+ * @typedef {Object} PluginWebSocketMessage@typedef {Object} PluginWebSocketMessage
+ * @property {string} type - Custom message type defined by plugin
+ * @property {any} data - Message payload
+ * @property {string} [fromUserGuid] - Sender's user GUID (set automatically on receive)
+ * @property {string} [fromPluginGuid] - Sender's plugin GUID (set automatically on receive)
+ */
+/**
+ * @typedef {(msg: PluginWebSocketMessage) => void} PluginWebSocketMessageCallback
+ */
+/**
+ * WebSocket API for real-time messaging between clients in a workspace.
+ *
+ * Messages are broadcast to all clients in the workspace via WebSocket.
+ * This is fire-and-forget: no delivery guarantees, messages may be dropped
+ * by rate limiting, and offline clients won't receive messages.
+ *
+ * You can listen to websocket messages sent by other plugins. If you only want
+ * to handle messages from your own plugin, filter by `msg.fromPluginGuid === this.getGuid()`.
+ *
+ * @example
+ * // Send a message to all other clients
+ * this.ws.broadcast({
+ *     type: "announce",
+ *     data: { text: "Hello from my plugin!" }
+ * });
+ *
+ * // Send to specific users
+ * this.ws.send({
+ *     type: "toast",
+ *     data: { text: "Hello!" }
+ * }, this.data.getActiveUsers());
+ *
+ * // Listen for incoming messages. You also receive messages sent by other plugins!
+ * const unsubscribe = this.ws.onMessage((msg) => {
+ *     if (msg.fromPluginGuid === this.getGuid()) {
+ *         console.log(`Got ${msg.type} from ${msg.fromUserGuid}:`, msg.data);
+ *     } else {
+ *         console.log(`Another plugin sent ${msg.type}:`, msg.data);
+ *     }
+ * });
+ *
+ * // Later, to stop listening:
+ * unsubscribe();
+ */
+class WebSocketAPI {
+
+    /**
+     * @public
+     * Broadcast a message to all other clients in the workspace.
+     *
+     * This is fire-and-forget: no delivery guarantees.
+     *
+     * @param {PluginWebSocketMessage} message - Message to send
+     *
+     * @example
+     * this.ws.broadcast({
+     *     type: "announce",
+     *     data: { text: "Hello from my plugin!" }
+     * });
+     */
+    public broadcast(message: PluginWebSocketMessage): void;
+    /**
+     * @public
+     * Send a message, optionally to specific users.
+     *
+     * If toUserGuids is null or empty, broadcasts to all clients.
+     * If toUserGuids is provided, only those users will receive the message.
+     *
+     * @param {PluginWebSocketMessage} message - Message to send
+     * @param {PluginUser[]?} toUsers - Optional list of recipient users
+     *
+     * @example
+     * // Send to specific users
+     * const admins = this.data.getActiveUsers().filter(u => u.isAdmin());
+     * this.ws.send({
+     *     type: "dm",
+     *     data: { text: "Hello!" }
+     * }, admins);
+     */
+    public send(message: PluginWebSocketMessage, toUsers?: PluginUser[] | null): void;
+    /**
+     * @public
+     * Register a callback to receive incoming messages.
+     *
+     * Returns an unsubscribe function to stop listening.
+     * Listeners are automatically cleaned up when the plugin is unloaded.
+     *
+     * @param {PluginWebSocketMessageCallback} callback - Function called when a message is received
+     * @returns {() => void} Unsubscribe function
+     *
+     * @example
+     * const unsubscribe = this.ws.onMessage((msg) => {
+     *     if (msg.fromPluginGuid !== this.getGuid()) return;
+     *     if (msg.type === "announce") console.log(msg.data?.text);
+     * });
+     *
+     * // Later, to stop listening:
+     * unsubscribe();
+     */
+    public onMessage(callback: PluginWebSocketMessageCallback): () => void;
+    #private;
+}
+
+}
+export {}
