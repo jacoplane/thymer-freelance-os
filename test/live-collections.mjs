@@ -40,12 +40,12 @@ try {
                 panel.navigateTo({ type: 'overview', rootId: api.getGuid(), subId: view.id, workspaceGuid: plugin.getWorkspaceGuid() });
                 return { id: view.id, guids: query.records.map(record => record.guid).sort(), type: view.type };
             }, { collection, definition });
-            await page.waitForFunction(id => [...document.querySelectorAll('.panel')].at(-1)?.querySelector(`[data-view="${id}"].is-active`), { polling: 100, timeout: 10000 }, expected.id);
+            await page.waitForFunction(id => [...document.querySelectorAll('.panel:has(> .panel-scroller-y)')].at(-1)?.querySelector(`[data-view="${id}"].is-active`), { polling: 100, timeout: 10000 }, expected.id);
             await page.waitForFunction(({ guids, type }) => {
-                const panel = [...document.querySelectorAll('.panel')].at(-1);
-                const selector = type === 'board' ? '.kanban-card[data-guid]' : '.table-view-row[data-guid]';
+                const panel = [...document.querySelectorAll('.panel:has(> .panel-scroller-y)')].at(-1);
+                const selector = type === 'board' ? '.board-card[data-guid]' : '.table-view-row[data-guid]';
                 const actual = [...panel.querySelectorAll(selector)].map(row => row.dataset.guid).sort();
-                return JSON.stringify(actual) === JSON.stringify(guids) && (guids.length > 0 || panel.innerText.includes('No pages') || !!panel.querySelector('.board-view, .kanban-board'));
+                return JSON.stringify(actual) === JSON.stringify(guids) && (guids.length > 0 || panel.innerText.includes('No pages') || !!panel.querySelector('.board-column'));
             }, { polling: 100, timeout: 10000 }, expected);
             assert.equal(await page.evaluate(() => document.body.innerText.includes('Failed to load panel')), false);
             results.push({ collection, view: definition.label, records: expected.guids.length });

@@ -1,5 +1,9 @@
-const invoiceColumns = ['title', 'client', 'amount_chf', 'currency', 'payment_status', 'due', 'status', 'issued'];
+const invoiceColumns = ['title', 'amount_chf', 'payment_status', 'due', 'client', 'currency', 'status', 'issued'];
 const sentOutstanding = '@Invoices.status = "sent" @Invoices.payment_status != "paid"';
+const topLevel = '@Projects.parent_page = ""';
+const openProjects = '@Projects.status != "completed" @Projects.status != "archived" @Projects.status != "cancelled"';
+const projectColumns = ['title', 'status', 'priority', 'deadline', 'client'];
+const clientColumns = ['title', 'status', 'plan', 'monthly_chf', 'billing_cycle', 'contact', 'website'];
 export const VIEW_PLANS = {
     Invoices: [
         { key: 'register', label: 'Register', aliases: ['Register'], columns: invoiceColumns, query: '', sort: 'issued', direction: 'desc', icon: 'ti-table' },
@@ -8,6 +12,19 @@ export const VIEW_PLANS = {
         { key: 'review', label: 'To confirm', columns: invoiceColumns, query: '@Invoices.payment_status = "unconfirmed"', sort: 'due' },
         { key: 'to-send', label: 'To send', columns: invoiceColumns, query: '(@Invoices.status = "draft" OR @Invoices.status = "ready")', sort: 'issued' },
         { key: 'paid', label: 'Paid', columns: invoiceColumns, query: '@Invoices.payment_status = "paid"', sort: 'paid_date', direction: 'desc' }
+    ],
+    Projects: [
+        { key: 'register', label: 'Register', aliases: ['Table'], columns: projectColumns, query: topLevel, sort: 'title', icon: 'ti-table' },
+        { key: 'board', label: 'Board', type: 'board', columns: ['title', 'priority', 'deadline', 'client'], group: 'status', query: `${topLevel} ${openProjects}`, sort: 'priority', icon: 'ti-layout-kanban' },
+        { key: 'active', label: 'Active', columns: projectColumns, query: `${topLevel} (@Projects.status = "in_progress" OR @Projects.status = "in_review")`, sort: 'deadline' },
+        { key: 'deadlines', label: 'Due dates', columns: ['title', 'deadline', 'status', 'priority', 'client'], query: `${topLevel} ${openProjects} @Projects.deadline != ""`, sort: 'deadline', icon: 'ti-calendar-event' },
+        { key: 'overdue', label: 'Overdue', columns: projectColumns, query: `${topLevel} ${openProjects} @Projects.deadline < "today"`, sort: 'deadline' }
+    ],
+    Clients: [
+        { key: 'directory', label: 'Directory', columns: clientColumns, query: '', sort: 'title', icon: 'ti-table' },
+        { key: 'active', label: 'Active', columns: clientColumns, query: '@Clients.status = "active"', sort: 'title' },
+        { key: 'prospects', label: 'Prospects', columns: clientColumns, query: '@Clients.status = "prospect"', sort: 'title' },
+        { key: 'care-plans', label: 'Care plans', columns: ['title', 'monthly_chf', 'plan', 'billing_cycle', 'included_hours'], query: '@Clients.status = "active" @Clients.monthly_chf > 0', sort: 'monthly_chf', direction: 'desc' }
     ]
 };
 
@@ -28,11 +45,11 @@ export function planCollectionViews(collection, config) {
             ...existing,
             id: existing?.id || id,
             label: definition.label,
-            type: 'table', icon: definition.icon || 'ti-filter', shown: true, read_only: false,
+            type: definition.type || 'table', icon: definition.icon || 'ti-filter', shown: true, read_only: false,
             description: `Freelance OS: ${definition.label.toLowerCase()}.`,
             field_ids: definition.columns.map(fieldId),
             sort_field_id: fieldId(definition.sort), sort_dir: definition.direction || 'asc',
-            group_by_field_id: null, query: definition.query,
+            group_by_field_id: definition.group ? fieldId(definition.group) : null, query: definition.query,
             invalid_query: ''
         };
     });

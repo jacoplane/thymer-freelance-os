@@ -36,6 +36,28 @@ test('missing required fields abort the plan', () => {
     assert.throws(() => planCollectionViews('Invoices', { fields: [], views: [] }), /Missing Invoices field/);
 });
 
+test('project views scope to top-level pages and preserve calendar and outline views', () => {
+    const config = configFor('Projects');
+    config.views.push({ id: 'calendar', label: 'Deadlines', type: 'calendar' }, { id: 'outline', label: 'Outline', type: 'custom' });
+    const next = planCollectionViews('Projects', config);
+    assert.equal(next.views.find(v => v.label === 'Board').type, 'board');
+    assert.equal(next.views.find(v => v.label === 'Board').group_by_field_id, 'field-status');
+    assert.match(next.views.find(v => v.label === 'Active').query, /parent_page = ""/);
+    assert.match(next.views.find(v => v.label === 'Overdue').query, /status != "completed"/);
+    assert.equal(next.views.find(v => v.id === 'calendar').type, 'calendar');
+    assert.equal(next.views.find(v => v.id === 'outline').type, 'custom');
+    assert.deepEqual(planCollectionViews('Projects', next), next);
+});
+
+test('client care plans require active status and a positive monthly fee', () => {
+    const next = planCollectionViews('Clients', configFor('Clients'));
+    const view = next.views.find(v => v.label === 'Care plans');
+    assert.match(view.query, /status = "active"/);
+    assert.match(view.query, /monthly_chf > 0/);
+    assert.equal(next.views[0].label, 'Directory');
+    assert.deepEqual(planCollectionViews('Clients', next), next);
+});
+
 const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({Plugin, collectionViewId, COLL_GUIDS});`, { AppPlugin: class {} });
 

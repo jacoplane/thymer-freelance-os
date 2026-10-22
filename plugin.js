@@ -22,8 +22,8 @@ const COLL_GUIDS = {
 
 const COLLECTION_VIEWS = {
     Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
-    Projects: { all: 'Table', board: 'Board' },
-    Clients: { all: 'Directory' }
+    Projects: { all: 'Register', board: 'Board', in_progress: 'Active', overdue: 'Overdue', deadlines: 'Due dates' },
+    Clients: { all: 'Directory', active: 'Active', prospects: 'Prospects', 'care-plans': 'Care plans' }
 };
 
 function collectionViewId(guid, config, key = 'all') {
