@@ -5,7 +5,10 @@ const ARTIFACT_DIR = 'C:\\Users\\Jaap\\.gemini\\antigravity\\brain\\7f530962-cdc
 
 async function main() {
     try {
-        const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9444' });
+        const browser = await puppeteer.connect({
+            browserURL: 'http://127.0.0.1:9444',
+            defaultViewport: null
+        });
         console.log('SUCCESS: Connected to Thymer Desktop!');
         const pages = await browser.pages();
         console.log('Total pages:', pages.length);

@@ -47,15 +47,17 @@ const CHOICE_MAP = {
 function formatDatetime(val) {
     if (!val) return '';
     if (typeof val === 'string') {
-        if (val.includes('Object')) return '';
+        if (val.includes('Object') || val.includes('[object')) return '';
         return val;
     }
+    if (val instanceof Date) return val.toISOString().slice(0, 10);
     if (Array.isArray(val)) {
         if (val[0] === 'datetime') return formatDatetime(val[1]);
         if (val[1] && typeof val[1] === 'object') return formatDatetime(val[1]);
         return formatDatetime(val[0]);
     }
     if (typeof val === 'object') {
+        if (typeof val.toISOString === 'function') return val.toISOString().slice(0, 10);
         if (val.value !== undefined) return formatDatetime(val.value);
         if (val.formatted) return String(val.formatted);
         if (val.d && String(val.d).length === 8) {
@@ -63,7 +65,10 @@ function formatDatetime(val) {
             return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
         }
         if (val.text) return String(val.text);
-        if (val.date) return String(val.date);
+        if (val.date) return formatDatetime(val.date);
+        if (val.year && val.month && val.day) {
+            return `${val.year}-${String(val.month).padStart(2, '0')}-${String(val.day).padStart(2, '0')}`;
+        }
     }
     return '';
 }
@@ -134,6 +139,99 @@ function getProp(record, propName) {
     return '';
 }
 
+function cleanGuid(val) {
+    if (!val) return '';
+    if (typeof val === 'string') {
+        const trimmed = val.trim();
+        if (BASE32_GUID.test(trimmed)) return trimmed;
+        return '';
+    }
+    if (typeof val === 'object' && val !== null) {
+        if (val.guid) return cleanGuid(val.guid);
+    }
+    return '';
+}
+
+function getParentGuid(record) {
+    if (!record) return '';
+    try {
+        if (typeof record.getSubPageOf === 'function') {
+            const sub = record.getSubPageOf();
+            if (sub && sub.guid) return cleanGuid(sub.guid);
+        }
+        if (typeof record.linkedRecord === 'function') {
+            const lr = record.linkedRecord('parent_page') || record.linkedRecord('Sub-page of');
+            if (lr && lr.guid) return cleanGuid(lr.guid);
+        }
+        if (typeof record.prop === 'function') {
+            const p = record.prop('parent_page') || record.prop('Sub-page of');
+            if (p) {
+                if (typeof p.linkedRecord === 'function') {
+                    const lr = p.linkedRecord();
+                    if (lr && lr.guid) return cleanGuid(lr.guid);
+                }
+                if (typeof p.values === 'function') {
+                    const vals = p.values();
+                    if (Array.isArray(vals) && vals.length > 0) {
+                        const v = vals[0];
+                        const g = cleanGuid(v);
+                        if (g) return g;
+                    }
+                }
+            }
+        }
+        if (typeof record.parentGuid === 'function') {
+            const pg = record.parentGuid();
+            if (pg && BASE32_GUID.test(pg)) return pg;
+        }
+        if (record.properties) {
+            const sub = record.properties['Sub-page of'] || record.properties.parent_page;
+            if (sub) {
+                if (Array.isArray(sub) && sub[0] === 'record') return cleanGuid(sub[1]);
+                if (typeof sub === 'string' && BASE32_GUID.test(sub)) return sub;
+                if (sub.value && Array.isArray(sub.value) && sub.value[0] === 'record') return cleanGuid(sub.value[1]);
+            }
+        }
+    } catch (e) {}
+    return '';
+}
+
+function getClientGuid(record) {
+    if (!record) return '';
+    try {
+        if (typeof record.linkedRecord === 'function') {
+            const lr = record.linkedRecord('client');
+            if (lr && lr.guid) return cleanGuid(lr.guid);
+        }
+        if (typeof record.prop === 'function') {
+            const p = record.prop('client');
+            if (p) {
+                if (typeof p.linkedRecord === 'function') {
+                    const lr = p.linkedRecord();
+                    if (lr && lr.guid) return cleanGuid(lr.guid);
+                }
+                if (typeof p.values === 'function') {
+                    const vals = p.values();
+                    if (Array.isArray(vals) && vals.length > 0) {
+                        const v = vals[0];
+                        const g = cleanGuid(v);
+                        if (g) return g;
+                    }
+                }
+            }
+        }
+        const c1 = getProp(record, 'client');
+        if (c1 && BASE32_GUID.test(c1)) return c1;
+        if (record.properties && record.properties.client) {
+            const c = record.properties.client;
+            if (Array.isArray(c) && c[0] === 'record') return cleanGuid(c[1]);
+            if (typeof c === 'string' && BASE32_GUID.test(c)) return c;
+            if (c.value && Array.isArray(c.value) && c.value[0] === 'record') return cleanGuid(c.value[1]);
+        }
+    } catch (e) {}
+    return '';
+}
+
 function extractLineText(line) {
     if (!line) return '';
     if (typeof line.text === 'string' && line.text.trim()) return line.text.trim();
@@ -158,6 +256,9 @@ function extractLineDate(line) {
 
 export class Plugin extends AppPlugin {
     onLoad() {
+        if (typeof window !== 'undefined') {
+            window.__freelanceOs = this;
+        }
         this.activePanel = null;
         this.refreshTimer = null;
         this.currentTab = 'projects';
@@ -165,6 +266,7 @@ export class Plugin extends AppPlugin {
         this.searchQuery = '';
         this.agendaTab = null;
         this.agendaTabSetByUser = false;
+        this.expandedProjects = new Set();
 
         // 1. Inject Styles
         if (typeof STYLES !== 'undefined') {
@@ -463,23 +565,45 @@ export class Plugin extends AppPlugin {
             data.unconfirmedCount = unconfirmed || 2;
             data.invoices = invoiceList;
 
-            // 3. Fetch Projects
-            const projRes = await this.data.searchByQuery('@Projects', 100);
+            // 3. Fetch Projects (Separate top-level projects from sub-pages & deliverables)
+            const projRes = await this.data.searchByQuery('@Projects', 150);
             const projRecords = projRes?.records || projRes?.matching_records || [];
-            const projectList = [];
+            const parentList = [];
+            const subpageList = [];
+            const parentMap = new Map();
 
             for (const pr of projRecords) {
-                const name = (pr.getName ? pr.getName() : pr.name) || 'Untitled Project';
+                const name = (pr.getName ? pr.getName() : pr.name) || '';
+                if (!name || name === 'New Project' || name === 'Kanban - Active Projects') continue;
+
+                const parentGuid = getParentGuid(pr);
                 const status = (getProp(pr, 'status') || 'in_progress').toLowerCase();
                 const priority = (getProp(pr, 'priority') || 'medium').toLowerCase();
                 
-                let rawClient = getProp(pr, 'client') || getProp(pr, 'Sub-page of') || '';
-                let clientGuid = BASE32_GUID.test(rawClient) ? rawClient : '';
-                let clientName = clientMap.has(clientGuid) ? clientMap.get(clientGuid) : (!BASE32_GUID.test(rawClient) ? rawClient : '');
+                let clientGuid = getClientGuid(pr);
+                let clientName = clientMap.has(clientGuid) ? clientMap.get(clientGuid) : '';
 
-                let deadline = getProp(pr, 'deadline') || '';
+                // Smart client name inference from title if client prop wasn't directly linked
+                if (!clientName) {
+                    for (const [cg, cn] of clientMap.entries()) {
+                        if (cn && name.toLowerCase().includes(cn.toLowerCase())) {
+                            clientName = cn;
+                            clientGuid = cg;
+                            break;
+                        }
+                    }
+                }
+                if (!clientName) {
+                    if (name.includes('Moulin') || name.includes('EmDash')) clientName = 'Internal Product';
+                    else if (name.includes('Personal')) clientName = 'Personal';
+                }
 
-                projectList.push({
+                let deadline = getProp(pr, 'deadline');
+                if (!deadline || typeof deadline === 'object' || String(deadline).includes('object') || String(deadline).includes('Object')) {
+                    deadline = 'No deadline';
+                }
+
+                const item = {
                     record: pr,
                     guid: pr.guid,
                     name,
@@ -487,18 +611,39 @@ export class Plugin extends AppPlugin {
                     priority,
                     clientGuid,
                     clientName,
-                    deadline: deadline || 'No deadline'
-                });
+                    parentGuid,
+                    deadline: deadline || 'No deadline',
+                    deliverables: []
+                };
+
+                if (parentGuid) {
+                    subpageList.push(item);
+                } else {
+                    parentList.push(item);
+                    parentMap.set(pr.guid, item);
+                }
+            }
+
+            // Nest deliverables under their respective parent projects
+            for (const sub of subpageList) {
+                if (parentMap.has(sub.parentGuid)) {
+                    parentMap.get(sub.parentGuid).deliverables.push(sub);
+                }
+            }
+
+            // Sort deliverables inside each project alphabetically
+            for (const p of parentList) {
+                p.deliverables.sort((a, b) => a.name.localeCompare(b.name));
             }
 
             // Cross-reference clients with projects and invoices:
             for (const c of clientList) {
-                c.projectCount = projectList.filter(p => p.clientGuid === c.guid || (p.clientName && p.clientName.toLowerCase() === c.name.toLowerCase())).length;
+                c.projectCount = parentList.filter(p => p.clientGuid === c.guid || (p.clientName && p.clientName.toLowerCase() === c.name.toLowerCase())).length;
                 c.invoiceCount = invoiceList.filter(i => i.clientName && i.clientName.toLowerCase() === c.name.toLowerCase()).length;
             }
 
             // Sort: in_progress first, high priority first
-            projectList.sort((a, b) => {
+            parentList.sort((a, b) => {
                 if (a.status === 'in_progress' && b.status !== 'in_progress') return -1;
                 if (b.status === 'in_progress' && a.status !== 'in_progress') return 1;
                 if (a.priority === 'high' && b.priority !== 'high') return -1;
@@ -506,7 +651,7 @@ export class Plugin extends AppPlugin {
                 return a.name.localeCompare(b.name);
             });
 
-            data.projects = projectList;
+            data.projects = parentList;
 
             // 4. Fetch Tasks
             const taskRes = await this.data.searchByQuery('@task @todo', 150);
@@ -1207,6 +1352,8 @@ export class Plugin extends AppPlugin {
                 const isDone = proj.status === 'completed';
                 const isInProg = proj.status === 'in_progress';
                 const statusLabel = isInProg ? 'In Progress' : (isDone ? 'Completed' : (proj.status === 'in_review' ? 'In Review' : 'Backlog'));
+                const hasDeliverables = proj.deliverables && proj.deliverables.length > 0;
+                const isExpanded = this.expandedProjects && this.expandedProjects.has(proj.guid);
 
                 card.innerHTML = `
                     <div class="os-card-top">
@@ -1215,8 +1362,31 @@ export class Plugin extends AppPlugin {
                     </div>
                     <div class="os-card-title">${proj.name}</div>
                     ${proj.clientName ? `<div class="os-card-client">${proj.clientName}</div>` : ''}
+
+                    ${hasDeliverables ? `
+                        <div class="os-card-deliverables-summary">
+                            <span class="os-deliverables-count" title="${proj.deliverables.length} sub-pages & deliverables">
+                                📂 ${proj.deliverables.length} deliverables
+                            </span>
+                            <button class="os-toggle-deliverables" type="button">
+                                ${isExpanded ? 'Hide ▲' : 'Show ▼'}
+                            </button>
+                        </div>
+                        ${isExpanded ? `
+                            <div class="os-deliverables-list">
+                                ${proj.deliverables.map(d => `
+                                    <div class="os-deliverable-item" data-guid="${d.guid}" title="${d.name}">
+                                        <span class="os-deliverable-arrow">↳</span>
+                                        <span class="os-deliverable-name">${d.name}</span>
+                                        <span class="os-deliverable-open">↗</span>
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : ''}
+                    ` : ''}
+
                     <div class="os-card-bottom">
-                        <span>📅 ${proj.deadline}</span>
+                        <span>📅 ${(!proj.deadline || typeof proj.deadline === 'object' || String(proj.deadline).includes('Object')) ? 'No deadline' : proj.deadline}</span>
                         <span class="os-card-open">Open note ↗</span>
                     </div>
                 `;
@@ -1235,6 +1405,31 @@ export class Plugin extends AppPlugin {
                         console.error('Status change error:', err);
                     }
                 });
+
+                // Toggle deliverables expander
+                if (hasDeliverables) {
+                    const toggleBtn = card.querySelector('.os-toggle-deliverables');
+                    if (toggleBtn) {
+                        toggleBtn.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            if (this.expandedProjects.has(proj.guid)) {
+                                this.expandedProjects.delete(proj.guid);
+                            } else {
+                                this.expandedProjects.add(proj.guid);
+                            }
+                            this.render(panel);
+                        });
+                    }
+
+                    // Click deliverable item
+                    card.querySelectorAll('.os-deliverable-item').forEach(el => {
+                        el.addEventListener('click', (e) => {
+                            e.stopPropagation();
+                            const g = el.getAttribute('data-guid');
+                            if (g) this.openRecord(g, panel);
+                        });
+                    });
+                }
 
                 card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(proj.guid, panel));
                 card.querySelector('.os-card-open').addEventListener('click', (e) => {
