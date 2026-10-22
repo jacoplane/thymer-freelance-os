@@ -772,16 +772,17 @@ export class Plugin extends AppPlugin {
         const container = panel.getElement ? panel.getElement() : null;
         if (!container) return;
 
-        // Force parent wrappers to 100% width to break out of Thymer's reader-width constraint
+        // Force inner content wrappers to 100% width to break out of Thymer's reader-width constraint,
+        // without touching .panel itself so Thymer's multi-panel grid remains intact
         try {
             container.style.width = '100%';
             container.style.maxWidth = '100%';
             container.style.padding = '0';
             let cur = container.parentElement;
             while (cur && cur !== document.body) {
+                if (cur.classList && cur.classList.contains('panel')) break;
                 cur.style.width = '100%';
                 cur.style.maxWidth = '100%';
-                if (cur.classList && cur.classList.contains('panel')) break;
                 cur = cur.parentElement;
             }
         } catch (e) {}
@@ -901,18 +902,20 @@ export class Plugin extends AppPlugin {
         rail.className = 'os-rail';
         rail.innerHTML = `
             <h2>Actions</h2>
-            <button class="os-button os-primary btn-new-task" type="button">
-                <span>+ New task</span>
-            </button>
-            <button class="os-button btn-new-project" type="button">
-                <span>+ New project</span>
-            </button>
-            <button class="os-button btn-new-client" type="button">
-                <span>+ New client</span>
-            </button>
-            <button class="os-button btn-new-invoice" type="button">
-                <span>+ New invoice</span>
-            </button>
+            <div class="os-rail-actions">
+                <button class="os-button os-primary btn-new-task" type="button">
+                    <span>+ New task</span>
+                </button>
+                <button class="os-button btn-new-project" type="button">
+                    <span>+ New project</span>
+                </button>
+                <button class="os-button btn-new-client" type="button">
+                    <span>+ New client</span>
+                </button>
+                <button class="os-button btn-new-invoice" type="button">
+                    <span>+ New invoice</span>
+                </button>
+            </div>
             <nav class="os-navigation">
                 <a class="os-nav-link nav-projects">📁 All Projects</a>
                 <a class="os-nav-link nav-clients">👥 All Clients</a>
