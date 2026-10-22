@@ -53,14 +53,23 @@ const CHOICE_MAP = {
 
 function formatDatetime(val) {
     if (!val) return '';
-    if (typeof val === 'string') return val;
+    if (typeof val === 'string') {
+        if (val.includes('Object')) return '';
+        return val;
+    }
+    if (Array.isArray(val)) {
+        if (val[0] === 'datetime') return formatDatetime(val[1]);
+        if (val[1] && typeof val[1] === 'object') return formatDatetime(val[1]);
+        return formatDatetime(val[0]);
+    }
     if (typeof val === 'object') {
-        if (val.formatted) return val.formatted;
+        if (val.value !== undefined) return formatDatetime(val.value);
+        if (val.formatted) return String(val.formatted);
         if (val.d && String(val.d).length === 8) {
             const s = String(val.d);
             return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
         }
-        if (val.text) return val.text;
+        if (val.text) return String(val.text);
         if (val.date) return String(val.date);
     }
     return '';
