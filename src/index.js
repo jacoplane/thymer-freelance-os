@@ -310,6 +310,16 @@ function summarizeInvoices(invoices) {
     return summary;
 }
 
+function clientSummary(client, projects, invoices) {
+    const linked = invoices.filter(i => i.clientGuid === client.guid && i.currency === 'CHF');
+    return {
+        activeProjects: projects.filter(p => p.clientGuid === client.guid && ['in_progress', 'in_review'].includes(p.status)).length,
+        collected: linked.filter(i => i.status === 'paid').reduce((sum, i) => sum + i.amount, 0),
+        outstanding: linked.filter(i => i.isOutstanding).reduce((sum, i) => sum + i.amount, 0),
+        overdueCount: linked.filter(i => i.daysOverdue > 0).length
+    };
+}
+
 export class Plugin extends AppPlugin {
     onLoad() {
         if (typeof window !== 'undefined') {
@@ -324,6 +334,9 @@ export class Plugin extends AppPlugin {
         this.agendaTab = null;
         this.agendaTabSetByUser = false;
         this.expandedProjects = new Set();
+        this.captureDraft = '';
+        this.captureProjectGuid = '';
+        this.captureImportant = false;
 
         // 1. Inject Styles
         if (typeof STYLES !== 'undefined') {
@@ -376,6 +389,8 @@ export class Plugin extends AppPlugin {
     scheduleRefresh() {
         if (this.refreshTimer) clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
+            // Preserve focus and selection while composing a task. Blur refreshes the data.
+            if (document.activeElement?.closest('.os-capture')) return;
             if (this.activePanel) this.render(this.activePanel);
         }, 200);
     }
@@ -695,6 +710,7 @@ export class Plugin extends AppPlugin {
             for (const c of clientList) {
                 c.projectCount = parentList.filter(p => p.clientGuid === c.guid || (p.clientName && p.clientName.toLowerCase() === c.name.toLowerCase())).length;
                 c.invoiceCount = invoiceList.filter(i => i.clientName && i.clientName.toLowerCase() === c.name.toLowerCase()).length;
+                c.summary = clientSummary(c, parentList, invoiceList);
             }
 
             // Sort: in_progress first, high priority first
@@ -752,6 +768,33 @@ export class Plugin extends AppPlugin {
         }
 
         return data;
+    }
+
+    async captureTask(text, projectGuid, important) {
+        let record;
+        if (projectGuid) {
+            record = this.data.getRecord(projectGuid);
+        } else {
+            const collections = await this.data.getAllCollections();
+            const journal = collections.find(c => c.getGuid() === COLL_GUIDS.Journal);
+            const user = this.data.getActiveUsers?.()[0];
+            if (journal && user) record = await journal.getJournalRecord(user);
+        }
+        if (!record) throw new Error('Capture destination unavailable');
+        const line = await record.createLineItem(null, null, 'task');
+        if (!line) throw new Error('Task creation failed');
+        try {
+            if (await line.setSegments([{ type: 'text', text }]) === false) throw new Error('Task content was not saved');
+        } catch (error) {
+            await line.delete?.().catch(() => {});
+            throw error;
+        }
+        let prioritySaved = true;
+        if (important) {
+            try { prioritySaved = await line.setTaskStatus('important') !== false; }
+            catch { prioritySaved = false; }
+        }
+        return { prioritySaved };
     }
 
     showCreateProjectModal(panel, data) {
@@ -1060,13 +1103,17 @@ export class Plugin extends AppPlugin {
             }
         } catch (e) {}
 
+        const renderVersion = this.renderVersion = (this.renderVersion || 0) + 1;
         const data = await this.loadData();
+        if (renderVersion !== this.renderVersion) return;
         const cash = data.cashflow || summarizeInvoices([]);
         const wsGuid = this.getWorkspaceGuid();
         const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
         const app = document.createElement('div');
-        app.className = 'os-app';
+        app.className = 'os-shell';
+        app.tabIndex = -1;
+        app.setAttribute('aria-label', 'Freelance OS dashboard');
 
         // 1. Header
         const header = document.createElement('header');
@@ -1083,9 +1130,15 @@ export class Plugin extends AppPlugin {
             </div>
             <div class="os-capture">
                 <div class="os-capture-field">
-                    <input type="text" class="os-capture-input" placeholder="Quick capture task..." />
-                    <button class="os-capture-btn" title="Add task (Enter)">↵</button>
+                    <input type="text" class="os-capture-input" aria-label="Task title" placeholder="Quick capture task..." />
+                    <button class="os-capture-btn" aria-label="Add task" title="Add task (Enter)">↵</button>
                 </div>
+                <div class="os-capture-options">
+                    <select class="os-capture-project" aria-label="Task destination"><option value="">Journal inbox</option>${data.projects.filter(p => !['completed', 'archived', 'cancelled'].includes(p.status)).map(p => `<option value="${escapeHtml(p.guid)}">${escapeHtml(p.name)}</option>`).join('')}</select>
+                    <label class="os-capture-priority"><input type="checkbox" /> Important</label>
+                    <span class="os-capture-hint">/ to focus · Enter to save</span>
+                </div>
+                <div class="os-capture-feedback" role="status" aria-live="polite"></div>
             </div>
             <div class="os-header-actions">
                 <button class="os-button os-btn-board" type="button">
@@ -1096,36 +1149,53 @@ export class Plugin extends AppPlugin {
 
         // Capture task handler
         const captureInput = header.querySelector('.os-capture-input');
+        const captureProject = header.querySelector('.os-capture-project');
+        const capturePriority = header.querySelector('.os-capture-priority input');
+        const captureButton = header.querySelector('.os-capture-btn');
+        const captureFeedback = header.querySelector('.os-capture-feedback');
+        captureInput.value = this.captureDraft || '';
+        captureProject.value = this.captureProjectGuid || '';
+        capturePriority.checked = this.captureImportant || false;
+        captureInput.oninput = () => { this.captureDraft = captureInput.value; };
+        captureProject.onchange = () => { this.captureProjectGuid = captureProject.value; };
+        capturePriority.onchange = () => { this.captureImportant = capturePriority.checked; };
+        app.addEventListener('keydown', e => {
+            if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input, select, textarea, [contenteditable="true"]')) {
+                e.preventDefault();
+                captureInput.focus({ preventScroll: true });
+            }
+        });
+        header.querySelector('.os-capture').addEventListener('focusout', () => this.scheduleRefresh());
         const handleCapture = async () => {
             const txt = (captureInput.value || '').trim();
-            if (!txt) return;
+            if (!txt || this.captureBusy) return;
+            this.captureBusy = true;
+            captureButton.disabled = true;
+            captureInput.disabled = true;
+            captureProject.disabled = true;
+            capturePriority.disabled = true;
+            captureFeedback.textContent = 'Saving task…';
             try {
-                const collections = await this.data.getAllCollections();
-                const journal = collections.find(c => c.getName() === 'Journal' || c.getGuid() === COLL_GUIDS.Journal);
-                const users = typeof this.data.getActiveUsers === 'function' ? this.data.getActiveUsers() : [];
-                if (journal && users.length > 0) {
-                    const record = await journal.getJournalRecord(users[0]);
-                    if (record) {
-                        const line = await record.createLineItem(null, null, 'task');
-                        if (line) {
-                            await line.setSegments([{ type: 'text', text: txt }]);
-                            captureInput.value = '';
-                            this.ui.addToaster({ title: 'Task captured to Journal', autoDestroyTime: 2500, dismissible: true });
-                            this.scheduleRefresh();
-                            return;
-                        }
-                    }
-                }
+                const result = await this.captureTask(txt, captureProject.value, capturePriority.checked);
+                this.captureDraft = '';
+                captureInput.value = '';
+                const title = result.prioritySaved ? `Task saved to ${captureProject.value ? 'project' : 'Journal'}` : 'Task saved; priority could not be set. Open the task to mark it important.';
+                captureFeedback.textContent = title;
+                this.ui.addToaster({ title, autoDestroyTime: 3500, dismissible: true });
             } catch (err) {
+                captureFeedback.textContent = 'Task could not be saved. Your text is kept; try again.';
                 console.error('[FreelanceOS] Capture failed:', err);
+            } finally {
+                this.captureBusy = false;
+                captureButton.disabled = captureInput.disabled = captureProject.disabled = capturePriority.disabled = false;
+                captureInput.focus({ preventScroll: true });
             }
-            this.ui.addToaster({ title: 'Capture complete', autoDestroyTime: 2000, dismissible: true });
-            captureInput.value = '';
         };
 
         header.querySelector('.os-capture-btn').addEventListener('click', handleCapture);
         captureInput.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') handleCapture();
+            if (e.key === 'Enter' && !e.isComposing) { e.preventDefault(); handleCapture(); }
+            if (e.key === 'Escape') { e.preventDefault(); app.focus({ preventScroll: true }); }
         });
 
         header.querySelector('.os-btn-board').addEventListener('click', () => {
@@ -1164,11 +1234,18 @@ export class Plugin extends AppPlugin {
         pulse.querySelector('.metric-inv').addEventListener('click', () => { this.currentTab = 'invoices'; this.render(panel); });
         pulse.querySelector('.metric-col').addEventListener('click', () => { this.currentTab = 'invoices'; this.render(panel); });
         pulse.querySelector('.metric-clients').addEventListener('click', () => { this.currentTab = 'clients'; this.render(panel); });
+        pulse.querySelectorAll('.os-metric').forEach(metric => {
+            metric.setAttribute('role', 'button');
+            metric.tabIndex = 0;
+            metric.addEventListener('keydown', e => {
+                if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); metric.click(); }
+            });
+        });
 
         app.appendChild(pulse);
 
         if (data.loadError) {
-            pulse.hidden = true;
+            pulse.remove();
             const error = document.createElement('div');
             error.className = 'os-data-error';
             error.setAttribute('role', 'alert');
@@ -1392,7 +1469,7 @@ export class Plugin extends AppPlugin {
                 item.className = 'os-task-item';
                 item.innerHTML = `
                     <input type="checkbox" class="os-task-checkbox" />
-                    <span class="os-task-label" title="${t.text}">${t.text}</span>
+                    <span class="os-task-label" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</span>
                     ${t.date ? `<span class="os-task-date">${t.date}</span>` : ''}
                 `;
 
@@ -1432,7 +1509,10 @@ export class Plugin extends AppPlugin {
         app.appendChild(grid);
 
         container.innerHTML = '';
-        container.appendChild(app);
+        const viewport = document.createElement('div');
+        viewport.className = 'os-app';
+        viewport.appendChild(app);
+        container.appendChild(viewport);
     }
 
     renderCards(cardsContainer, data, panel) {
@@ -1563,16 +1643,20 @@ export class Plugin extends AppPlugin {
                 card.innerHTML = `
                     <div class="os-card-top">
                         <span class="os-badge status-${cli.status === 'prospect' ? 'backlog' : 'in_progress'}">${cli.status.toUpperCase()}</span>
-                        ${cli.mrr > 0 ? '<span class="os-badge badge-care-plan">🛡 Care Plan</span>' : ''}
+                        ${cli.mrr > 0 && cli.status === 'active' ? '<span class="os-badge badge-care-plan">🛡 Care Plan</span>' : ''}
                     </div>
-                    <div class="os-card-title">${cli.name}</div>
-                    <div class="os-card-client">${cli.plan}</div>
+                    <div class="os-card-title">${escapeHtml(cli.name)}</div>
+                    <div class="os-card-client">${escapeHtml(cli.plan)}</div>
                     <div class="os-client-meta">
-                        <span class="os-meta-tag">📁 ${cli.projectCount || 0} projects</span>
+                        <span class="os-meta-tag">${cli.summary.activeProjects} active projects</span>
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
                     </div>
+                    <dl class="os-client-value">
+                        <div><dt>Collected · all time</dt><dd>${money(cli.summary.collected)} CHF</dd></div>
+                        <div><dt>Outstanding</dt><dd>${money(cli.summary.outstanding)} CHF${cli.summary.overdueCount ? ` · ${cli.summary.overdueCount} overdue` : ''}</dd></div>
+                    </dl>
                     <div class="os-card-bottom">
-                        <span>${cli.mrr > 0 ? `💰 ${cli.mrr} CHF / mo` : 'No care plan'}</span>
+                        <span>${cli.mrr > 0 ? `${cli.status === 'active' ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : 'No care plan'}</span>
                         <span class="os-card-open">Open profile ↗</span>
                     </div>
                 `;
@@ -1598,7 +1682,7 @@ export class Plugin extends AppPlugin {
 
             for (const inv of list) {
                 const card = document.createElement('div');
-                card.className = 'os-project-card';
+                card.className = 'os-project-card os-invoice-card';
                 card.innerHTML = `
                     <div class="os-card-top">
                         <span class="os-badge status-${escapeHtml(inv.status)}">${escapeHtml(inv.status.toUpperCase())}</span>

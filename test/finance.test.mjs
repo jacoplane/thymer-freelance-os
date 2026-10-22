@@ -4,12 +4,62 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({ Plugin, formatDatetime, dateDay, localDate, summarizeInvoices, invoiceMatches });`, { AppPlugin: class {}, console, Date, Intl });
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({ Plugin, formatDatetime, dateDay, localDate, summarizeInvoices, invoiceMatches, clientSummary });`, { AppPlugin: class {}, console, Date, Intl });
 
 test('Thymer date wrappers use the stored calendar date over formatted labels', () => {
     assert.equal(api.formatDatetime({ value: () => ({ d: '20260315', formatted: 'Sun Mar 15' }) }), '2026-03-15');
     assert.equal(api.dateDay('2026-02-30'), null);
     assert.equal(api.dateDay('2026-03-16') - api.dateDay('2026-03-15'), 1);
+});
+
+test('client value uses linked CHF payments and active projects only', () => {
+    const result = api.clientSummary({ guid: 'client-a' }, [
+        { clientGuid: 'client-a', status: 'in_progress' },
+        { clientGuid: 'client-a', status: 'completed' },
+        { clientGuid: 'client-b', status: 'in_progress' }
+    ], [
+        { clientGuid: 'client-a', currency: 'CHF', status: 'paid', amount: 200 },
+        { clientGuid: 'client-a', currency: 'EUR', status: 'paid', amount: 999 },
+        { clientGuid: 'client-a', currency: 'CHF', status: 'unconfirmed', amount: 50, isOutstanding: true, daysOverdue: 5 }
+    ]);
+    assert.equal(result.collected, 200);
+    assert.equal(result.outstanding, 50);
+    assert.equal(result.activeProjects, 1);
+    assert.equal(result.overdueCount, 1);
+});
+
+test('capture assigns the chosen project and important priority', async () => {
+    const plugin = new api.Plugin();
+    let text, priority, destination;
+    plugin.data = { getRecord: guid => { destination = guid; return { createLineItem: async () => ({
+        setSegments: async segments => { text = segments[0].text; return true; },
+        setTaskStatus: async status => { priority = status; return true; }
+    }) }; } };
+    const result = await plugin.captureTask('Review proposal', 'project-a', true);
+    assert.equal(destination, 'project-a');
+    assert.equal(text, 'Review proposal');
+    assert.equal(priority, 'important');
+    assert.equal(result.prioritySaved, true);
+});
+
+test('failed capture removes the empty task and reports failure', async () => {
+    const plugin = new api.Plugin();
+    let deleted = false;
+    plugin.data = { getRecord: () => ({ createLineItem: async () => ({
+        setSegments: async () => false,
+        delete: async () => { deleted = true; return true; }
+    }) }) };
+    await assert.rejects(plugin.captureTask('Keep my draft', 'project-a', false));
+    assert.equal(deleted, true);
+});
+
+test('priority failure reports an already saved task without retrying creation', async () => {
+    const plugin = new api.Plugin();
+    plugin.data = { getRecord: () => ({ createLineItem: async () => ({
+        setSegments: async () => true,
+        setTaskStatus: async () => false
+    }) }) };
+    assert.equal((await plugin.captureTask('Saved task', 'project-a', true)).prioritySaved, false);
 });
 
 test('cashflow separates drafts, settled, unconfirmed, currencies and aging', () => {
