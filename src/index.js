@@ -32,6 +32,33 @@ function cleanString(val) {
     return '';
 }
 
+const CHOICE_MAP = {
+    cPDKKZ3D7FD5NXT: 'backlog',
+    c8H5F6MH6W18ZYQ: 'in_progress',
+    cMT7Q1FJ4WVX0ZT: 'in_review',
+    cCN3TAA3V3XV10Q: 'completed',
+    cTNF15963BTEJ6E: 'archived',
+    cTNZG2X4GHTDVK4: 'cancelled',
+    cCSF2NC75V7DRCY: 'high',
+    cBEMEF25K9FYA3M: 'medium',
+    cR1Y0ZVDSMAH19W: 'low'
+};
+
+function formatDatetime(val) {
+    if (!val) return '';
+    if (typeof val === 'string') return val;
+    if (typeof val === 'object') {
+        if (val.formatted) return val.formatted;
+        if (val.d && String(val.d).length === 8) {
+            const s = String(val.d);
+            return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+        }
+        if (val.text) return val.text;
+        if (val.date) return String(val.date);
+    }
+    return '';
+}
+
 function getProp(record, propName) {
     if (!record) return '';
     try {
@@ -42,6 +69,10 @@ function getProp(record, propName) {
                     const l = p.choiceLabel();
                     if (l) return cleanString(l);
                 }
+                if (typeof p.choiceId === 'function') {
+                    const cid = p.choiceId();
+                    if (cid && CHOICE_MAP[cid]) return CHOICE_MAP[cid];
+                }
                 if (typeof p.text === 'function') {
                     const t = p.text();
                     if (t) return cleanString(t);
@@ -50,7 +81,21 @@ function getProp(record, propName) {
                     const n = p.number();
                     if (n !== null && n !== undefined) return n;
                 }
-                if (p.value !== undefined) return cleanString(p.value);
+                if (typeof p.date === 'function') {
+                    const d = p.date();
+                    if (d) return formatDatetime(d);
+                }
+                if (p.value !== undefined) {
+                    if (Array.isArray(p.value)) {
+                        if (p.value[0] === 'choice') return CHOICE_MAP[p.value[1]] || p.value[1];
+                        if (p.value[0] === 'datetime') return formatDatetime(p.value[1]);
+                        return cleanString(p.value[1]);
+                    }
+                    if (typeof p.value === 'object' && p.value !== null) {
+                        return formatDatetime(p.value);
+                    }
+                    return cleanString(p.value);
+                }
             }
         }
         if (typeof record.text === 'function') {
@@ -66,7 +111,15 @@ function getProp(record, propName) {
             if (lr) return cleanString(lr);
         }
         if (record.properties && record.properties[propName] !== undefined) {
-            return cleanString(record.properties[propName]);
+            const raw = record.properties[propName];
+            if (Array.isArray(raw)) {
+                if (raw[0] === 'choice') return CHOICE_MAP[raw[1]] || raw[1];
+                if (raw[0] === 'datetime') return formatDatetime(raw[1]);
+                if (raw[0] === 'record') return raw[1];
+                return cleanString(raw[1]);
+            }
+            if (typeof raw === 'object' && raw !== null) return formatDatetime(raw);
+            return cleanString(raw);
         }
     } catch (e) {}
     return '';
@@ -99,7 +152,10 @@ export class Plugin extends AppPlugin {
         this.activePanel = null;
         this.refreshTimer = null;
         this.currentTab = 'projects';
-        this.agendaTab = 'upcoming';
+        this.projectFilter = 'all'; // 'all', 'in_progress', 'backlog', 'completed'
+        this.searchQuery = '';
+        this.agendaTab = null;
+        this.agendaTabSetByUser = false;
 
         // 1. Inject Styles
         if (typeof STYLES !== 'undefined') {
@@ -408,13 +464,11 @@ export class Plugin extends AppPlugin {
                 const status = (getProp(pr, 'status') || 'in_progress').toLowerCase();
                 const priority = (getProp(pr, 'priority') || 'medium').toLowerCase();
                 
-                let client = getProp(pr, 'client') || getProp(pr, 'Sub-page of') || '';
-                if (BASE32_GUID.test(client) && clientMap.has(client)) {
-                    client = clientMap.get(client);
-                }
+                let rawClient = getProp(pr, 'client') || getProp(pr, 'Sub-page of') || '';
+                let clientGuid = BASE32_GUID.test(rawClient) ? rawClient : '';
+                let clientName = clientMap.has(clientGuid) ? clientMap.get(clientGuid) : (!BASE32_GUID.test(rawClient) ? rawClient : '');
 
                 let deadline = getProp(pr, 'deadline') || '';
-                if (typeof deadline === 'object' || String(deadline).includes('Object')) deadline = '';
 
                 projectList.push({
                     record: pr,
@@ -422,9 +476,16 @@ export class Plugin extends AppPlugin {
                     name,
                     status,
                     priority,
-                    clientName: client,
+                    clientGuid,
+                    clientName,
                     deadline: deadline || 'No deadline'
                 });
+            }
+
+            // Cross-reference clients with projects and invoices:
+            for (const c of clientList) {
+                c.projectCount = projectList.filter(p => p.clientGuid === c.guid || (p.clientName && p.clientName.toLowerCase() === c.name.toLowerCase())).length;
+                c.invoiceCount = invoiceList.filter(i => i.clientName && i.clientName.toLowerCase() === c.name.toLowerCase()).length;
             }
 
             // Sort: in_progress first, high priority first
@@ -943,12 +1004,17 @@ export class Plugin extends AppPlugin {
         const sectionHead = document.createElement('div');
         sectionHead.className = 'os-section-head';
         sectionHead.innerHTML = `
-            <div class="os-tabs">
-                <button class="os-tab ${this.currentTab === 'projects' ? 'active' : ''} tab-proj">Projects (${data.projects.length})</button>
-                <button class="os-tab ${this.currentTab === 'clients' ? 'active' : ''} tab-cli">Clients (${data.clients.length})</button>
-                <button class="os-tab ${this.currentTab === 'invoices' ? 'active' : ''} tab-inv">Invoices (${data.invoices.length})</button>
+            <div class="os-section-toolbar">
+                <div class="os-tabs">
+                    <button class="os-tab ${this.currentTab === 'projects' ? 'active' : ''} tab-proj">Projects (${data.projects.length})</button>
+                    <button class="os-tab ${this.currentTab === 'clients' ? 'active' : ''} tab-cli">Clients (${data.clients.length})</button>
+                    <button class="os-tab ${this.currentTab === 'invoices' ? 'active' : ''} tab-inv">Invoices (${data.invoices.length})</button>
+                </div>
+                <div class="os-filter-search">
+                    <input type="text" class="os-search-input" placeholder="🔍 Filter ${this.currentTab}..." value="${this.searchQuery}" />
+                    <a class="os-view-all">View collection ↗</a>
+                </div>
             </div>
-            <a class="os-view-all">View collection ↗</a>
         `;
 
         sectionHead.querySelector('.tab-proj').addEventListener('click', () => {
@@ -969,138 +1035,40 @@ export class Plugin extends AppPlugin {
             else if (this.currentTab === 'invoices') col = COLL_GUIDS.Invoices;
             this.openCollection(col, panel);
         });
+
+        const searchInput = sectionHead.querySelector('.os-search-input');
+        searchInput.addEventListener('input', (e) => {
+            this.searchQuery = e.target.value.toLowerCase().trim();
+            this.renderCards(cardsContainer, data, panel);
+        });
+
         main.appendChild(sectionHead);
+
+        // Project filter pills (if on projects tab)
+        if (this.currentTab === 'projects') {
+            const inProgCount = data.projects.filter(p => p.status === 'in_progress').length;
+            const backlogCount = data.projects.filter(p => p.status === 'backlog').length;
+            const completedCount = data.projects.filter(p => p.status === 'completed').length;
+
+            const filterBar = document.createElement('div');
+            filterBar.className = 'os-filter-pills';
+            filterBar.innerHTML = `
+                <button class="os-filter-pill ${this.projectFilter === 'all' ? 'active' : ''} pill-all">All (${data.projects.length})</button>
+                <button class="os-filter-pill ${this.projectFilter === 'in_progress' ? 'active' : ''} pill-prog">In Progress (${inProgCount})</button>
+                <button class="os-filter-pill ${this.projectFilter === 'backlog' ? 'active' : ''} pill-back">Backlog (${backlogCount})</button>
+                <button class="os-filter-pill ${this.projectFilter === 'completed' ? 'active' : ''} pill-comp">Completed (${completedCount})</button>
+            `;
+
+            filterBar.querySelector('.pill-all').addEventListener('click', () => { this.projectFilter = 'all'; this.render(panel); });
+            filterBar.querySelector('.pill-prog').addEventListener('click', () => { this.projectFilter = 'in_progress'; this.render(panel); });
+            filterBar.querySelector('.pill-back').addEventListener('click', () => { this.projectFilter = 'backlog'; this.render(panel); });
+            filterBar.querySelector('.pill-comp').addEventListener('click', () => { this.projectFilter = 'completed'; this.render(panel); });
+            main.appendChild(filterBar);
+        }
 
         const cardsContainer = document.createElement('div');
         cardsContainer.className = 'os-cards';
-
-        if (this.currentTab === 'projects') {
-            const displayProjects = data.projects.slice(0, 10);
-            if (displayProjects.length === 0) {
-                cardsContainer.innerHTML = '<div style="opacity:0.5;padding:20px;grid-column:1/-1;">No active projects found.</div>';
-            } else {
-                for (const proj of displayProjects) {
-                    const card = document.createElement('div');
-                    card.className = 'os-project-card';
-                    const isDone = proj.status === 'completed';
-                    const isInProg = proj.status === 'in_progress';
-                    const statusLabel = isInProg ? 'In Progress' : (isDone ? 'Completed' : (proj.status === 'in_review' ? 'In Review' : 'Backlog'));
-
-                    card.innerHTML = `
-                        <div class="os-card-top">
-                            <span class="os-badge status-${proj.status}" title="Click to change status">${statusLabel}</span>
-                            ${proj.priority === 'high' ? '<span class="os-badge priority-high">High</span>' : ''}
-                        </div>
-                        <div class="os-card-title">${proj.name}</div>
-                        ${proj.clientName ? `<div class="os-card-client">${proj.clientName}</div>` : ''}
-                        <div class="os-card-bottom">
-                            <span>📅 ${proj.deadline}</span>
-                            <span class="os-card-open">Open note ↗</span>
-                        </div>
-                    `;
-
-                    // Quick status toggle
-                    card.querySelector('.os-badge').addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        const nextStatus = proj.status === 'in_progress' ? 'completed' : (proj.status === 'completed' ? 'backlog' : 'in_progress');
-                        try {
-                            if (proj.record?.prop('status')?.setValue) {
-                                await proj.record.prop('status').setValue(nextStatus);
-                                this.ui.addToaster({ title: `Status updated: ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
-                                this.scheduleRefresh();
-                            }
-                        } catch (err) {
-                            console.error('Status change error:', err);
-                        }
-                    });
-
-                    // Open note
-                    card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(proj.guid, panel));
-                    card.querySelector('.os-card-open').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.openRecord(proj.guid, panel);
-                    });
-
-                    cardsContainer.appendChild(card);
-                }
-            }
-        } else if (this.currentTab === 'clients') {
-            const displayClients = data.clients.slice(0, 10);
-            if (displayClients.length === 0) {
-                cardsContainer.innerHTML = '<div style="opacity:0.5;padding:20px;grid-column:1/-1;">No clients found.</div>';
-            } else {
-                for (const cli of displayClients) {
-                    const card = document.createElement('div');
-                    card.className = 'os-project-card';
-                    card.innerHTML = `
-                        <div class="os-card-top">
-                            <span class="os-badge status-${cli.status === 'prospect' ? 'backlog' : 'in_progress'}">${cli.status.toUpperCase()}</span>
-                        </div>
-                        <div class="os-card-title">${cli.name}</div>
-                        <div class="os-card-client">${cli.plan}</div>
-                        <div class="os-card-bottom">
-                            <span>${cli.mrr > 0 ? `${cli.mrr} CHF / mo` : 'No care plan'}</span>
-                            <span class="os-card-open">Open profile ↗</span>
-                        </div>
-                    `;
-
-                    card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(cli.guid, panel));
-                    card.querySelector('.os-card-open').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.openRecord(cli.guid, panel);
-                    });
-
-                    cardsContainer.appendChild(card);
-                }
-            }
-        } else if (this.currentTab === 'invoices') {
-            const displayInvoices = data.invoices;
-            if (displayInvoices.length === 0) {
-                cardsContainer.innerHTML = '<div style="opacity:0.5;padding:20px;grid-column:1/-1;">No invoices found.</div>';
-            } else {
-                for (const inv of displayInvoices) {
-                    const card = document.createElement('div');
-                    card.className = 'os-project-card';
-                    const isPaid = inv.status === 'paid';
-                    card.innerHTML = `
-                        <div class="os-card-top">
-                            <span class="os-badge status-${inv.status}" title="Click to toggle paid / unpaid">${isPaid ? 'PAID' : 'UNPAID'}</span>
-                        </div>
-                        <div class="os-card-title">${inv.name}</div>
-                        ${inv.clientName ? `<div class="os-card-client">${inv.clientName}</div>` : ''}
-                        <div class="os-card-bottom">
-                            <span>💰 ${inv.amount} CHF · 📅 ${inv.dueDate}</span>
-                            <span class="os-card-open">Open invoice ↗</span>
-                        </div>
-                    `;
-
-                    // Quick status toggle
-                    card.querySelector('.os-badge').addEventListener('click', async (e) => {
-                        e.stopPropagation();
-                        const nextStatus = isPaid ? 'unpaid' : 'paid';
-                        try {
-                            if (inv.record?.prop('status')?.setValue) {
-                                await inv.record.prop('status').setValue(nextStatus);
-                            } else if (inv.record?.prop('payment_status')?.setValue) {
-                                await inv.record.prop('payment_status').setValue(nextStatus);
-                            }
-                            this.ui.addToaster({ title: `Invoice set to ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
-                            this.scheduleRefresh();
-                        } catch (err) {
-                            console.error('Invoice status error:', err);
-                        }
-                    });
-
-                    card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(inv.guid, panel));
-                    card.querySelector('.os-card-open').addEventListener('click', (e) => {
-                        e.stopPropagation();
-                        this.openRecord(inv.guid, panel);
-                    });
-
-                    cardsContainer.appendChild(card);
-                }
-            }
-        }
+        this.renderCards(cardsContainer, data, panel);
         main.appendChild(cardsContainer);
         grid.appendChild(main);
 
@@ -1112,6 +1080,13 @@ export class Plugin extends AppPlugin {
         const overdueTasks = data.agendaTasks.filter(t => t.category === 'overdue');
         const upcomingTasks = data.agendaTasks.filter(t => t.category === 'upcoming');
         const inboxTasks = data.agendaTasks.filter(t => t.category === 'inbox');
+
+        if (!this.agendaTabSetByUser) {
+            if (todayTasks.length > 0) this.agendaTab = 'today';
+            else if (overdueTasks.length > 0) this.agendaTab = 'overdue';
+            else if (upcomingTasks.length > 0) this.agendaTab = 'upcoming';
+            else this.agendaTab = 'inbox';
+        }
 
         let shownTasks = [];
         if (this.agendaTab === 'today') shownTasks = todayTasks;
@@ -1151,7 +1126,7 @@ export class Plugin extends AppPlugin {
                 </div>
             `;
         } else {
-            for (const t of shownTasks.slice(0, 10)) {
+            for (const t of shownTasks.slice(0, 25)) {
                 const item = document.createElement('div');
                 item.className = 'os-task-item';
                 item.innerHTML = `
@@ -1185,10 +1160,10 @@ export class Plugin extends AppPlugin {
             }
         }
 
-        agenda.querySelector('.tab-today').addEventListener('click', () => { this.agendaTab = 'today'; this.render(panel); });
-        agenda.querySelector('.tab-overdue').addEventListener('click', () => { this.agendaTab = 'overdue'; this.render(panel); });
-        agenda.querySelector('.tab-upcoming').addEventListener('click', () => { this.agendaTab = 'upcoming'; this.render(panel); });
-        agenda.querySelector('.tab-inbox').addEventListener('click', () => { this.agendaTab = 'inbox'; this.render(panel); });
+        agenda.querySelector('.tab-today').addEventListener('click', () => { this.agendaTab = 'today'; this.agendaTabSetByUser = true; this.render(panel); });
+        agenda.querySelector('.tab-overdue').addEventListener('click', () => { this.agendaTab = 'overdue'; this.agendaTabSetByUser = true; this.render(panel); });
+        agenda.querySelector('.tab-upcoming').addEventListener('click', () => { this.agendaTab = 'upcoming'; this.agendaTabSetByUser = true; this.render(panel); });
+        agenda.querySelector('.tab-inbox').addEventListener('click', () => { this.agendaTab = 'inbox'; this.agendaTabSetByUser = true; this.render(panel); });
         agenda.querySelector('.link-capture').addEventListener('click', () => captureInput.focus());
         agenda.querySelector('.link-notes').addEventListener('click', () => this.openJournal(panel));
 
@@ -1197,5 +1172,159 @@ export class Plugin extends AppPlugin {
 
         container.innerHTML = '';
         container.appendChild(app);
+    }
+
+    renderCards(cardsContainer, data, panel) {
+        cardsContainer.innerHTML = '';
+        const q = (this.searchQuery || '').toLowerCase();
+
+        if (this.currentTab === 'projects') {
+            let list = data.projects;
+            if (this.projectFilter !== 'all') {
+                list = list.filter(p => p.status === this.projectFilter);
+            }
+            if (q) {
+                list = list.filter(p => p.name.toLowerCase().includes(q) || (p.clientName && p.clientName.toLowerCase().includes(q)));
+            }
+
+            if (list.length === 0) {
+                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No matching projects found.</div>';
+                return;
+            }
+
+            for (const proj of list.slice(0, 30)) {
+                const card = document.createElement('div');
+                card.className = 'os-project-card';
+                const isDone = proj.status === 'completed';
+                const isInProg = proj.status === 'in_progress';
+                const statusLabel = isInProg ? 'In Progress' : (isDone ? 'Completed' : (proj.status === 'in_review' ? 'In Review' : 'Backlog'));
+
+                card.innerHTML = `
+                    <div class="os-card-top">
+                        <span class="os-badge status-${proj.status}" title="Click to cycle status">${statusLabel}</span>
+                        ${proj.priority === 'high' ? '<span class="os-badge priority-high">High</span>' : ''}
+                    </div>
+                    <div class="os-card-title">${proj.name}</div>
+                    ${proj.clientName ? `<div class="os-card-client">${proj.clientName}</div>` : ''}
+                    <div class="os-card-bottom">
+                        <span>📅 ${proj.deadline}</span>
+                        <span class="os-card-open">Open note ↗</span>
+                    </div>
+                `;
+
+                // Quick status toggle
+                card.querySelector('.os-badge').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const nextStatus = proj.status === 'in_progress' ? 'completed' : (proj.status === 'completed' ? 'backlog' : 'in_progress');
+                    try {
+                        if (proj.record?.prop('status')?.setValue) {
+                            await proj.record.prop('status').setValue(nextStatus);
+                            this.ui.addToaster({ title: `Status: ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
+                            this.scheduleRefresh();
+                        }
+                    } catch (err) {
+                        console.error('Status change error:', err);
+                    }
+                });
+
+                card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(proj.guid, panel));
+                card.querySelector('.os-card-open').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.openRecord(proj.guid, panel);
+                });
+
+                cardsContainer.appendChild(card);
+            }
+        } else if (this.currentTab === 'clients') {
+            let list = data.clients;
+            if (q) {
+                list = list.filter(c => c.name.toLowerCase().includes(q) || c.plan.toLowerCase().includes(q));
+            }
+
+            if (list.length === 0) {
+                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No matching clients found.</div>';
+                return;
+            }
+
+            for (const cli of list) {
+                const card = document.createElement('div');
+                card.className = 'os-project-card';
+                card.innerHTML = `
+                    <div class="os-card-top">
+                        <span class="os-badge status-${cli.status === 'prospect' ? 'backlog' : 'in_progress'}">${cli.status.toUpperCase()}</span>
+                        ${cli.mrr > 0 ? '<span class="os-badge badge-care-plan">🛡 Care Plan</span>' : ''}
+                    </div>
+                    <div class="os-card-title">${cli.name}</div>
+                    <div class="os-card-client">${cli.plan}</div>
+                    <div class="os-client-meta">
+                        <span class="os-meta-tag">📁 ${cli.projectCount || 0} projects</span>
+                        <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
+                    </div>
+                    <div class="os-card-bottom">
+                        <span>${cli.mrr > 0 ? `💰 ${cli.mrr} CHF / mo` : 'No care plan'}</span>
+                        <span class="os-card-open">Open profile ↗</span>
+                    </div>
+                `;
+
+                card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(cli.guid, panel));
+                card.querySelector('.os-card-open').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.openRecord(cli.guid, panel);
+                });
+
+                cardsContainer.appendChild(card);
+            }
+        } else if (this.currentTab === 'invoices') {
+            let list = data.invoices;
+            if (q) {
+                list = list.filter(i => i.name.toLowerCase().includes(q) || i.clientName.toLowerCase().includes(q));
+            }
+
+            if (list.length === 0) {
+                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No matching invoices found.</div>';
+                return;
+            }
+
+            for (const inv of list) {
+                const card = document.createElement('div');
+                card.className = 'os-project-card';
+                const isPaid = inv.status === 'paid';
+                card.innerHTML = `
+                    <div class="os-card-top">
+                        <span class="os-badge status-${inv.status}" title="Click to toggle paid / unpaid">${isPaid ? 'PAID' : 'UNPAID'}</span>
+                    </div>
+                    <div class="os-card-title">${inv.name}</div>
+                    ${inv.clientName ? `<div class="os-card-client">${inv.clientName}</div>` : ''}
+                    <div class="os-card-bottom">
+                        <span>💰 ${inv.amount} CHF · 📅 ${inv.dueDate}</span>
+                        <span class="os-card-open">Open invoice ↗</span>
+                    </div>
+                `;
+
+                card.querySelector('.os-badge').addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const nextStatus = isPaid ? 'unpaid' : 'paid';
+                    try {
+                        if (inv.record?.prop('status')?.setValue) {
+                            await inv.record.prop('status').setValue(nextStatus);
+                        } else if (inv.record?.prop('payment_status')?.setValue) {
+                            await inv.record.prop('payment_status').setValue(nextStatus);
+                        }
+                        this.ui.addToaster({ title: `Invoice set to ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
+                        this.scheduleRefresh();
+                    } catch (err) {
+                        console.error('Invoice status error:', err);
+                    }
+                });
+
+                card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(inv.guid, panel));
+                card.querySelector('.os-card-open').addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.openRecord(inv.guid, panel);
+                });
+
+                cardsContainer.appendChild(card);
+            }
+        }
     }
 }
