@@ -9,7 +9,8 @@ const args = process.argv.slice(2);
 const apply = args.includes('--apply');
 const collectionIndex = args.indexOf('--collection');
 const collections = collectionIndex >= 0 ? [args[collectionIndex + 1]] : Object.keys(VIEW_PLANS);
-const workspace = process.env.THYMER_WORKSPACE || 'WNN1JJG50ZQ6BE9S1T3HG85S57';
+const workspace = process.env.THYMER_WORKSPACE;
+if (!workspace) throw new Error('Set THYMER_WORKSPACE to the explicit target workspace GUID.');
 const call = await connectMcp();
 const plans = [];
 for (const collection of collections) {

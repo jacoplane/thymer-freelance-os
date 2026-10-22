@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions });`, { AppPlugin: class {}, Date, Map, Set, console });
+const runtime = { AppPlugin: class {}, Date, Map, Set, console };
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
 
@@ -57,6 +58,7 @@ test('blocked terminology maps to the SDK waiting state', async () => {
 test('workspace mapping supports renamed collections and native board routing', async () => {
     const plugin = new api.Plugin(); plugin.workflowState = api.workflowDefaults();
     plugin.workflowState.mappings.Projects = 'custom-projects';
+    plugin.workflowCollections = [{ getGuid: () => 'custom-projects', getName: () => 'Work' }];
     assert.equal(plugin.collectionGuid('Projects'), 'custom-projects');
     let navigation;
     plugin.getWorkspaceGuid = () => 'workspace';
@@ -64,6 +66,18 @@ test('workspace mapping supports renamed collections and native board routing', 
     plugin.ui = { createPanel: async () => ({ navigateTo: value => { navigation = value; } }) };
     await plugin.openCollection('custom-projects', {}, 'board');
     assert.equal(navigation.subId, 'work-board');
+});
+
+test('fresh workspaces resolve their own collections and ignore stale mappings', () => {
+    const plugin = new api.Plugin(); plugin.workflowState = api.workflowDefaults();
+    plugin.workflowState.mappings.Projects = 'removed-projects';
+    plugin.workflowCollections = [
+        { getGuid: () => 'fresh-projects', getName: () => 'Projects' },
+        { getGuid: () => 'fresh-journal', getName: () => 'Daily notes', isJournalPlugin: () => true }
+    ];
+    assert.equal(plugin.collectionGuid('Projects'), 'fresh-projects');
+    assert.equal(plugin.collectionGuid('Journal'), 'fresh-journal');
+    assert.equal(plugin.collectionGuid('Invoices'), '');
 });
 
 test('task navigation falls back to a real record panel when item navigation is unsupported', async () => {
@@ -119,4 +133,15 @@ test('weekly review updates the same Journal entry when saved on another day', a
     const second = await plugin.saveReviewToJournal(workflow, { notes: 'Updated' }, '2026-10-23');
     assert.equal(first.headingGuid, second.headingGuid);
     assert.equal(created, firstCount);
+});
+
+test('virtual Journal pages are reopened on their original date when no ordinary record exists', async () => {
+    runtime.DateTime = {dateOnly:(year,month,day)=>({year,month,day})};
+    const plugin = new api.Plugin(); let requested;
+    const record = {guid:'virtual-journal'};
+    const journal = {getGuid:()=> 'journal',isJournalPlugin:()=>true,getJournalRecord:async(user,date)=>{requested={user,date};return record;}};
+    plugin.data = {getAllCollections:async()=>[journal],getActiveUsers:()=>[{guid:'author'}],getRecord:()=>null};
+    assert.equal(await plugin.getReviewRecord({journalGuid:'journal',userGuid:'author',recordGuid:'virtual-journal',journalDate:'2026-10-22',savedAt:'2026-10-24T12:00:00Z'}),record);
+    assert.equal(requested.user.guid,'author');assert.equal(requested.date.year,2026);assert.equal(requested.date.month,9);assert.equal(requested.date.day,22);
+    delete runtime.DateTime;
 });

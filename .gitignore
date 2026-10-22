@@ -6,3 +6,4 @@ test_*.mjs
 verify_*.mjs
 browser.mjs
 debug_client.mjs
+/*.png

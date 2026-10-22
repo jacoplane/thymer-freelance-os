@@ -91,7 +91,7 @@ try {
         const plugin = window.__freelanceOs;
         const first = await plugin.saveReviewToJournal(plugin.workflowData, { notes: 'Verification draft', priorities: 'First plan' }, '2098-10-20');
         const second = await plugin.saveReviewToJournal(plugin.workflowData, { notes: 'Verification draft', priorities: 'Updated plan' }, '2098-10-21');
-        const record = plugin.data.getRecord(first.recordGuid);
+        const record = await plugin.getReviewRecord(first);
         const roots = (await record.getLineItems()).filter(line => line.guid === first.headingGuid);
         const children = typeof roots[0].getChildren === 'function' ? await roots[0].getChildren() : (await record.getLineItems()).filter(line => line.parent_guid === roots[0].guid);
         const allLines = await record.getLineItems();
@@ -138,7 +138,7 @@ try {
             if (line && await line.delete() === false) throw new Error('Fixture cleanup failed');
         }
         if (review) {
-            const record = plugin.data.getRecord(review.recordGuid);
+            const record = await plugin.getReviewRecord(review);
             const heading = (await record.getLineItems()).find(line => line.guid === review.headingGuid);
             if (heading) {
                 const allLines = await record.getLineItems();

@@ -59,17 +59,18 @@ test('client care plans require active status and a positive monthly fee', () =>
 });
 
 const source = fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8') + '\nObject.assign(Plugin.prototype, Workflow);';
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({Plugin, collectionViewId, COLL_GUIDS});`, { AppPlugin: class {} });
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({Plugin, collectionViewId});`, { AppPlugin: class {} });
 
 test('dashboard routes through native overview with the saved view id', async () => {
     let navigation;
     const plugin = new api.Plugin();
     plugin.getWorkspaceGuid = () => 'workspace';
+    plugin.workflowCollections = [{ getGuid: () => 'new-invoices', getName: () => 'Invoices' }];
     plugin.data = { getPluginByGuid: () => ({ getConfiguration: () => ({ views: [{ id: 'native-review', label: 'To confirm', shown: true }] }) }) };
     plugin.ui = { createPanel: async () => ({ navigateTo: value => { navigation = value; } }) };
-    await plugin.openCollection(api.COLL_GUIDS.Invoices, {}, 'review');
+    await plugin.openCollection('new-invoices', {}, 'review');
     assert.equal(navigation.type, 'overview');
-    assert.equal(navigation.rootId, api.COLL_GUIDS.Invoices);
+    assert.equal(navigation.rootId, 'new-invoices');
     assert.equal(navigation.subId, 'native-review');
-    assert.equal(api.collectionViewId(api.COLL_GUIDS.Invoices, { views: [] }, 'review'), null);
+    assert.equal(api.collectionViewId('new-invoices', { views: [] }, 'review', 'Invoices'), null);
 });

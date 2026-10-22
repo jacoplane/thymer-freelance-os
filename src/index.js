@@ -5,13 +5,7 @@
 
 const DASHBOARD_PANEL_ID = 'freelance-os-dashboard';
 
-const COLL_GUIDS = {
-    Projects: '1B0J3X9Y8QS96C75M3QMT23DNW',
-    Clients: '1FD58J39X6KJ4JK5F06T7P4TSR',
-    Invoices: '1YT6YD3EYV6F06TZY5GKGVJMNR',
-    Library: '16YBSRJPHPAFJCRTZDWJJEF5QG',
-    Journal: '16S1WSXAWSHVHJZ72G6J3JRTCP'
-};
+const COLLECTION_ROLES = ['Projects', 'Clients', 'Invoices', 'Library', 'Journal'];
 
 const COLLECTION_VIEWS = {
     Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
@@ -20,8 +14,7 @@ const COLLECTION_VIEWS = {
 };
 
 function collectionViewId(guid, config, key = 'all', role) {
-    const collection = role || Object.keys(COLL_GUIDS).find(name => COLL_GUIDS[name] === guid);
-    const label = COLLECTION_VIEWS[collection]?.[key];
+    const label = COLLECTION_VIEWS[role]?.[key];
     return config?.views?.find(view => view.shown !== false && view.label === label)?.id || null;
 }
 
@@ -44,25 +37,13 @@ function cleanString(val) {
     return '';
 }
 
-const CHOICE_MAP = {
-    cPDKKZ3D7FD5NXT: 'backlog',
-    c8H5F6MH6W18ZYQ: 'in_progress',
-    cMT7Q1FJ4WVX0ZT: 'in_review',
-    cCN3TAA3V3XV10Q: 'completed',
-    cTNF15963BTEJ6E: 'archived',
-    cTNZG2X4GHTDVK4: 'cancelled',
-    cCSF2NC75V7DRCY: 'high',
-    cBEMEF25K9FYA3M: 'medium',
-    cR1Y0ZVDSMAH19W: 'low'
-};
-
 function formatDatetime(val) {
     if (!val) return '';
     if (typeof val === 'string') {
         if (val.includes('Object') || val.includes('[object')) return '';
         return val;
     }
-    if (val instanceof Date) return val.toISOString().slice(0, 10);
+    if (val instanceof Date) return localDate(val);
     if (Array.isArray(val)) {
         if (val[0] === 'datetime') return formatDatetime(val[1]);
         if (val[1] && typeof val[1] === 'object') return formatDatetime(val[1]);
@@ -96,10 +77,6 @@ function getProp(record, propName) {
                     const l = p.choiceLabel();
                     if (l) return cleanString(l);
                 }
-                if (typeof p.choiceId === 'function') {
-                    const cid = p.choiceId();
-                    if (cid && CHOICE_MAP[cid]) return CHOICE_MAP[cid];
-                }
                 if (typeof p.date === 'function') {
                     const d = p.date();
                     if (d) return formatDatetime(d);
@@ -118,7 +95,7 @@ function getProp(record, propName) {
                 }
                 if (p.value !== undefined) {
                     if (Array.isArray(p.value)) {
-                        if (p.value[0] === 'choice') return CHOICE_MAP[p.value[1]] || p.value[1];
+                        if (p.value[0] === 'choice') return p.value[1];
                         if (p.value[0] === 'datetime') return formatDatetime(p.value[1]);
                         return cleanString(p.value[1]);
                     }
@@ -144,7 +121,7 @@ function getProp(record, propName) {
         if (record.properties && record.properties[propName] !== undefined) {
             const raw = record.properties[propName];
             if (Array.isArray(raw)) {
-                if (raw[0] === 'choice') return CHOICE_MAP[raw[1]] || raw[1];
+                if (raw[0] === 'choice') return raw[1];
                 if (raw[0] === 'datetime') return formatDatetime(raw[1]);
                 if (raw[0] === 'record') return raw[1];
                 return cleanString(raw[1]);
@@ -454,9 +431,10 @@ export class Plugin extends AppPlugin {
     }
 
     async openCollection(guid, sourcePanel, viewKey = 'all') {
+        if (!guid) { this.workflowMode = 'settings'; await this.render(sourcePanel); return; }
         const wsGuid = this.getWorkspaceGuid();
         const config = this.data.getPluginByGuid?.(guid)?.getConfiguration?.();
-        const role = Object.keys(COLL_GUIDS).find(name => this.collectionGuid(name) === guid);
+        const role = COLLECTION_ROLES.find(name => this.collectionGuid(name) === guid);
         const subId = collectionViewId(guid, config, viewKey, role);
         try {
             if (this.ui && typeof this.ui.createPanel === 'function') {
@@ -564,6 +542,8 @@ export class Plugin extends AppPlugin {
         try {
             const collections = await this.data.getAllCollections();
             this.workflowCollections = collections;
+            data.missingCollections = ['Clients', 'Invoices', 'Projects'].filter(role => !this.collectionGuid(role, collections));
+            if (data.missingCollections.length) { data.loadError = true; return data; }
             const readCollection = async (guid) => {
                 const collection = collections.find(c => c.getGuid() === guid);
                 if (!collection) throw new Error('Required collection unavailable');
@@ -694,11 +674,6 @@ export class Plugin extends AppPlugin {
                         }
                     }
                 }
-                if (!clientName) {
-                    if (name.includes('Moulin') || name.includes('EmDash')) clientName = 'Internal Product';
-                    else if (name.includes('Personal')) clientName = 'Personal';
-                }
-
                 let deadline = getProp(pr, 'deadline');
                 if (!deadline || typeof deadline === 'object' || String(deadline).includes('object') || String(deadline).includes('Object')) {
                     deadline = 'No deadline';
@@ -828,11 +803,45 @@ export class Plugin extends AppPlugin {
         return { prioritySaved };
     }
 
+    async createConfiguredRecord(role, title, values) {
+        const collections = this.workflowCollections = await this.data.getAllCollections();
+        const collection = collections.find(item => item.getGuid() === this.collectionGuid(role, collections));
+        if (!collection) throw new Error(`Choose your ${role} collection in Settings`);
+        const fields = collection.getConfiguration().fields;
+        // Validate the schema before creating a page; choice IDs are workspace-specific.
+        for (const [label, value] of Object.entries(values)) {
+            if (value === '' || value === null || value === undefined) continue;
+            const field = fields.find(item => item.label === label || item.id === label);
+            if (!field || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the ${role}.${label} field in your collection setup`);
+        }
+        const guid = collection.createRecord(title);
+        if (!guid) throw new Error('The page could not be created');
+        let record;
+        for (let attempt = 0; attempt < 20 && !record; attempt++) {
+            record = (await collection.getAllRecords()).find(item => item.guid === guid);
+            if (!record) await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        if (!record) throw new Error('The page was created but could not be loaded. Open its collection before retrying.');
+        try {
+            for (const [label, value] of Object.entries(values)) {
+                if (value === '' || value === null || value === undefined) continue;
+                const field = fields.find(item => item.label === label || item.id === label);
+                const property = record.prop(label);
+                if (field.type === 'choice') { if (!property.setChoice(value)) throw new Error(`Could not set ${label}`); }
+                else if (field.type === 'datetime') {
+                    const parts = value.split('-').map(Number);
+                    property.set(DateTime.dateOnly(parts[0], parts[1] - 1, parts[2]).value());
+                } else property.set(value);
+            }
+        } catch (error) { record.trash(); throw error; }
+        return record;
+    }
+
     showCreateProjectModal(panel, data) {
         const modal = document.createElement('div');
         modal.className = 'os-modal-backdrop';
 
-        const clientOptions = data.clients.map(c => `<option value="${c.guid}">${c.name}</option>`).join('');
+        const clientOptions = data.clients.map(c => `<option value="${c.guid}">${escapeHtml(c.name)}</option>`).join('');
 
         modal.innerHTML = `
             <div class="os-modal-card">
@@ -897,30 +906,16 @@ export class Plugin extends AppPlugin {
             const priority = modal.querySelector('.input-priority').value;
             const status = modal.querySelector('.input-status').value;
             const deadline = modal.querySelector('.input-deadline').value;
-
+            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             try {
-                const cols = await this.data.getAllCollections();
-                const pCol = cols.find(c => c.getGuid() === this.collectionGuid('Projects'));
-                if (pCol && typeof pCol.createRecord === 'function') {
-                    const newGuid = pCol.createRecord(title);
-                    if (newGuid) {
-                        const rec = this.data.getRecord ? this.data.getRecord(newGuid) : null;
-                        if (rec) {
-                            if (clientGuid && rec.prop('client')?.setValue) await rec.prop('client').setValue(clientGuid);
-                            if (priority && rec.prop('priority')?.setValue) await rec.prop('priority').setValue(priority);
-                            if (status && rec.prop('status')?.setValue) await rec.prop('status').setValue(status);
-                            if (deadline && rec.prop('deadline')?.setValue) await rec.prop('deadline').setValue(deadline);
-                        }
-                        this.ui.addToaster({ title: `✓ Created "${title}"`, autoDestroyTime: 2500, dismissible: true });
-                        close();
-                        this.scheduleRefresh();
-                        return;
-                    }
-                }
+                await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline });
+                this.ui.addToaster({ title: `✓ Created "${title}"`, autoDestroyTime: 2500, dismissible: true });
+                close();
+                this.scheduleRefresh();
             } catch (err) {
-                console.error('Project create error:', err);
+                submit.disabled = false;
+                this.ui.addToaster({ title: err.message || 'Project could not be created', dismissible: true });
             }
-            close();
         });
 
         document.body.appendChild(modal);
@@ -987,31 +982,17 @@ export class Plugin extends AppPlugin {
             const status = modal.querySelector('.input-status').value;
             const plan = modal.querySelector('.input-plan').value.trim();
             const website = modal.querySelector('.input-website').value.trim();
-
+            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             try {
-                const cols = await this.data.getAllCollections();
-                const cCol = cols.find(c => c.getGuid() === this.collectionGuid('Clients'));
-                if (cCol && typeof cCol.createRecord === 'function') {
-                    const newGuid = cCol.createRecord(title);
-                    if (newGuid) {
-                        const rec = this.data.getRecord ? this.data.getRecord(newGuid) : null;
-                        if (rec) {
-                            if (mrr > 0 && rec.prop('monthly_chf')?.setValue) await rec.prop('monthly_chf').setValue(mrr);
-                            if (status && rec.prop('status')?.setValue) await rec.prop('status').setValue(status);
-                            if (plan && rec.prop('plan')?.setValue) await rec.prop('plan').setValue(plan);
-                            if (website && rec.prop('website')?.setValue) await rec.prop('website').setValue(website);
-                        }
-                        this.ui.addToaster({ title: `✓ Created Client "${title}"`, autoDestroyTime: 2500, dismissible: true });
-                        close();
-                        this.currentTab = 'clients';
-                        this.scheduleRefresh();
-                        return;
-                    }
-                }
+                await this.createConfiguredRecord('Clients', title, { monthly_chf: mrr, status, plan, website });
+                this.ui.addToaster({ title: `✓ Created Client "${title}"`, autoDestroyTime: 2500, dismissible: true });
+                close();
+                this.currentTab = 'clients';
+                this.scheduleRefresh();
             } catch (err) {
-                console.error('Client create error:', err);
+                submit.disabled = false;
+                this.ui.addToaster({ title: err.message || 'Client could not be created', dismissible: true });
             }
-            close();
         });
 
         document.body.appendChild(modal);
@@ -1022,7 +1003,7 @@ export class Plugin extends AppPlugin {
         const modal = document.createElement('div');
         modal.className = 'os-modal-backdrop';
 
-        const clientOptions = data.clients.map(c => `<option value="${c.guid}">${c.name}</option>`).join('');
+        const clientOptions = data.clients.map(c => `<option value="${c.guid}">${escapeHtml(c.name)}</option>`).join('');
         const nextInvNum = `FAC-2026-${String(data.issuedCount + 1).padStart(3, '0')}`;
 
         modal.innerHTML = `
@@ -1077,39 +1058,24 @@ export class Plugin extends AppPlugin {
         modal.querySelector('.btn-submit').addEventListener('click', async () => {
             const title = modal.querySelector('.input-title').value.trim();
             const amount = Number(modal.querySelector('.input-amount').value) || 0;
-            if (!title || !amount) {
-                alert('Please enter an invoice number and amount.');
+            const clientGuid = modal.querySelector('.input-client').value;
+            if (!title || !Number.isFinite(amount) || amount <= 0 || !clientGuid) {
+                alert('Please enter an invoice number, a positive amount, and a client.');
                 return;
             }
-
-            const clientGuid = modal.querySelector('.input-client').value;
             const status = modal.querySelector('.input-status').value;
             const due = modal.querySelector('.input-due').value;
-
+            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             try {
-                const cols = await this.data.getAllCollections();
-                const iCol = cols.find(c => c.getGuid() === this.collectionGuid('Invoices'));
-                if (iCol && typeof iCol.createRecord === 'function') {
-                    const newGuid = iCol.createRecord(title);
-                    if (newGuid) {
-                        const rec = this.data.getRecord ? this.data.getRecord(newGuid) : null;
-                        if (rec) {
-                            if (amount > 0 && rec.prop('amount_chf')?.setValue) await rec.prop('amount_chf').setValue(amount);
-                            if (clientGuid && rec.prop('client')?.setValue) await rec.prop('client').setValue(clientGuid);
-                            if (status && rec.prop('status')?.setValue) await rec.prop('status').setValue(status);
-                            if (due && rec.prop('due')?.setValue) await rec.prop('due').setValue(due);
-                        }
-                        this.ui.addToaster({ title: `✓ Created Invoice "${title}"`, autoDestroyTime: 2500, dismissible: true });
-                        close();
-                        this.currentTab = 'invoices';
-                        this.scheduleRefresh();
-                        return;
-                    }
-                }
+                await this.createConfiguredRecord('Invoices', title, { amount_chf: amount, client: clientGuid, status: 'sent', payment_status: status, currency: 'CHF', due, issued: localDate(), ...(status === 'paid' ? {paid_date:localDate()} : {}) });
+                this.ui.addToaster({ title: `✓ Created Invoice "${title}"`, autoDestroyTime: 2500, dismissible: true });
+                close();
+                this.currentTab = 'invoices';
+                this.scheduleRefresh();
             } catch (err) {
-                console.error('Invoice create error:', err);
+                submit.disabled = false;
+                this.ui.addToaster({ title: err.message || 'Invoice could not be created', dismissible: true });
             }
-            close();
         });
 
         document.body.appendChild(modal);
@@ -1248,6 +1214,12 @@ export class Plugin extends AppPlugin {
         modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['review', 'Weekly review'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
         app.appendChild(modes);
+        if (mode === 'overview' && data.missingCollections?.length) {
+            const setup = document.createElement('section'); setup.className = 'os-workflow os-workflow-settings';
+            setup.innerHTML = `<h2>Set up your workspace</h2><p>Freelance OS needs Clients, Projects and Invoices collections with its starter fields.</p><p>Missing collections: ${data.missingCollections.map(escapeHtml).join(', ')}. Create them using the setup guide, or map your existing collections in Settings.</p><button class="os-button os-primary">Choose collections</button>`;
+            setup.querySelector('button').onclick = () => { this.workflowMode = 'settings'; this.render(panel); };
+            app.appendChild(setup); this.mountWorkflowApp(container, app); return;
+        }
         if (mode !== 'overview') {
             app.appendChild(mode === 'settings' ? this.renderWorkflowSettings(panel) : this.renderWorkflow(workflow, panel));
             this.mountWorkflowApp(container, app);
@@ -1631,13 +1603,11 @@ export class Plugin extends AppPlugin {
                     e.stopPropagation();
                     const nextStatus = proj.status === 'in_progress' ? 'completed' : (proj.status === 'completed' ? 'backlog' : 'in_progress');
                     try {
-                        if (proj.record?.prop('status')?.setValue) {
-                            await proj.record.prop('status').setValue(nextStatus);
-                            this.ui.addToaster({ title: `Status: ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
-                            this.scheduleRefresh();
-                        }
+                        if (!proj.record?.prop('status')?.setChoice(nextStatus)) throw new Error('Project status could not be saved');
+                        this.ui.addToaster({ title: `Status: ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
+                        this.scheduleRefresh();
                     } catch (err) {
-                        console.error('Status change error:', err);
+                        this.ui.addToaster({ title: err.message || 'Project status could not be saved', dismissible: true });
                     }
                 });
 

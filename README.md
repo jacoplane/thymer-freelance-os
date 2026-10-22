@@ -1,94 +1,63 @@
-# Freelance OS — Thymer Dashboard AppPlugin
+# Freelance OS for Thymer
 
-Executive freelance dashboard running inside Thymer, inspired by Obsidian Freelance OS.
+A home for running a freelance business inside Thymer: clients, projects, cashflow, the next action, and a weekly review.
 
-**Overview** is the default landing view. **Today** and **Weekly review** are available from the dashboard tabs. Freelance OS works independently of Daily Focus: both use native Thymer tasks, but their focus selections are separate. Daily Focus remains useful for workspace-wide planning, time blocks and recurring tasks.
+![Freelance OS overview with fictional clients, projects and invoices](docs/images/overview.png)
 
-## Features
+All screenshots use a separate demo workspace with fictional content.
 
-- **Today and project action queue**:
-  - Choose one next action per explicitly active project and pin up to three tasks for today.
-  - Includes tasks inside nested project pages and unambiguous project references on tasks elsewhere in the workspace.
-  - Filter by project or text; complete tasks, change due dates, and mark work as waiting with a reason and follow-up date.
-  - Project attention signals use missing next actions, project deadlines, overdue tasks, and follow-ups due.
-- **Weekly review**:
-  - Clear overdue work, check projects and waiting items, then record wins and priorities for next week.
-  - Preview the summary and save it to Journal. Updating it later in the same week reuses the same entry.
-  - Recently done means tasks currently marked done whose last modification was within seven days; it does not claim an exact completion time.
-- **Workspace settings**:
-  - Map Projects, Clients, Invoices, Library and Journal to existing collections without changing their schemas.
-  - Workflow focus selections, next-action choices, waiting notes, mappings and review drafts are stored locally per workspace on this device. Native task changes and saved Journal reviews sync through Thymer.
-  - The new workflow uses native project `status` values `in_progress` / `in_review` and task `waiting` state. The financial dashboard and collection links remain under **Overview**.
-- **Executive KPI Bar**:
-  - **MRR (Monthly Recurring Revenue)**: Calculated live from active `Clients` records (`monthly_chf`).
-  - **Invoiced, all time (CHF)**: Issued invoices, excluding drafts and other currencies.
-  - **Collected, all time (CHF)**: Confirmed paid invoices.
-  - **Active Clients**: Count of clients with active status.
-- **Quick Task Capture**:
-  - Integrated capture input with hotkey support.
-  - Direct append to daily notes or project tasks.
-- **3-Column Workspace Overview**:
-  - **Active Projects**: Sorted by priority and deadline with status pills, sub-page count, and interactive click-to-navigate.
-  - **Maintenance & Invoices**: Active retainer agreements and upcoming/overdue invoice register.
-  - **Agenda / Deadlines**: Real-time aggregation of tasks with deadlines for today, overdue, and upcoming week.
-- **Reactive Data Engine**:
-  - Listens to workspace mutations (`record.updated`, `lineitem.created`, etc.) and automatically updates the dashboard.
-- **Native collection workflows**:
-  - Invoice Register, Outstanding, Overdue, To confirm, To send, and Paid tables.
-  - Project Register, a board of open top-level pages, Active, Due dates, and Overdue views. Existing calendar and outline views remain available.
-  - Client Directory, Active, Prospects, and Care plans tables.
-  - Cashflow actions open the matching native invoice queue beside the dashboard. Invoice cards retain their inline filters; “View collection” opens the selected queue.
+**[Set up Freelance OS](docs/setup.md)** · **[Daily workflow and weekly review](docs/usage.md)** · **[Collection fields](docs/collections.md)**
 
-## Installation
+## What it does
 
-### Via Plugins Manager UI (Recommended)
-1. Open Thymer.
-2. Open **Plugins Manager** from the sidebar or command palette (`Ctrl/Cmd + K`).
-3. Click **Install Plugin**.
-4. Enter this repository URL:
-   ```
-   https://github.com/jacoplane/thymer-freelance-os
-   ```
-5. Click **Install**. The **Freelance OS** icon will appear in your sidebar and command palette!
+- **Overview is home.** Recurring revenue, issued invoices, confirmed payments, overdue balances, client relationships, projects and an agenda in one view.
+- **Move each project forward.** Choose one next action per active project. See missing next actions, approaching deadlines, overdue tasks and waiting dependencies.
+- **Pick today’s focus.** Pin up to three project tasks. Search and filter the action queue, complete work, reschedule tasks, or record a waiting reason and follow-up date.
+- **Close the week.** Clear overdue work, check projects and dependencies, write your wins and next priorities, then save the review into Journal.
+- **Stay in Thymer.** Capture native tasks into a project or today’s Journal. Collection links open native working views alongside the dashboard. Layouts adapt to the available panel width.
 
-### Manual Custom Code
-1. Open Thymer **Settings** $\rightarrow$ **Plugins** $\rightarrow$ **Create Global Plugin**.
-2. Set Name to `Freelance OS` and Icon to `layout-grid`.
-3. Paste the contents of `dist/plugin.js` into the Code tab.
-4. Save and reload.
+![Today’s focus and project action queue](docs/images/today.png)
+
+## Install
+
+Freelance OS has **no required third-party plugin dependencies**. It uses Clients, Projects, Invoices and Library collections, plus Thymer’s native Journal. The starter setup creates these for you. Daily Focus, Tables and Outline Installer are not required. Plugins Manager is an optional installer.
+
+For a fresh workspace, follow the [setup guide](docs/setup.md). It includes a preview-first setup command and an optional [starter import](dist/freelance-os-starter.json) for Plugins Manager.
+
+If your collections are already configured, install just the dashboard with Plugins Manager using this repository URL:
+
+```text
+https://github.com/jacoplane/thymer-freelance-os
+```
+
+Then open **Freelance OS → Settings** and check the collection mappings. Collection names can be mapped; field labels and choice values must match the [field reference](docs/collections.md).
+
+## A weekly rhythm
+
+Start in **Overview** to check the business. In **Today**, choose next actions and a small daily focus. At the end of the week, work through **Clear the decks → Check projects → Plan next week**, then save to Journal.
+
+![Weekly review with overdue work and recently completed tasks](docs/images/weekly-review.png)
+
+The [usage guide](docs/usage.md) explains capture, waiting work, payment states, and how to update a saved review.
+
+## Current scope
+
+- Financial totals use **CHF**. Other currencies are excluded from CHF totals and are not converted. The dashboard does not generate or send invoices, QR bills, or payment reminders.
+- Focus pins, next-action choices, waiting notes, mappings and review drafts are **local to this device and workspace**. Native tasks, dates, statuses, collection records and saved Journal reviews sync through Thymer.
+- “Done recently” means tasks currently marked done whose last modification was within seven days. It is not an exact completion history.
+- Active project workflows require `in_progress` or `in_review` status. Field labels and choice values currently follow the provided starter schema.
 
 ## Development
 
-```bash
-# Install dependencies
-npm install
+Requires Node.js 22 or newer for the setup scripts. Development and live UI checks also use npm dependencies.
 
-# Build the production bundle
-npm run build
+```sh
+npm ci
+node build.mjs
+node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/starter.test.mjs
+node deploy.mjs --workspace YOUR_WORKSPACE_GUID
 ```
 
-### Configure native collection views
+The build produces the installable root bundle, matching `dist/` files, and a schema-only starter import. Deployments always require an explicit workspace. See [development and screenshot notes](docs/development.md) for the live verification loop and demo seed command.
 
-With Thymer Desktop running and its MCP server enabled, review the proposed changes:
-
-```bash
-node scripts/collection-views.mjs
-node scripts/collection-views.mjs --apply
-```
-
-Use `--collection Invoices`, `--collection Projects`, or `--collection Clients` to limit the pass. The script resolves property IDs from the current schema, reuses existing view IDs, preserves unrelated views and field definitions, and saves a local backup before each change. Backups default to the operating system's temporary directory under `freelance-os-collection-backups`; set `OS_COLLECTION_BACKUP_DIR` to keep them elsewhere. No record content is modified. View setup is explicit; loading the dashboard does not overwrite collection settings.
-
-Queries follow [Thymer's query reference](https://github.com/thymerapp/thymer-plugin-sdk/blob/main/search-queries.md). Saved native collection filters are already scoped to records in that collection, so they omit global `@document` and collection prefixes. Overdue means a due date strictly before today; drafts and paid invoices are excluded. Active projects require an explicit in-progress or in-review status. Care plans require an active client with a positive monthly fee.
-
-### Verification
-
-```bash
-node --test test/finance.test.mjs test/collection-views.test.mjs
-node test/live-collections.mjs
-node --test test/workflow.test.mjs
-node test/live-workflow.mjs
-```
-
-The live collection check compares every saved view against the workspace query results, verifies dashboard-to-queue navigation, captures local screenshots, and closes its verification panels. Set `OS_ARTIFACT_DIR` to choose the screenshot directory. Screenshots and configuration backups contain workspace data and should stay out of Git.
-
-The live workflow check creates temporary tasks and a clearly dated verification review, checks focus limits, state persistence, native task changes, review update behavior and split-panel layouts, then removes its fixtures and restores the original local workflow state.
+Feedback and bug reports are welcome in [GitHub Issues](https://github.com/jacoplane/thymer-freelance-os/issues). Include the Thymer version, the affected dashboard tab, and reproduction steps using fictional data where possible.

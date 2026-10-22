@@ -101,7 +101,8 @@ const Workflow = {
 
     collectionGuid(role, collections = this.workflowCollections || []) {
         const state = this.loadWorkflowState();
-        return state.mappings[role] || collections.find(collection => collection.getName?.().toLowerCase() === role.toLowerCase())?.getGuid() || COLL_GUIDS[role];
+        const mapped = collections.find(collection => collection.getGuid() === state.mappings[role]);
+        return mapped?.getGuid() || collections.find(collection => role === 'Journal' ? collection.isJournalPlugin?.() : collection.getName?.().toLowerCase() === role.toLowerCase())?.getGuid() || '';
     },
 
     async loadWorkflowData() {
@@ -160,6 +161,21 @@ const Workflow = {
         if (await task.lineItem.setSegments(taskDateSegments(task.lineItem.segments || [], date, value)) === false) throw new Error('Task date was not saved');
     },
 
+    async getReviewRecord(reference, journal, user) {
+        if (!journal) {
+            const collections = await this.data.getAllCollections();
+            journal = collections.find(collection => collection.getGuid() === (reference?.journalGuid || this.collectionGuid('Journal', collections)));
+            user = this.data.getActiveUsers?.().find(item => item.guid === reference?.userGuid) || this.data.getActiveUsers?.()[0];
+        }
+        if (!journal?.isJournalPlugin?.() || !user) throw new Error('Choose a Journal collection in Settings');
+        const cached = reference?.recordGuid ? this.data.getRecord?.(reference.recordGuid) : null;
+        if (cached) return cached;
+        const date = reference?.journalDate || (reference?.savedAt ? localDate(new Date(reference.savedAt)) : '');
+        const parts = date ? date.split('-').map(Number) : [];
+        const target = date ? DateTime.dateOnly(parts[0], parts[1] - 1, parts[2]) : undefined;
+        return journal.getJournalRecord(user, target);
+    },
+
     async saveReviewToJournal(workflow, draft, today = localDate()) {
         if (this.reviewSaving) return null;
         this.reviewSaving = true;
@@ -169,8 +185,7 @@ const Workflow = {
             const user = this.data.getActiveUsers?.()[0];
             if (!journal?.isJournalPlugin?.() || !user) throw new Error('Choose a Journal collection in Settings');
             const prior = this.workflowState.reviews[reviewWeek(today)];
-            const previousRecord = prior?.journalGuid === journal.getGuid() ? this.data.getRecord?.(prior.recordGuid) : null;
-            const record = previousRecord || await journal.getJournalRecord(user);
+            const record = await this.getReviewRecord(prior?.journalGuid === journal.getGuid() ? prior : null, journal, user);
             if (!record) throw new Error('Journal is unavailable');
             const title = `Weekly review · week of ${reviewWeek(today)}`;
             const lines = await record.getLineItems();
@@ -196,9 +211,11 @@ const Workflow = {
                 previous = line;
             }
             for (const line of existing.slice(summaryLines.length)) if (await line.delete() === false) throw new Error('Outdated review line could not be removed');
-            this.workflowState.reviews[reviewWeek(today)] = { savedAt: new Date().toISOString(), journalGuid: journal.getGuid(), recordGuid: record.guid, headingGuid: heading.guid };
+            const details = record.getJournalDetails?.();
+            const reference = { savedAt: new Date().toISOString(), journalGuid: journal.getGuid(), journalDate: localDate(details?.date || new Date()), userGuid: details?.userGuid || user.guid, recordGuid: record.guid, headingGuid: heading.guid };
+            this.workflowState.reviews[reviewWeek(today)] = reference;
             this.persistWorkflow();
-            return { recordGuid: record.guid, headingGuid: heading.guid };
+            return reference;
         } finally { this.reviewSaving = false; }
     },
 
@@ -395,7 +412,7 @@ const Workflow = {
         const section = document.createElement('section'); section.className = 'os-workflow os-workflow-settings';
         section.innerHTML = '<h2>Workspace settings</h2><p>Choose the collections Freelance OS should use. Active projects use in_progress and in_review; waiting tasks use Thymer’s native waiting state.</p><p class="os-action-meta">Focus, next-action choices, waiting notes, mappings, and review drafts are saved on this device. Task changes and reviews saved to Journal sync with your workspace.</p>';
         const form = document.createElement('div'); form.className = 'os-settings-fields';
-        for (const role of Object.keys(COLL_GUIDS)) {
+        for (const role of COLLECTION_ROLES) {
             const label = document.createElement('label'); label.textContent = role;
             const select = document.createElement('select'); select.className = 'os-input'; select.dataset.role = role;
             select.innerHTML = '<option value="">Choose collection…</option>' + (this.workflowCollections || []).filter(collection => role !== 'Journal' || collection.isJournalPlugin?.()).map(collection => `<option value="${collection.getGuid()}">${escapeHtml(collection.getName())}</option>`).join('');

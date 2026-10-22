@@ -1,6 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { STARTER_ROLES, starterConfig } from './scripts/starter-schema.mjs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -38,14 +39,21 @@ fs.writeFileSync(path.join(__dirname, 'plugin.css'), cssSrc, 'utf-8');
 // Also create a paste-ready JSON backup format for Plugins Manager
 const parsedConfig = JSON.parse(pluginJson);
 const backupExport = {
-    guid: null,
-    name: parsedConfig.name,
-    code: bundleJs,
-    css: cssSrc,
-    config: parsedConfig
+    schemaVersion: 2,
+    section: 'app',
+    items: [{ name: parsedConfig.name, type: 'app', json: parsedConfig, code: bundleJs, css: cssSrc }]
 };
 
 fs.writeFileSync(path.join(distDir, 'freelance-os-backup.json'), JSON.stringify(backupExport, null, 2), 'utf-8');
+
+// A schema-only starter import for Plugins Manager. Includes no records, workspace IDs or local state.
+const starterItems = STARTER_ROLES.map(role => {
+    const json = { ...starterConfig(role), type: 'collection' };
+    for (const field of json.fields) if (field.label === 'client') { field.filter_colname = 'Clients'; field.filter_colguid = 'starter-clients'; }
+    return { name: role, type: 'collection', json, code: role === 'Journal' ? 'class Plugin extends JournalCorePlugin {}' : 'class Plugin extends CollectionPlugin {}', css: '' };
+});
+starterItems.push({ name: parsedConfig.name, type: 'app', json: parsedConfig, code: bundleJs, css: cssSrc });
+fs.writeFileSync(path.join(distDir, 'freelance-os-starter.json'), JSON.stringify({ schemaVersion: 2, section: 'all', items: starterItems }, null, 2), 'utf-8');
 
 console.log('Build completed successfully!');
 console.log('Generated:');
@@ -53,3 +61,4 @@ console.log('  - dist/plugin.js (' + bundleJs.length + ' bytes)');
 console.log('  - dist/plugin.css (' + cssSrc.length + ' bytes)');
 console.log('  - dist/plugin.json (' + pluginJson.length + ' bytes)');
 console.log('  - dist/freelance-os-backup.json (' + JSON.stringify(backupExport).length + ' bytes)');
+console.log('  - dist/freelance-os-starter.json (dashboard + empty starter collections)');

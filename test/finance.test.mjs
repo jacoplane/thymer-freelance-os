@@ -12,6 +12,11 @@ test('Thymer date wrappers use the stored calendar date over formatted labels', 
     assert.equal(api.dateDay('2026-03-16') - api.dateDay('2026-03-15'), 1);
 });
 
+test('native date-only values keep their local calendar day', () => {
+    const date = new Date(2030, 0, 12);
+    assert.equal(api.formatDatetime(date), '2030-01-12');
+});
+
 test('client value uses linked CHF payments and active projects only', () => {
     const result = api.clientSummary({ guid: 'client-a' }, [
         { clientGuid: 'client-a', status: 'in_progress' },
@@ -101,7 +106,7 @@ test('collection loading preserves zero totals and excludes prospect retainers',
     const plugin = new api.Plugin();
     const record = (status, amount) => ({ guid: status, getName: () => status, prop: k => ({ text: () => k === 'status' ? status : k === 'monthly_chf' ? String(amount) : '' }) });
     plugin.data = {
-        getAllCollections: async () => ['1FD58J39X6KJ4JK5F06T7P4TSR', '1YT6YD3EYV6F06TZY5GKGVJMNR', '1B0J3X9Y8QS96C75M3QMT23DNW'].map((guid, index) => ({ getGuid: () => guid, getAllRecords: async () => index === 0 ? [record('active', 0), record('prospect', 200), record('archived', 100)] : [] })),
+        getAllCollections: async () => ['Clients', 'Invoices', 'Projects'].map((name, index) => ({ getGuid: () => `new-${name}`, getName: () => name, getAllRecords: async () => index === 0 ? [record('active', 0), record('prospect', 200), record('archived', 100)] : [] })),
         searchByQuery: async () => ({ lines: [] })
     };
     const data = await plugin.loadData();
@@ -110,4 +115,16 @@ test('collection loading preserves zero totals and excludes prospect retainers',
     assert.equal(data.activeClientsCount, 1);
     assert.equal(data.cashflow.collected, 0);
     assert.equal(data.loadError, undefined);
+});
+
+test('record creation uses native choice and value setters and rejects an incompatible schema before creating', async () => {
+    const plugin = new api.Plugin(); let created = 0; const written = {};
+    const fields = [{label:'status',type:'choice',choices:[{label:'active'}]},{label:'monthly_chf',type:'number'},{label:'contact',type:'text'}];
+    const record = {guid:'new-record',prop:label=>({set:value=>{written[label]=value;},setChoice:value=>{written[label]=value;return true;}})};
+    const collection = {getGuid:()=> 'new-clients',getName:()=> 'Clients',getConfiguration:()=>({fields}),createRecord:()=>{created++;return record.guid;},getAllRecords:async()=>[record]};
+    plugin.data = {getAllCollections:async()=>[collection]};
+    assert.equal(await plugin.createConfiguredRecord('Clients','Example',{status:'active',monthly_chf:85,contact:'hello@example.test'}),record);
+    assert.deepEqual(written,{status:'active',monthly_chf:85,contact:'hello@example.test'});
+    await assert.rejects(plugin.createConfiguredRecord('Clients','Bad choice',{status:'unknown'}),/Check the Clients.status/);
+    assert.equal(created,1);
 });

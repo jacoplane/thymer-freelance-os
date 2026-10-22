@@ -1,9 +1,12 @@
 {
   "ver": 1,
   "name": "Freelance OS",
+  "version": "1.1.0",
+  "author": "jacoplane",
+  "repository": "https://github.com/jacoplane/thymer-freelance-os",
   "icon": "layout-grid",
   "item_name": "Freelance OS",
-  "description": "Executive dashboard: Recurring Revenue, Invoicing, Active Projects, and Agenda.",
+  "description": "Freelance dashboard with cashflow, clients, project next actions and weekly reviews.",
   "type": "app",
   "show_sidebar_items": true,
   "show_cmdpal_items": true

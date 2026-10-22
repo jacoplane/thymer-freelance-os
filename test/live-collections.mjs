@@ -61,7 +61,7 @@ try {
             for (const panel of plugin.ui.getPanels()) if (panel.getId() !== plugin.activePanel.getId()) plugin.ui.closePanel(panel);
             document.querySelector('[data-invoice-filter="review"]').click();
         });
-        await page.waitForFunction(() => window.__freelanceOs.ui.getPanels().at(-1).getNavigation().subId === window.__freelanceOs.data.getPluginByGuid('1YT6YD3EYV6F06TZY5GKGVJMNR').getConfiguration().views.find(v => v.label === 'To confirm').id, { polling: 100, timeout: 5000 });
+        await page.waitForFunction(() => window.__freelanceOs.ui.getPanels().at(-1).getNavigation().subId === window.__freelanceOs.data.getPluginByGuid(window.__freelanceOs.collectionGuid('Invoices')).getConfiguration().views.find(v => v.label === 'To confirm').id, { polling: 100, timeout: 5000 });
     }
     assert.deepEqual(await page.evaluate(() => [innerWidth, innerHeight]), dimensions);
     assert.deepEqual(failures, []);
