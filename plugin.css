@@ -73,6 +73,25 @@
 .os-metric-footnote { font-size: 11px; color: var(--os-muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
 /* Main 3-Column Layout */
+.os-cashflow { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 20px; padding: 0 0 18px; margin-bottom: 20px; border-bottom: 1px solid var(--os-border); }
+.os-cash-heading { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.os-cash-heading h2 { font-size: 13px; font-weight: 600; }
+.os-cash-heading span, .os-cash-note { font-size: 11px; color: var(--os-muted); }
+.os-collection-rate progress { display: block; width: 100%; height: 6px; margin: 10px 0 6px; border: 0; border-radius: 3px; overflow: hidden; accent-color: var(--os-accent); }
+.os-collection-rate progress::-webkit-progress-bar { background: var(--os-surface-hover); }
+.os-collection-rate progress::-webkit-progress-value { background: var(--os-accent); }
+.os-cash-action { display: flex; flex-direction: column; align-items: flex-start; gap: 3px; min-width: 0; padding: 4px 8px; border: 0; border-radius: 6px; text-align: left; font: inherit; background: transparent; color: var(--os-text); cursor: pointer; }
+.os-cash-action:hover { background: var(--os-surface-hover); }
+.os-cash-action > span, .os-invoice-timing { font-size: 12px; color: var(--os-muted); }
+.os-cash-action strong { font-size: 16px; font-weight: 600; }
+.os-cash-action small { font-size: 11px; color: var(--os-muted); overflow-wrap: anywhere; }
+.os-cash-warning, .os-cash-warning > span { color: #fb923c; }
+.os-badge.status-unconfirmed { background: rgba(249, 115, 22, .15); color: #fb923c; }
+.os-data-error { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0; color: var(--os-text); }
+.os-cashflow button:focus-visible, .os-app button:focus-visible, .os-app a:focus-visible { outline: 2px solid var(--os-accent); outline-offset: 3px; }
+@container osApp (max-width: 1120px) { .os-cashflow { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
+@container osApp (max-width: 480px) { .os-cashflow { grid-template-columns: 1fr; gap: 8px; } }
+
 .os-grid { display: grid; grid-template-columns: 170px minmax(0, 1.3fr) minmax(280px, 1fr); gap: var(--os-gap); align-items: start; }
 
 /* Rail (Column 1) */

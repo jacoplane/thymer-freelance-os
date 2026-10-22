@@ -1,6 +1,6 @@
 import fs from 'node:fs';
 
-const BASE = "http://127.0.0.1:13100/";
+const BASE = "http://127.0.0.1:13100/mcp";
 const WS = "WNN1JJG50ZQ6BE9S1T3HG85S57";
 const PLUGIN_GUID = "198WZ858D9JC12CY5SWW9GSZFJ";
 const HDR = { "Content-Type": "application/json", "Accept": "application/json, text/event-stream" };
@@ -23,7 +23,7 @@ async function deploy() {
     });
 
     const sid = initRes.headers.get("Mcp-Session-Id");
-    console.log("MCP Session ID:", sid);
+    if (!initRes.ok) throw new Error(`MCP initialization failed: ${initRes.status}`);
 
     await fetch(BASE, {
         method: "POST",
@@ -55,7 +55,8 @@ async function deploy() {
     });
 
     const data = await res.json();
-    console.log("Update response:", JSON.stringify(data, null, 2));
+    if (!res.ok || data.error || data.result?.isError) throw new Error('Plugin code update failed');
+    console.log('Plugin code updated');
 
     // Also update CSS
     const css = fs.readFileSync('dist/plugin.css', 'utf8');
@@ -77,7 +78,8 @@ async function deploy() {
         })
     });
     const cssData = await cssRes.json();
-    console.log("CSS Update response:", JSON.stringify(cssData, null, 2));
+    if (!cssRes.ok || cssData.error || cssData.result?.isError) throw new Error('Plugin CSS update failed');
+    console.log('Plugin CSS updated');
 }
 
-deploy().catch(console.error);
+deploy().catch(error => { console.error(error); process.exitCode = 1; });

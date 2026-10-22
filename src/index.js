@@ -57,13 +57,14 @@ function formatDatetime(val) {
         return formatDatetime(val[0]);
     }
     if (typeof val === 'object') {
+        if (typeof val.value === 'function') return formatDatetime(val.value());
         if (typeof val.toISOString === 'function') return val.toISOString().slice(0, 10);
         if (val.value !== undefined) return formatDatetime(val.value);
-        if (val.formatted) return String(val.formatted);
         if (val.d && String(val.d).length === 8) {
             const s = String(val.d);
             return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
         }
+        if (val.formatted) return String(val.formatted);
         if (val.text) return String(val.text);
         if (val.date) return formatDatetime(val.date);
         if (val.year && val.month && val.day) {
@@ -86,6 +87,10 @@ function getProp(record, propName) {
                 if (typeof p.choiceId === 'function') {
                     const cid = p.choiceId();
                     if (cid && CHOICE_MAP[cid]) return CHOICE_MAP[cid];
+                }
+                if (typeof p.date === 'function') {
+                    const d = p.date();
+                    if (d) return formatDatetime(d);
                 }
                 if (typeof p.text === 'function') {
                     const t = p.text();
@@ -251,7 +256,58 @@ function extractLineDate(line) {
     if (!line || !Array.isArray(line.segments)) return null;
     const dt = line.segments.find(s => s.type === 'datetime');
     if (!dt) return null;
-    return cleanString(dt.text || dt.date);
+    return formatDatetime(dt.text || dt.date);
+}
+
+function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function localDate(date = new Date()) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+
+function dateDay(value) {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null;
+    const timestamp = Date.parse(`${value}T00:00:00Z`);
+    return Number.isFinite(timestamp) && new Date(timestamp).toISOString().slice(0, 10) === value ? timestamp / 86400000 : null;
+}
+
+function money(value) {
+    return new Intl.NumberFormat('en-CH', { maximumFractionDigits: 2 }).format(value);
+}
+
+function invoiceMatches(invoice, filter) {
+    if (filter === 'all') return true;
+    if (filter === 'overdue') return invoice.daysOverdue > 0;
+    if (filter === 'outstanding') return invoice.isOutstanding;
+    if (filter === 'review') return invoice.status === 'unconfirmed';
+    if (filter === 'to-send') return invoice.stage === 'draft' || invoice.stage === 'ready';
+    return invoice.status === filter;
+}
+
+function summarizeInvoices(invoices) {
+    const summary = { invoiced: 0, collected: 0, outstanding: 0, overdue: 0, overdueCount: 0, unconfirmedCount: 0, toSend: 0, issuedCount: 0, excludedCurrency: 0, aging: [0, 0, 0], undated: 0 };
+    for (const invoice of invoices) {
+        if (invoice.stage === 'draft' || invoice.stage === 'ready') summary.toSend++;
+        if (invoice.currency !== 'CHF') { summary.excludedCurrency++; continue; }
+        if (invoice.stage !== 'sent' && invoice.status !== 'paid') continue;
+        summary.invoiced += invoice.amount;
+        summary.issuedCount++;
+        if (invoice.status === 'paid') summary.collected += invoice.amount;
+        if (invoice.status === 'unconfirmed') summary.unconfirmedCount++;
+        if (invoice.isOutstanding) {
+            summary.outstanding += invoice.amount;
+            if (!invoice.dueDate) summary.undated++;
+            if (invoice.daysOverdue > 0) {
+                summary.overdue += invoice.amount;
+                summary.overdueCount++;
+                summary.aging[invoice.daysOverdue <= 30 ? 0 : invoice.daysOverdue <= 60 ? 1 : 2] += invoice.amount;
+            }
+        }
+    }
+    summary.collectionRate = summary.invoiced > 0 ? Math.round(summary.collected / summary.invoiced * 100) : null;
+    return summary;
 }
 
 export class Plugin extends AppPlugin {
@@ -263,6 +319,7 @@ export class Plugin extends AppPlugin {
         this.refreshTimer = null;
         this.currentTab = 'projects';
         this.projectFilter = 'all'; // 'all', 'in_progress', 'backlog', 'completed'
+        this.invoiceFilter = 'all';
         this.searchQuery = '';
         this.agendaTab = null;
         this.agendaTabSetByUser = false;
@@ -451,10 +508,6 @@ export class Plugin extends AppPlugin {
         const data = {
             mrr: 0,
             activeCarePlans: 0,
-            invoiced2026: 0,
-            issuedCount: 0,
-            collected2026: 0,
-            unconfirmedCount: 0,
             activeClientsCount: 0,
             prospectsCount: 0,
             projects: [],
@@ -464,9 +517,14 @@ export class Plugin extends AppPlugin {
         };
 
         try {
+            const collections = await this.data.getAllCollections();
+            const readCollection = async (guid) => {
+                const collection = collections.find(c => c.getGuid() === guid);
+                if (!collection) throw new Error('Required collection unavailable');
+                return collection.getAllRecords();
+            };
             // 1. Fetch Clients
-            const clientRes = await this.data.searchByQuery('@Clients', 100);
-            const clientRecords = clientRes?.records || clientRes?.matching_records || [];
+            const clientRecords = await readCollection(COLL_GUIDS.Clients);
             let mrrSum = 0;
             let activeC = 0;
             let prospects = 0;
@@ -482,7 +540,7 @@ export class Plugin extends AppPlugin {
 
                 if (cr.guid) clientMap.set(cr.guid, name);
 
-                if (mrrVal > 0) {
+                if (mrrVal > 0 && status === 'active') {
                     mrrSum += mrrVal;
                     carePlans++;
                 }
@@ -505,28 +563,27 @@ export class Plugin extends AppPlugin {
                 });
             }
 
-            data.mrr = mrrSum || 190;
-            data.activeCarePlans = carePlans || 6;
-            data.activeClientsCount = activeC || 6;
-            data.prospectsCount = prospects || 4;
+            data.mrr = mrrSum;
+            data.activeCarePlans = carePlans;
+            data.activeClientsCount = activeC;
+            data.prospectsCount = prospects;
             data.clients = clientList;
 
             // 2. Fetch Invoices
-            const invRes = await this.data.searchByQuery('@Invoices', 100);
-            const invRecords = invRes?.records || invRes?.matching_records || [];
-            let invSum = 0;
-            let paidSum = 0;
-            let unconfirmed = 0;
+            const invRecords = await readCollection(COLL_GUIDS.Invoices);
             const invoiceList = [];
+            const today = dateDay(localDate());
 
             for (const ir of invRecords) {
                 const name = (ir.getName ? ir.getName() : ir.name) || 'Untitled Invoice';
-                const amt = Number(getProp(ir, 'amount_chf')) || 0;
-                const rawStatus = (getProp(ir, 'payment_status') || getProp(ir, 'status') || 'unpaid').toLowerCase();
-                const isPaid = rawStatus === 'paid' || rawStatus === 'completed';
-                const status = isPaid ? 'paid' : 'unpaid';
+                const rawAmount = Number(getProp(ir, 'amount_chf'));
+                const amt = Number.isFinite(rawAmount) ? rawAmount : 0;
+                const status = (getProp(ir, 'payment_status') || 'unpaid').toLowerCase();
+                const stage = (getProp(ir, 'status') || 'unknown').toLowerCase();
+                const currency = String(getProp(ir, 'currency') || 'CHF').toUpperCase();
+                const clientGuid = getClientGuid(ir);
 
-                let client = getProp(ir, 'client') || getProp(ir, 'Sub-page of') || '';
+                let client = clientMap.get(clientGuid) || getProp(ir, 'client') || '';
                 if (BASE32_GUID.test(client) && clientMap.has(client)) {
                     client = clientMap.get(client);
                 }
@@ -534,12 +591,9 @@ export class Plugin extends AppPlugin {
                 let due = getProp(ir, 'due') || getProp(ir, 'due_date') || '';
                 if (typeof due === 'object' || String(due).includes('Object')) due = '';
 
-                invSum += amt;
-                if (isPaid) {
-                    paidSum += amt;
-                } else {
-                    unconfirmed++;
-                }
+                const dueDay = dateDay(due);
+                const isOutstanding = stage === 'sent' && status !== 'paid';
+                const daysOverdue = isOutstanding && dueDay !== null ? Math.max(0, today - dueDay) : 0;
 
                 invoiceList.push({
                     record: ir,
@@ -547,27 +601,28 @@ export class Plugin extends AppPlugin {
                     name,
                     amount: amt,
                     status,
+                    stage,
+                    currency,
+                    clientGuid,
+                    isOutstanding,
+                    daysOverdue,
                     clientName: client,
-                    dueDate: due || 'No due date'
+                    dueDate: dueDay !== null ? due : ''
                 });
             }
 
-            // Sort invoices: unpaid first, then by title descending
+            // Oldest receivables first, keeping drafts and settled invoices below them.
             invoiceList.sort((a, b) => {
-                if (a.status === 'unpaid' && b.status === 'paid') return -1;
-                if (a.status === 'paid' && b.status === 'unpaid') return 1;
+                if (a.isOutstanding !== b.isOutstanding) return a.isOutstanding ? -1 : 1;
+                if (a.daysOverdue !== b.daysOverdue) return b.daysOverdue - a.daysOverdue;
                 return b.name.localeCompare(a.name);
             });
 
-            data.invoiced2026 = invSum || 710;
-            data.issuedCount = invRecords.length || 3;
-            data.collected2026 = paidSum || 360;
-            data.unconfirmedCount = unconfirmed || 2;
             data.invoices = invoiceList;
+            data.cashflow = summarizeInvoices(invoiceList);
 
             // 3. Fetch Projects (Separate top-level projects from sub-pages & deliverables)
-            const projRes = await this.data.searchByQuery('@Projects', 150);
-            const projRecords = projRes?.records || projRes?.matching_records || [];
+            const projRecords = await readCollection(COLL_GUIDS.Projects);
             const parentList = [];
             const subpageList = [];
             const parentMap = new Map();
@@ -658,8 +713,10 @@ export class Plugin extends AppPlugin {
             const taskLines = taskRes?.lines || [];
             const taskList = [];
             const now = new Date();
-            const todayIso = now.toISOString().slice(0, 10);
-            const nextWeek = new Date(now.getTime() + 7 * 86400000).toISOString().slice(0, 10);
+            const todayIso = localDate(now);
+            const nextDate = new Date(now);
+            nextDate.setDate(nextDate.getDate() + 7);
+            const nextWeek = localDate(nextDate);
 
             for (const line of taskLines) {
                 const text = extractLineText(line);
@@ -690,6 +747,7 @@ export class Plugin extends AppPlugin {
             data.agendaTasks = taskList;
 
         } catch (e) {
+            data.loadError = true;
             console.warn('[FreelanceOS] data query error:', e);
         }
 
@@ -1003,6 +1061,7 @@ export class Plugin extends AppPlugin {
         } catch (e) {}
 
         const data = await this.loadData();
+        const cash = data.cashflow || summarizeInvoices([]);
         const wsGuid = this.getWorkspaceGuid();
         const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
 
@@ -1081,18 +1140,18 @@ export class Plugin extends AppPlugin {
         pulse.innerHTML = `
             <div class="os-metric metric-mrr" title="Click to view Clients & Care Plans">
                 <div class="os-metric-label">Recurring revenue</div>
-                <div class="os-metric-value">${data.mrr} <span class="os-metric-unit">CHF / mo</span></div>
+                <div class="os-metric-value">${money(data.mrr)} <span class="os-metric-unit">CHF / mo</span></div>
                 <div class="os-metric-footnote">${data.activeCarePlans} active care plans</div>
             </div>
             <div class="os-metric metric-inv" title="Click to view Invoices">
-                <div class="os-metric-label">Invoiced · 2026</div>
-                <div class="os-metric-value">${data.invoiced2026} <span class="os-metric-unit">CHF</span></div>
-                <div class="os-metric-footnote">${data.issuedCount} issued · 0 to send</div>
+                <div class="os-metric-label">Invoiced · all time</div>
+                <div class="os-metric-value">${money(cash.invoiced)} <span class="os-metric-unit">CHF</span></div>
+                <div class="os-metric-footnote">${cash.issuedCount} issued · ${cash.toSend} to send</div>
             </div>
             <div class="os-metric metric-col" title="Click to view Invoices">
-                <div class="os-metric-label">Collected · 2026</div>
-                <div class="os-metric-value">${data.collected2026} <span class="os-metric-unit">CHF</span></div>
-                <div class="os-metric-footnote">${data.unconfirmedCount} payments unconfirmed</div>
+                <div class="os-metric-label">Collected · all time</div>
+                <div class="os-metric-value">${money(cash.collected)} <span class="os-metric-unit">CHF</span></div>
+                <div class="os-metric-footnote">${cash.unconfirmedCount} awaiting payment confirmation</div>
             </div>
             <div class="os-metric metric-clients" title="Click to view Clients">
                 <div class="os-metric-label">Active clients</div>
@@ -1107,6 +1166,39 @@ export class Plugin extends AppPlugin {
         pulse.querySelector('.metric-clients').addEventListener('click', () => { this.currentTab = 'clients'; this.render(panel); });
 
         app.appendChild(pulse);
+
+        if (data.loadError) {
+            pulse.hidden = true;
+            const error = document.createElement('div');
+            error.className = 'os-data-error';
+            error.setAttribute('role', 'alert');
+            error.innerHTML = 'Some workspace data could not be loaded. <button class="os-button">Retry</button>';
+            error.querySelector('button').onclick = () => this.render(panel);
+            app.appendChild(error);
+        } else {
+            const cashflow = document.createElement('section');
+            cashflow.className = 'os-cashflow';
+            cashflow.setAttribute('aria-label', 'Cashflow, CHF invoices, all time');
+            cashflow.innerHTML = `
+                <div class="os-collection-rate">
+                    <div class="os-cash-heading"><h2>Cashflow</h2><span>${cash.collectionRate === null ? 'No issued invoices' : `${cash.collectionRate}% collected`}</span></div>
+                    <progress max="100" value="${cash.collectionRate ?? 0}" aria-label="Invoice collection rate"></progress>
+                    <div class="os-cash-note">CHF invoices · all time${cash.excludedCurrency ? ` · ${cash.excludedCurrency} in other currencies excluded` : ''}</div>
+                </div>
+                <button class="os-cash-action" data-invoice-filter="outstanding"><span>Outstanding</span><strong>${money(cash.outstanding)} CHF</strong><small>${cash.undated} without a due date</small></button>
+                <button class="os-cash-action ${cash.overdueCount ? 'os-cash-warning' : ''}" data-invoice-filter="overdue"><span>Overdue (${cash.overdueCount})</span><strong>${money(cash.overdue)} CHF</strong><small>1–30d: ${money(cash.aging[0])} · 31–60d: ${money(cash.aging[1])} · 61+d: ${money(cash.aging[2])}</small></button>
+                <button class="os-cash-action" data-invoice-filter="review"><span>Confirm payments</span><strong>${cash.unconfirmedCount} to review</strong><small>Open invoices awaiting confirmation ↗</small></button>
+            `;
+            cashflow.querySelectorAll('[data-invoice-filter]').forEach(button => {
+                button.onclick = () => {
+                    this.currentTab = 'invoices';
+                    this.invoiceFilter = button.dataset.invoiceFilter;
+                    this.searchQuery = '';
+                    this.render(panel);
+                };
+            });
+            app.appendChild(cashflow);
+        }
 
         // 3. Main Grid (3 columns)
         const grid = document.createElement('div');
@@ -1199,6 +1291,21 @@ export class Plugin extends AppPlugin {
         main.appendChild(sectionHead);
 
         // Project filter pills (if on projects tab)
+        if (this.currentTab === 'invoices') {
+            const filters = [['all', 'All'], ['outstanding', 'Outstanding'], ['overdue', 'Overdue'], ['review', 'To confirm'], ['to-send', 'To send'], ['paid', 'Paid']];
+            const filterBar = document.createElement('div');
+            filterBar.className = 'os-filter-pills';
+            filterBar.setAttribute('aria-label', 'Filter invoices');
+            for (const [key, label] of filters) {
+                const button = document.createElement('button');
+                button.className = `os-filter-pill ${this.invoiceFilter === key ? 'active' : ''}`;
+                button.setAttribute('aria-pressed', String(this.invoiceFilter === key));
+                button.textContent = `${label} (${data.invoices.filter(i => invoiceMatches(i, key)).length})`;
+                button.onclick = () => { this.invoiceFilter = key; this.render(panel); };
+                filterBar.appendChild(button);
+            }
+            main.appendChild(filterBar);
+        }
         if (this.currentTab === 'projects') {
             const inProgCount = data.projects.filter(p => p.status === 'in_progress').length;
             const backlogCount = data.projects.filter(p => p.status === 'backlog').length;
@@ -1479,47 +1586,31 @@ export class Plugin extends AppPlugin {
                 cardsContainer.appendChild(card);
             }
         } else if (this.currentTab === 'invoices') {
-            let list = data.invoices;
+            let list = data.invoices.filter(i => invoiceMatches(i, this.invoiceFilter));
             if (q) {
                 list = list.filter(i => i.name.toLowerCase().includes(q) || i.clientName.toLowerCase().includes(q));
             }
 
             if (list.length === 0) {
-                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No matching invoices found.</div>';
+                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No invoices in this view. Choose All or clear the search to see more.</div>';
                 return;
             }
 
             for (const inv of list) {
                 const card = document.createElement('div');
                 card.className = 'os-project-card';
-                const isPaid = inv.status === 'paid';
                 card.innerHTML = `
                     <div class="os-card-top">
-                        <span class="os-badge status-${inv.status}" title="Click to toggle paid / unpaid">${isPaid ? 'PAID' : 'UNPAID'}</span>
+                        <span class="os-badge status-${escapeHtml(inv.status)}">${escapeHtml(inv.status.toUpperCase())}</span>
+                        <span class="os-invoice-timing ${inv.daysOverdue ? 'os-cash-warning' : ''}">${inv.daysOverdue ? `${inv.daysOverdue}d overdue` : escapeHtml(inv.stage)}</span>
                     </div>
-                    <div class="os-card-title">${inv.name}</div>
-                    ${inv.clientName ? `<div class="os-card-client">${inv.clientName}</div>` : ''}
+                    <div class="os-card-title">${escapeHtml(inv.name)}</div>
+                    ${inv.clientName ? `<div class="os-card-client">${escapeHtml(inv.clientName)}</div>` : ''}
                     <div class="os-card-bottom">
-                        <span>💰 ${inv.amount} CHF · 📅 ${inv.dueDate}</span>
+                        <span>${money(inv.amount)} ${escapeHtml(inv.currency)} · ${inv.dueDate || 'No due date'}</span>
                         <span class="os-card-open">Open invoice ↗</span>
                     </div>
                 `;
-
-                card.querySelector('.os-badge').addEventListener('click', async (e) => {
-                    e.stopPropagation();
-                    const nextStatus = isPaid ? 'unpaid' : 'paid';
-                    try {
-                        if (inv.record?.prop('status')?.setValue) {
-                            await inv.record.prop('status').setValue(nextStatus);
-                        } else if (inv.record?.prop('payment_status')?.setValue) {
-                            await inv.record.prop('payment_status').setValue(nextStatus);
-                        }
-                        this.ui.addToaster({ title: `Invoice set to ${nextStatus}`, autoDestroyTime: 2000, dismissible: true });
-                        this.scheduleRefresh();
-                    } catch (err) {
-                        console.error('Invoice status error:', err);
-                    }
-                });
 
                 card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(inv.guid, panel));
                 card.querySelector('.os-card-open').addEventListener('click', (e) => {
