@@ -83,7 +83,7 @@ function weeklyReviewText(workflow, draft, state, today = localDate()) {
         }), '', 'Waiting and follow-ups',
         ...model.waiting.map(task => `${task.projectName}: ${task.text}${state.waiting[task.guid]?.reason ? ` — ${state.waiting[task.guid].reason}` : ''}${state.waiting[task.guid]?.followup ? ` (follow up ${state.waiting[task.guid].followup})` : ''}`),
         '', `Open overdue actions: ${model.overdue.length}`, `Done tasks updated in the last 7 days: ${workflow.recentDone.length}`,
-        ...workflow.recentDone.slice(0, 20).map(task => `${task.projectName}: ${task.text}`), '', 'Wins and observations', draft.notes || 'No notes added.', '', 'Priorities for next week', draft.priorities || 'No priorities added.'];
+        ...workflow.recentDone.map(task => `${task.projectName}: ${task.text}`), '', 'Wins and observations', draft.notes || 'No notes added.', '', 'Priorities for next week', draft.priorities || 'No priorities added.'];
     if (!model.complete) lines.push('', 'Some project tasks could not be loaded; this review is incomplete.');
     return lines.join('\n');
 }
@@ -332,6 +332,7 @@ const Workflow = {
                 if (!model.overdue.length) section.insertAdjacentHTML('beforeend', '<p class="os-workflow-empty">No overdue project actions.</p>');
                 section.insertAdjacentHTML('beforeend', `<h3>Done recently (${workflow.recentDone.length})</h3><p class="os-action-meta">Tasks marked done and updated in the last 7 days.</p>`);
                 workflow.recentDone.slice(0, 12).forEach(task => { const item = document.createElement('p'); item.className = 'os-review-done'; item.textContent = `${task.projectName} · ${task.text}`; section.appendChild(item); });
+                if (workflow.recentDone.length > 12) section.insertAdjacentHTML('beforeend', `<p class="os-action-meta">Showing the first 12. The Journal summary includes all ${workflow.recentDone.length}.</p>`);
                 if (!workflow.recentDone.length) section.insertAdjacentHTML('beforeend', '<p class="os-workflow-empty">No recently updated done tasks.</p>');
             } else if (draft.step === 1) {
                 section.insertAdjacentHTML('beforeend', '<h3>Projects needing attention</h3>');
