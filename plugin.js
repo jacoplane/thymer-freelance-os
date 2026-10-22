@@ -20,6 +20,18 @@ const COLL_GUIDS = {
     Journal: '16S1WSXAWSHVHJZ72G6J3JRTCP'
 };
 
+const COLLECTION_VIEWS = {
+    Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
+    Projects: { all: 'Table', board: 'Board' },
+    Clients: { all: 'Directory' }
+};
+
+function collectionViewId(guid, config, key = 'all') {
+    const collection = Object.keys(COLL_GUIDS).find(name => COLL_GUIDS[name] === guid);
+    const label = COLLECTION_VIEWS[collection]?.[key];
+    return config?.views?.find(view => view.shown !== false && view.label === label)?.id || null;
+}
+
 const BASE32_GUID = /^[0-9A-Z]{26}$/;
 
 function cleanString(val) {
@@ -433,8 +445,10 @@ class Plugin extends AppPlugin {
         }
     }
 
-    async openCollection(guid, sourcePanel) {
+    async openCollection(guid, sourcePanel, viewKey = 'all') {
         const wsGuid = this.getWorkspaceGuid();
+        const config = this.data.getPluginByGuid?.(guid)?.getConfiguration?.();
+        const subId = collectionViewId(guid, config, viewKey);
         try {
             if (this.ui && typeof this.ui.createPanel === 'function') {
                 const sidePanel = await this.ui.createPanel({ afterPanel: sourcePanel });
@@ -442,7 +456,7 @@ class Plugin extends AppPlugin {
                     sidePanel.navigateTo({
                         type: 'overview',
                         rootId: guid,
-                        subId: null,
+                        subId,
                         workspaceGuid: wsGuid
                     });
                     return;
@@ -456,7 +470,7 @@ class Plugin extends AppPlugin {
             sourcePanel.navigateTo({
                 type: 'overview',
                 rootId: guid,
-                subId: null,
+                subId,
                 workspaceGuid: wsGuid
             });
         }
@@ -1206,7 +1220,7 @@ class Plugin extends AppPlugin {
         });
 
         header.querySelector('.os-btn-board').addEventListener('click', () => {
-            this.openCollection(COLL_GUIDS.Projects, panel);
+            this.openCollection(COLL_GUIDS.Projects, panel, 'board');
         });
 
         app.appendChild(header);
@@ -1274,11 +1288,9 @@ class Plugin extends AppPlugin {
                 <button class="os-cash-action" data-invoice-filter="review"><span>Confirm payments</span><strong>${cash.unconfirmedCount} to review</strong><small>Open invoices awaiting confirmation ↗</small></button>
             `;
             cashflow.querySelectorAll('[data-invoice-filter]').forEach(button => {
+                button.title = 'Open this invoice queue in the collection';
                 button.onclick = () => {
-                    this.currentTab = 'invoices';
-                    this.invoiceFilter = button.dataset.invoiceFilter;
-                    this.searchQuery = '';
-                    this.render(panel);
+                    this.openCollection(COLL_GUIDS.Invoices, panel, button.dataset.invoiceFilter);
                 };
             });
             app.appendChild(cashflow);
@@ -1363,7 +1375,7 @@ class Plugin extends AppPlugin {
             let col = COLL_GUIDS.Projects;
             if (this.currentTab === 'clients') col = COLL_GUIDS.Clients;
             else if (this.currentTab === 'invoices') col = COLL_GUIDS.Invoices;
-            this.openCollection(col, panel);
+            this.openCollection(col, panel, this.currentTab === 'invoices' ? this.invoiceFilter : 'all');
         });
 
         const searchInput = sectionHead.querySelector('.os-search-input');
