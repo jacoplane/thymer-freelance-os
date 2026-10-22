@@ -16,6 +16,8 @@ page.on('pageerror', error => errors.push(error.message));
 let savedState, fixtures = [], review, originalPanels = [];
 try {
     if (!process.env.OS_SKIP_RELOAD) await page.reload({ waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('.os-workflow-modes');
+    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'today'; await plugin.render(plugin.activePanel); });
     await page.waitForSelector('.os-workflow');
     await page.evaluate(() => { const plugin = window.__freelanceOs; for (const panel of plugin.ui.getPanels()) if (panel.getId() !== plugin.activePanel.getId()) plugin.ui.closePanel(panel); });
     savedState = await page.evaluate(() => JSON.stringify(window.__freelanceOs.loadWorkflowState()));

@@ -2,6 +2,8 @@
 
 Executive freelance dashboard running inside Thymer, inspired by Obsidian Freelance OS.
 
+**Overview** is the default landing view. **Today** and **Weekly review** are available from the dashboard tabs. Freelance OS works independently of Daily Focus: both use native Thymer tasks, but their focus selections are separate. Daily Focus remains useful for workspace-wide planning, time blocks and recurring tasks.
+
 ## Features
 
 - **Today and project action queue**:

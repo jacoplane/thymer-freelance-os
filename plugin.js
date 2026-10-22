@@ -773,7 +773,7 @@ class Plugin extends AppPlugin {
         this.captureProjectGuid = '';
         this.captureImportant = false;
         this.loadWorkflowState();
-        this.workflowMode = 'today';
+        this.workflowMode = 'overview';
         this.workflowDay = localDate();
         this.workflowDayTimer = setInterval(() => {
             if (this.workflowDay !== localDate()) { this.workflowDay = localDate(); this.scheduleRefresh(); }
@@ -1552,7 +1552,7 @@ class Plugin extends AppPlugin {
         } catch (e) {}
 
         const renderVersion = this.renderVersion = (this.renderVersion || 0) + 1;
-        const mode = this.workflowMode || 'today';
+        const mode = this.workflowMode || 'overview';
         let workflow;
         if (mode !== 'overview') {
             try { workflow = await this.loadWorkflowData(); }
@@ -1662,7 +1662,7 @@ class Plugin extends AppPlugin {
         const modes = document.createElement('nav');
         modes.className = 'os-workflow-modes';
         modes.setAttribute('aria-label', 'Dashboard sections');
-        modes.innerHTML = [['today', 'Today'], ['review', 'Weekly review'], ['overview', 'Overview'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
+        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['review', 'Weekly review'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
         app.appendChild(modes);
         if (mode !== 'overview') {
