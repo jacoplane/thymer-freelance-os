@@ -18,8 +18,9 @@ await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
 const failures = [];
 page.on('pageerror', error => failures.push(error.message));
 try {
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    if (!process.env.OS_SKIP_RELOAD) await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.os-app');
+    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'overview'; await plugin.render(plugin.activePanel); });
     await page.evaluate(() => {
         const plugin = window.__freelanceOs;
         for (const panel of plugin.ui.getPanels()) if (panel.getId() !== plugin.activePanel.getId()) plugin.ui.closePanel(panel);

@@ -22,6 +22,59 @@
 }
 .os-shell { padding: 20px 24px; --os-gap: 16px; min-width: 0; min-height: 100%; }
 .os-shell:focus { outline: none; }
+.os-workflow-modes, .os-action-tabs, .os-review-steps { display: flex; gap: 6px; flex-wrap: wrap; }
+.os-workflow-modes { margin-bottom: 20px; padding-bottom: 12px; border-bottom: 1px solid var(--os-border); }
+.os-workflow { min-width: 0; }
+.os-workflow h2 { font-size: 20px; font-weight: 650; }
+.os-workflow h3 { font-size: 14px; margin: 24px 0 8px; }
+.os-workflow-heading { display: flex; justify-content: space-between; gap: 16px; align-items: center; }
+.os-focus-count { font-size: 16px; color: var(--os-muted); white-space: nowrap; flex-shrink: 0; }
+.os-workflow p, .os-workflow select, .os-workflow summary, .os-workflow button { font-family: inherit; }
+.os-focus-list { margin: 12px 0 24px; border-bottom: 1px solid var(--os-border); padding-bottom: 16px; }
+.os-action-tabs { margin-bottom: 12px; }
+.os-queue-controls { display: flex; gap: 10px; margin: 12px 0; flex-wrap: wrap; }
+.os-queue-controls input { flex: 1 1 200px; min-width: 0; width: auto; }
+.os-queue-controls select { flex: 0 1 280px; min-width: 0; width: auto; max-width: 100%; }
+.os-followup-due { color: #fb923c; }
+.os-action-row { display: flex; align-items: flex-start; gap: 12px; padding: 14px 0; border-bottom: 1px solid var(--os-border); }
+.os-action-done { flex: 0 0 auto; margin-top: 4px; accent-color: var(--os-accent); }
+.os-action-copy { flex: 1; min-width: 0; }
+.os-action-title { display: block; padding: 0; border: 0; background: none; color: var(--os-text); font: inherit; font-weight: 550; text-align: left; cursor: pointer; overflow-wrap: anywhere; }
+.os-action-title:hover { color: var(--os-accent); text-decoration: underline; }
+.os-action-meta { color: var(--os-muted); font-size: 12px; line-height: 1.5; margin-top: 4px; overflow-wrap: anywhere; }
+.os-action-buttons { display: flex; gap: 6px; align-items: flex-start; }
+.os-action-row:has(.os-action-edit[open]) { flex-wrap: wrap; }
+.os-action-row:has(.os-action-edit[open]) .os-action-buttons { flex: 1 1 100%; margin-left: 26px; flex-wrap: wrap; min-width: 0; }
+.os-action-edit[open] { flex: 1 1 100%; min-width: 0; }
+.os-workflow summary { cursor: pointer; font-size: 12px; padding: 8px 0; color: var(--os-muted); }
+.os-action-edit { min-width: 40px; }
+.os-action-editor { display: grid; gap: 8px; width: 100%; max-width: 460px; margin-top: 8px; }
+.os-action-edit:not([open]) .os-action-editor { display: none; }
+.os-action-editor label, .os-action-editor input { min-width: 0; }
+.os-action-editor label, .os-review-form label, .os-settings-fields label { display: grid; gap: 6px; font-size: 12px; color: var(--os-muted); }
+.os-wait-note { font-size: 12px; color: var(--os-muted); margin-top: 6px; overflow-wrap: anywhere; }
+.os-workflow-empty { color: var(--os-muted); padding: 16px 0; font-size: 13px; }
+.os-workflow-message { padding: 12px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: 6px; margin-bottom: 14px !important; }
+.os-project-attention { display: flex; gap: 20px; justify-content: space-between; border-bottom: 1px solid var(--os-border); padding: 14px 0; }
+.os-next-picker { display: flex; align-items: flex-start; gap: 6px; }
+.os-next-picker select { max-width: 340px; min-width: 0; padding: 7px; background: var(--os-surface); color: var(--os-text); border: 1px solid var(--os-border); border-radius: 6px; }
+.os-review-steps { margin-top: 16px; }
+.os-review-form { display: grid; gap: 18px; margin-top: 24px; max-width: 800px; }
+.os-review-form textarea { width: 100%; resize: vertical; min-height: 90px; background: var(--os-surface); border: 1px solid var(--os-border); color: var(--os-text); border-radius: 6px; padding: 10px 12px; font: inherit; }
+.os-review-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; color: var(--os-muted); max-height: 350px; overflow-y: auto; }
+.os-review-save-row, .os-review-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.os-review-footer { margin-top: 24px; justify-content: space-between; }
+.os-review-done { padding: 8px 0 !important; color: var(--os-muted); font-size: 13px; }
+.os-workflow-settings > p { max-width: 75ch; font-size: 13px; margin-top: 12px; }
+.os-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; max-width: 700px; }
+@container osApp (max-width: 720px) {
+  .os-project-attention { flex-direction: column; gap: 10px; }
+  .os-next-picker { flex-wrap: wrap; }
+  .os-next-picker select { flex: 1 1 100%; max-width: 100%; }
+  .os-action-row { flex-wrap: wrap; }
+  .os-action-buttons { margin-left: 25px; }
+  .os-settings-fields { grid-template-columns: 1fr; }
+}
 .os-capture-options { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--os-muted); }
 .os-capture-project { min-width: 0; max-width: 200px; flex: 1 1 120px; background: var(--os-surface); color: var(--os-text); border: 1px solid var(--os-border); border-radius: 4px; padding: 3px 6px; font: inherit; }
 .os-capture-priority { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }

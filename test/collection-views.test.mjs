@@ -58,7 +58,7 @@ test('client care plans require active status and a positive monthly fee', () =>
     assert.deepEqual(planCollectionViews('Clients', next), next);
 });
 
-const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8') + '\nObject.assign(Plugin.prototype, Workflow);';
 const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({Plugin, collectionViewId, COLL_GUIDS});`, { AppPlugin: class {} });
 
 test('dashboard routes through native overview with the saved view id', async () => {

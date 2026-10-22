@@ -19,8 +19,8 @@ const COLLECTION_VIEWS = {
     Clients: { all: 'Directory', active: 'Active', prospects: 'Prospects', 'care-plans': 'Care plans' }
 };
 
-function collectionViewId(guid, config, key = 'all') {
-    const collection = Object.keys(COLL_GUIDS).find(name => COLL_GUIDS[name] === guid);
+function collectionViewId(guid, config, key = 'all', role) {
+    const collection = role || Object.keys(COLL_GUIDS).find(name => COLL_GUIDS[name] === guid);
     const label = COLLECTION_VIEWS[collection]?.[key];
     return config?.views?.find(view => view.shown !== false && view.label === label)?.id || null;
 }
@@ -333,6 +333,12 @@ function clientSummary(client, projects, invoices) {
 }
 
 export class Plugin extends AppPlugin {
+    onUnload() {
+        clearTimeout(this.refreshTimer);
+        clearTimeout(this.workflowSearchTimer);
+        clearInterval(this.workflowDayTimer);
+    }
+
     onLoad() {
         if (typeof window !== 'undefined') {
             window.__freelanceOs = this;
@@ -349,6 +355,12 @@ export class Plugin extends AppPlugin {
         this.captureDraft = '';
         this.captureProjectGuid = '';
         this.captureImportant = false;
+        this.loadWorkflowState();
+        this.workflowMode = 'today';
+        this.workflowDay = localDate();
+        this.workflowDayTimer = setInterval(() => {
+            if (this.workflowDay !== localDate()) { this.workflowDay = localDate(); this.scheduleRefresh(); }
+        }, 60000);
 
         // 1. Inject Styles
         if (typeof STYLES !== 'undefined') {
@@ -386,6 +398,9 @@ export class Plugin extends AppPlugin {
             this.events.on('record.updated', schedule);
             this.events.on('record.created', schedule);
         }
+        // Desktop hot reload can retain a custom panel without invoking its new registration callback.
+        const existing = this.ui.getPanels?.().find(panel => panel.getNavigation()?.type === 'custom' && String(panel.getNavigation().subId || '').endsWith(`${this.getGuid()}-${DASHBOARD_PANEL_ID}`));
+        if (existing) { this.activePanel = existing; existing.setTitle('Freelance OS'); this.render(existing); }
     }
 
     async openDashboard() {
@@ -402,7 +417,7 @@ export class Plugin extends AppPlugin {
         if (this.refreshTimer) clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
             // Preserve focus and selection while composing a task. Blur refreshes the data.
-            if (document.activeElement?.closest('.os-capture')) return;
+            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields')) return;
             if (this.activePanel) this.render(this.activePanel);
         }, 200);
     }
@@ -441,7 +456,8 @@ export class Plugin extends AppPlugin {
     async openCollection(guid, sourcePanel, viewKey = 'all') {
         const wsGuid = this.getWorkspaceGuid();
         const config = this.data.getPluginByGuid?.(guid)?.getConfiguration?.();
-        const subId = collectionViewId(guid, config, viewKey);
+        const role = Object.keys(COLL_GUIDS).find(name => this.collectionGuid(name) === guid);
+        const subId = collectionViewId(guid, config, viewKey, role);
         try {
             if (this.ui && typeof this.ui.createPanel === 'function') {
                 const sidePanel = await this.ui.createPanel({ afterPanel: sourcePanel });
@@ -482,7 +498,7 @@ export class Plugin extends AppPlugin {
                     }
                     sidePanel.navigateTo({
                         type: 'overview',
-                        rootId: COLL_GUIDS.Journal,
+                        rootId: this.collectionGuid('Journal'),
                         subId: null,
                         workspaceGuid: wsGuid
                     });
@@ -501,7 +517,7 @@ export class Plugin extends AppPlugin {
             }
             sourcePanel.navigateTo({
                 type: 'overview',
-                rootId: COLL_GUIDS.Journal,
+                rootId: this.collectionGuid('Journal'),
                 subId: null,
                 workspaceGuid: wsGuid
             });
@@ -510,26 +526,26 @@ export class Plugin extends AppPlugin {
 
     async openItem(itemGuid, fallbackRecordGuid, sourcePanel) {
         const wsGuid = this.getWorkspaceGuid();
+        const navigate = async target => {
+            if (itemGuid) {
+                try {
+                    if (await target.navigateTo({ itemGuid, highlight: true, workspaceGuid: wsGuid }) === true) return;
+                } catch {}
+            }
+            if (fallbackRecordGuid) target.navigateTo({ type: 'edit_panel', rootId: fallbackRecordGuid, subId: null, workspaceGuid: wsGuid });
+        };
         try {
             if (this.ui && typeof this.ui.createPanel === 'function') {
                 const sidePanel = await this.ui.createPanel({ afterPanel: sourcePanel });
                 if (sidePanel) {
-                    if (itemGuid) {
-                        sidePanel.navigateTo({ itemGuid, highlight: true, workspaceGuid: wsGuid });
-                    } else if (fallbackRecordGuid) {
-                        sidePanel.navigateTo({ type: 'edit_panel', rootId: fallbackRecordGuid, subId: null, workspaceGuid: wsGuid });
-                    }
+                    await navigate(sidePanel);
                     return;
                 }
             }
         } catch (e) {}
 
         if (sourcePanel) {
-            if (itemGuid) {
-                sourcePanel.navigateTo({ itemGuid, highlight: true, workspaceGuid: wsGuid });
-            } else if (fallbackRecordGuid) {
-                sourcePanel.navigateTo({ type: 'edit_panel', rootId: fallbackRecordGuid, subId: null, workspaceGuid: wsGuid });
-            }
+            await navigate(sourcePanel);
         }
     }
 
@@ -547,13 +563,14 @@ export class Plugin extends AppPlugin {
 
         try {
             const collections = await this.data.getAllCollections();
+            this.workflowCollections = collections;
             const readCollection = async (guid) => {
                 const collection = collections.find(c => c.getGuid() === guid);
                 if (!collection) throw new Error('Required collection unavailable');
                 return collection.getAllRecords();
             };
             // 1. Fetch Clients
-            const clientRecords = await readCollection(COLL_GUIDS.Clients);
+            const clientRecords = await readCollection(this.collectionGuid('Clients'));
             let mrrSum = 0;
             let activeC = 0;
             let prospects = 0;
@@ -599,7 +616,7 @@ export class Plugin extends AppPlugin {
             data.clients = clientList;
 
             // 2. Fetch Invoices
-            const invRecords = await readCollection(COLL_GUIDS.Invoices);
+            const invRecords = await readCollection(this.collectionGuid('Invoices'));
             const invoiceList = [];
             const today = dateDay(localDate());
 
@@ -651,7 +668,7 @@ export class Plugin extends AppPlugin {
             data.cashflow = summarizeInvoices(invoiceList);
 
             // 3. Fetch Projects (Separate top-level projects from sub-pages & deliverables)
-            const projRecords = await readCollection(COLL_GUIDS.Projects);
+            const projRecords = await readCollection(this.collectionGuid('Projects'));
             const parentList = [];
             const subpageList = [];
             const parentMap = new Map();
@@ -790,7 +807,7 @@ export class Plugin extends AppPlugin {
             record = this.data.getRecord(projectGuid);
         } else {
             const collections = await this.data.getAllCollections();
-            const journal = collections.find(c => c.getGuid() === COLL_GUIDS.Journal);
+            const journal = collections.find(c => c.getGuid() === this.collectionGuid('Journal'));
             const user = this.data.getActiveUsers?.()[0];
             if (journal && user) record = await journal.getJournalRecord(user);
         }
@@ -883,7 +900,7 @@ export class Plugin extends AppPlugin {
 
             try {
                 const cols = await this.data.getAllCollections();
-                const pCol = cols.find(c => c.getGuid() === COLL_GUIDS.Projects);
+                const pCol = cols.find(c => c.getGuid() === this.collectionGuid('Projects'));
                 if (pCol && typeof pCol.createRecord === 'function') {
                     const newGuid = pCol.createRecord(title);
                     if (newGuid) {
@@ -973,7 +990,7 @@ export class Plugin extends AppPlugin {
 
             try {
                 const cols = await this.data.getAllCollections();
-                const cCol = cols.find(c => c.getGuid() === COLL_GUIDS.Clients);
+                const cCol = cols.find(c => c.getGuid() === this.collectionGuid('Clients'));
                 if (cCol && typeof cCol.createRecord === 'function') {
                     const newGuid = cCol.createRecord(title);
                     if (newGuid) {
@@ -1071,7 +1088,7 @@ export class Plugin extends AppPlugin {
 
             try {
                 const cols = await this.data.getAllCollections();
-                const iCol = cols.find(c => c.getGuid() === COLL_GUIDS.Invoices);
+                const iCol = cols.find(c => c.getGuid() === this.collectionGuid('Invoices'));
                 if (iCol && typeof iCol.createRecord === 'function') {
                     const newGuid = iCol.createRecord(title);
                     if (newGuid) {
@@ -1118,7 +1135,14 @@ export class Plugin extends AppPlugin {
         } catch (e) {}
 
         const renderVersion = this.renderVersion = (this.renderVersion || 0) + 1;
-        const data = await this.loadData();
+        const mode = this.workflowMode || 'today';
+        let workflow;
+        if (mode !== 'overview') {
+            try { workflow = await this.loadWorkflowData(); }
+            catch { workflow = { error: 'Project tasks could not be loaded. Check collection mappings in Settings, then retry.' }; }
+            this.workflowData = workflow;
+        }
+        const data = mode === 'overview' ? await this.loadData() : { projects: workflow?.projects || [] };
         if (renderVersion !== this.renderVersion) return;
         const cash = data.cashflow || summarizeInvoices([]);
         const wsGuid = this.getWorkspaceGuid();
@@ -1213,10 +1237,22 @@ export class Plugin extends AppPlugin {
         });
 
         header.querySelector('.os-btn-board').addEventListener('click', () => {
-            this.openCollection(COLL_GUIDS.Projects, panel, 'board');
+            this.openCollection(this.collectionGuid('Projects'), panel, 'board');
         });
 
         app.appendChild(header);
+
+        const modes = document.createElement('nav');
+        modes.className = 'os-workflow-modes';
+        modes.setAttribute('aria-label', 'Dashboard sections');
+        modes.innerHTML = [['today', 'Today'], ['review', 'Weekly review'], ['overview', 'Overview'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
+        modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
+        app.appendChild(modes);
+        if (mode !== 'overview') {
+            app.appendChild(mode === 'settings' ? this.renderWorkflowSettings(panel) : this.renderWorkflow(workflow, panel));
+            this.mountWorkflowApp(container, app);
+            return;
+        }
 
         // 2. Pulse / Metrics Bar
         const pulse = document.createElement('section');
@@ -1283,7 +1319,7 @@ export class Plugin extends AppPlugin {
             cashflow.querySelectorAll('[data-invoice-filter]').forEach(button => {
                 button.title = 'Open this invoice queue in the collection';
                 button.onclick = () => {
-                    this.openCollection(COLL_GUIDS.Invoices, panel, button.dataset.invoiceFilter);
+                    this.openCollection(this.collectionGuid('Invoices'), panel, button.dataset.invoiceFilter);
                 };
             });
             app.appendChild(cashflow);
@@ -1325,10 +1361,10 @@ export class Plugin extends AppPlugin {
         rail.querySelector('.btn-new-client').addEventListener('click', () => this.showCreateClientModal(panel));
         rail.querySelector('.btn-new-invoice').addEventListener('click', () => this.showCreateInvoiceModal(panel, data));
 
-        rail.querySelector('.nav-projects').addEventListener('click', () => this.openCollection(COLL_GUIDS.Projects, panel));
-        rail.querySelector('.nav-clients').addEventListener('click', () => this.openCollection(COLL_GUIDS.Clients, panel));
-        rail.querySelector('.nav-invoices').addEventListener('click', () => this.openCollection(COLL_GUIDS.Invoices, panel));
-        rail.querySelector('.nav-library').addEventListener('click', () => this.openCollection(COLL_GUIDS.Library, panel));
+        rail.querySelector('.nav-projects').addEventListener('click', () => this.openCollection(this.collectionGuid('Projects'), panel));
+        rail.querySelector('.nav-clients').addEventListener('click', () => this.openCollection(this.collectionGuid('Clients'), panel));
+        rail.querySelector('.nav-invoices').addEventListener('click', () => this.openCollection(this.collectionGuid('Invoices'), panel));
+        rail.querySelector('.nav-library').addEventListener('click', () => this.openCollection(this.collectionGuid('Library'), panel));
 
         grid.appendChild(rail);
 
@@ -1365,9 +1401,9 @@ export class Plugin extends AppPlugin {
             this.render(panel);
         });
         sectionHead.querySelector('.os-view-all').addEventListener('click', () => {
-            let col = COLL_GUIDS.Projects;
-            if (this.currentTab === 'clients') col = COLL_GUIDS.Clients;
-            else if (this.currentTab === 'invoices') col = COLL_GUIDS.Invoices;
+            let col = this.collectionGuid('Projects');
+            if (this.currentTab === 'clients') col = this.collectionGuid('Clients');
+            else if (this.currentTab === 'invoices') col = this.collectionGuid('Invoices');
             this.openCollection(col, panel, this.currentTab === 'invoices' ? this.invoiceFilter : 'all');
         });
 
@@ -1463,7 +1499,7 @@ export class Plugin extends AppPlugin {
         `;
 
         agenda.querySelector('.os-view-all').addEventListener('click', () => {
-            this.openCollection(COLL_GUIDS.Projects, panel);
+            this.openCollection(this.collectionGuid('Projects'), panel);
         });
 
         const agendaContent = agenda.querySelector('.os-agenda-content');

@@ -12,7 +12,7 @@ if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
 
-const jsSrc = fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8');
+const jsSrc = fs.readFileSync(path.join(srcDir, 'workflow.js'), 'utf-8') + '\n' + fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8') + '\nObject.assign(Plugin.prototype, Workflow);\n';
 const cssSrc = fs.readFileSync(path.join(srcDir, 'styles.css'), 'utf-8');
 const pluginJson = fs.readFileSync(path.join(__dirname, 'plugin.json'), 'utf-8');
 

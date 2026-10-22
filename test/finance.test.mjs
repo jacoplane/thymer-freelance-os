@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 
-const source = fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8') + '\nObject.assign(Plugin.prototype, Workflow);';
 const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; ({ Plugin, formatDatetime, dateDay, localDate, summarizeInvoices, invoiceMatches, clientSummary });`, { AppPlugin: class {}, console, Date, Intl });
 
 test('Thymer date wrappers use the stored calendar date over formatted labels', () => {

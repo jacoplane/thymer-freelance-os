@@ -4,6 +4,19 @@ Executive freelance dashboard running inside Thymer, inspired by Obsidian Freela
 
 ## Features
 
+- **Today and project action queue**:
+  - Choose one next action per explicitly active project and pin up to three tasks for today.
+  - Includes tasks inside nested project pages and unambiguous project references on tasks elsewhere in the workspace.
+  - Filter by project or text; complete tasks, change due dates, and mark work as waiting with a reason and follow-up date.
+  - Project attention signals use missing next actions, project deadlines, overdue tasks, and follow-ups due.
+- **Weekly review**:
+  - Clear overdue work, check projects and waiting items, then record wins and priorities for next week.
+  - Preview the summary and save it to Journal. Updating it later in the same week reuses the same entry.
+  - Recently done means tasks currently marked done whose last modification was within seven days; it does not claim an exact completion time.
+- **Workspace settings**:
+  - Map Projects, Clients, Invoices, Library and Journal to existing collections without changing their schemas.
+  - Workflow focus selections, next-action choices, waiting notes, mappings and review drafts are stored locally per workspace on this device. Native task changes and saved Journal reviews sync through Thymer.
+  - The new workflow uses native project `status` values `in_progress` / `in_review` and task `waiting` state. The financial dashboard and collection links remain under **Overview**.
 - **Executive KPI Bar**:
   - **MRR (Monthly Recurring Revenue)**: Calculated live from active `Clients` records (`monthly_chf`).
   - **Invoiced, all time (CHF)**: Issued invoices, excluding drafts and other currencies.
@@ -70,6 +83,10 @@ Queries follow [Thymer's query reference](https://github.com/thymerapp/thymer-pl
 ```bash
 node --test test/finance.test.mjs test/collection-views.test.mjs
 node test/live-collections.mjs
+node --test test/workflow.test.mjs
+node test/live-workflow.mjs
 ```
 
 The live collection check compares every saved view against the workspace query results, verifies dashboard-to-queue navigation, captures local screenshots, and closes its verification panels. Set `OS_ARTIFACT_DIR` to choose the screenshot directory. Screenshots and configuration backups contain workspace data and should stay out of Git.
+
+The live workflow check creates temporary tasks and a clearly dated verification review, checks focus limits, state persistence, native task changes, review update behavior and split-panel layouts, then removes its fixtures and restores the original local workflow state.

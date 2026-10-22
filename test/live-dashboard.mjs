@@ -15,8 +15,9 @@ const errors = [];
 page.on('pageerror', e => errors.push(e.message));
 let originalPanels = [];
 try {
-    await page.reload({ waitUntil: 'domcontentloaded' });
+    if (!process.env.OS_SKIP_RELOAD) await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.os-shell', { timeout: 20000 });
+    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'overview'; await plugin.render(plugin.activePanel); });
     originalPanels = await page.evaluate(() => window.__freelanceOs.ui.getPanels().map(p => p.getId()));
     const dimensions = await page.evaluate(() => [innerWidth, innerHeight]);
     const report = {};
