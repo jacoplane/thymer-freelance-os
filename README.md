@@ -14,7 +14,7 @@ All screenshots use a separate demo workspace with fictional content.
 
 - **Overview is home.** Recurring revenue, issued invoices, confirmed payments, overdue balances, client relationships, projects and an agenda in one view.
 - **Give projects a useful starting point.** Create a native brief, next actions, deliverable links and decision log. Open a project's client profile or filter a client's projects from their card.
-- **Move each project forward.** See its selected next action on Overview, then open that project’s focused queue. The weekly review checks every active project and carries confirmed next actions into Today.
+- **Move each project forward.** Choose its next action from Today or Weekly review. Freelance OS writes a linked reference under the project’s **Next actions** section, so the choice travels with the project across devices; Overview and the focused queue use that same reference.
 - **Pick today’s focus.** Pin up to three project tasks. Search and filter the action queue, complete work, reschedule tasks, or record a waiting reason and follow-up date.
 - **Close the week.** Clear overdue work, check projects and dependencies, write your wins and next priorities, then save the review into Journal.
 - **Track included support time.** Log dated sessions against a client and optional project; the overview totals this month against active clients’ `included_hours` allowances.

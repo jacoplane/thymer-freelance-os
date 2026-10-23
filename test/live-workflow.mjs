@@ -49,12 +49,37 @@ try {
     fixtures = setup.created;
     await page.evaluate(async ({ fixtures, project }) => {
         const plugin = window.__freelanceOs;
-        plugin.workflowState.next[project] = fixtures[0].guid;
         const today = new Date().toLocaleDateString('en-CA');
         plugin.workflowState.focus[today] = [];
+        plugin.actionQueueTab = 'all';
         plugin.persistWorkflow();
         await plugin.render(plugin.activePanel);
+        await new Promise(resolve => setTimeout(resolve, 100));
+        document.querySelector(`.os-action-list [data-task="${fixtures[0].guid}"] .os-next-action`).click();
     }, { fixtures, project: setup.project });
+    await page.waitForFunction(async ({ project, task }) => {
+        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
+        const label = plugin.workflowData.tasks.find(item => item.guid === task)?.text;
+        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === label));
+    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[0].guid });
+    report.nativeNextReferenceCreated = true;
+    await page.evaluate(async ({ project }) => {
+        const plugin = window.__freelanceOs;
+        delete plugin.workflowState.next[project]; delete plugin.workflowState.nextLabels[project]; plugin.persistWorkflow();
+        plugin.workflowState = null; plugin.loadWorkflowState(); await plugin.loadWorkflowData();
+    }, { project: setup.project });
+    assert.equal(await page.evaluate(project => window.__freelanceOs.workflowState.next[project], setup.project), fixtures[0].guid);
+    report.nativeNextReferenceRehydratesWithoutLocalPointer = true;
+    await page.evaluate(async guid => {
+        const plugin = window.__freelanceOs; const task = plugin.workflowData.tasks.find(item => item.guid === guid);
+        await task.lineItem.setSegments([{ type: 'text', text: 'Workflow renamed action' }]);
+        await plugin.loadWorkflowData();
+    }, fixtures[0].guid);
+    await page.waitForFunction(async ({ project, task }) => {
+        const plugin = window.__freelanceOs; const lines = await plugin.data.getRecord(project).getLineItems(false);
+        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === 'Workflow renamed action'));
+    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[0].guid });
+    report.taskRenameRefreshesNativeReferenceTitle = true;
     for (const fixture of fixtures.slice(0, 3)) {
         await page.evaluate(guid => document.querySelector(`.os-action-list [data-task="${guid}"] .os-focus-action`).click(), fixture.guid);
         await page.waitForFunction(() => window.__freelanceOs.workflowData.model.focus.length === Number(document.querySelector('.os-focus-count').textContent.split('/')[0]), { polling: 100 });
@@ -80,12 +105,13 @@ try {
     assert.equal(waitingTask.status, 'waiting');
     assert.equal(waitingTask.date, '2030-06-15');
     assert.equal(await page.evaluate(guid => window.__freelanceOs.workflowData.model.focus.some(task => task.guid === guid), fixtures[0].guid), false);
+    await page.waitForFunction(async project => {
+        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
+        return !lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1');
+    }, { polling: 100, timeout: 10000 }, setup.project);
+    assert.equal(await page.evaluate(project => window.__freelanceOs.workflowState.next[project], setup.project), undefined);
+    report.waitingClearsNativeNextReference = true;
     report.waitingAndReschedule = true;
-    await page.evaluate(({ project, next }) => {
-        const plugin = window.__freelanceOs;
-        plugin.workflowState.next[project] = next;
-        plugin.persistWorkflow(); plugin.workflowMessage = '';
-    }, { project: setup.project, next: fixtures[1].guid });
     await page.evaluate(async () => {
         const plugin = window.__freelanceOs;
         plugin.workflowMode = 'review';
@@ -96,6 +122,33 @@ try {
         await plugin.render(plugin.activePanel);
     });
     await page.waitForFunction(() => document.querySelector('.os-workflow h3')?.textContent === 'Active projects' && document.querySelectorAll('.os-project-attention').length === window.__freelanceOs.workflowData.model.active.length, { polling: 100, timeout: 10000 });
+    await page.evaluate(({ project, next }) => {
+        const plugin = window.__freelanceOs;
+        const name = plugin.workflowData.model.active.find(item => item.guid === project)?.name;
+        const row = [...document.querySelectorAll('.os-project-attention')].find(item => item.querySelector('.os-action-title')?.textContent === name);
+        row.querySelector('select').value = next; row.querySelector('.os-pick-next').click();
+    }, { project: setup.project, next: fixtures[1].guid });
+    await page.waitForFunction(async ({ project, task }) => {
+        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
+        const label = plugin.workflowData.tasks.find(item => item.guid === task)?.text;
+        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === label));
+    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[1].guid });
+    report.weeklyReviewUpdatesNativeReference = true;
+    await page.waitForFunction(() => window.__freelanceOs.workflowData.model.next.some(task => task.guid === document.querySelector('.os-project-attention select')?.value), { polling: 100, timeout: 10000 });
+    await page.evaluate(async project => { const plugin = window.__freelanceOs; await plugin.openRecord(project, plugin.activePanel); }, setup.project);
+    await page.waitForFunction(count => window.__freelanceOs.ui.getPanels().length > count, { polling: 100, timeout: 10000 }, originalPanels.length);
+    await page.waitForFunction(async ({ project, task }) => {
+        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
+        const label = plugin.workflowData.tasks.find(item => item.guid === task)?.text;
+        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === label));
+    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[1].guid });
+    await page.screenshot({ path: path.join(output, 'workflow-project-native-next.png') });
+    report.projectPageShowsLinkedNextAction = true;
+    await page.evaluate(async ids => {
+        const plugin = window.__freelanceOs;
+        for (const panel of plugin.ui.getPanels()) if (!ids.includes(panel.getId())) plugin.ui.closePanel(panel);
+        await plugin.render(plugin.activePanel);
+    }, originalPanels);
     const projectCheckin = await page.evaluate(project => {
         const plugin = window.__freelanceOs;
         const rows = [...document.querySelectorAll('.os-project-attention')];
@@ -130,6 +183,15 @@ try {
     assert.equal(projectQueueHandoff.mode, 'today'); assert.equal(projectQueueHandoff.projectFilter, setup.project);
     assert.equal(projectQueueHandoff.queueTab, 'next'); assert.equal(projectQueueHandoff.taskVisible, true);
     report.projectQueueHandoff = projectQueueHandoff;
+    await page.evaluate(async guid => {
+        const plugin = window.__freelanceOs; const task = plugin.workflowData.tasks.find(item => item.guid === guid);
+        await plugin.setActionStatus(task, 'done'); await plugin.render(plugin.activePanel);
+    }, fixtures[1].guid);
+    await page.waitForFunction(async project => {
+        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
+        return !lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1') && !plugin.workflowState.next[project];
+    }, { polling: 100, timeout: 10000 }, setup.project);
+    report.completingSelectedNextClearsNativeReference = true;
     await page.evaluate(async () => {
         const plugin = window.__freelanceOs; plugin.workflowMode = 'review'; plugin.workflowMessage = '';
         const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7);

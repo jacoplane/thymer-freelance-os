@@ -134,6 +134,58 @@ function reconcileWorkflowPointers(state, model) {
     return changed;
 }
 
+const NEXT_ACTION_MARKER = 'project-next-v1';
+const NEXT_ACTION_PROPERTY = 'freelance_os_next_action';
+
+function nativeNextActionMarkers(lines) {
+    return lines.filter(line => line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER);
+}
+
+function reconcileNativeNextActions(state, projects, tasks, markers, complete = true) {
+    if (!complete) return { write: [], remove: [] };
+    const actionable = new Map(tasks.filter(task => !['done', 'canceled', 'cancelled', 'blocked', 'waiting'].includes(task.status)).map(task => [task.guid, task]));
+    const projectByRecord = new Map(projects.map(project => [project.guid, project]));
+    const write = [];
+    const remove = [];
+    for (const project of projects) {
+        const projectMarkers = markers.filter(marker => marker.recordGuid === project.guid);
+        if (!['in_progress', 'in_review'].includes(project.status)) {
+            delete state.next[project.guid];
+            delete state.nextLabels[project.guid];
+            continue;
+        }
+        if (projectMarkers.length) {
+            const valid = projectMarkers.map(marker => {
+                const ref = marker.segments?.find(segment => segment.type === 'ref')?.text;
+                const guid = typeof ref === 'object' ? ref.guid : ref;
+                return { marker, task: actionable.get(guid), ref };
+            }).find(entry => entry.task?.projectGuid === project.guid);
+            if (valid) {
+                const { task, marker, ref } = valid;
+                state.next[project.guid] = task.guid;
+                state.nextLabels[project.guid] = task.text;
+                remove.push(...projectMarkers.filter(candidate => candidate !== marker));
+                if (typeof ref !== 'object' || ref.title !== task.text) write.push({ project, task });
+            } else {
+                delete state.next[project.guid];
+                delete state.nextLabels[project.guid];
+                remove.push(...projectMarkers);
+            }
+            continue;
+        }
+        const prior = actionable.get(state.next[project.guid]);
+        if (prior?.projectGuid === project.guid) {
+            state.nextLabels[project.guid] = prior.text;
+            write.push({ project, task: prior });
+        } else if (state.next[project.guid]) {
+            delete state.next[project.guid];
+            delete state.nextLabels[project.guid];
+        }
+    }
+    for (const marker of markers) if (!projectByRecord.has(marker.recordGuid)) remove.push(marker);
+    return { write, remove };
+}
+
 function filterActions(tasks, query = '', projectGuid = '') {
     const text = query.trim().toLowerCase();
     return tasks.filter(task => (!projectGuid || task.projectGuid === projectGuid) && (!text || `${task.text} ${task.projectName}`.toLowerCase().includes(text)));
@@ -187,6 +239,7 @@ const Workflow = {
         const projects = [...byGuid.values()].filter(record => !record.parentGuid && record.name !== 'Kanban - Active Projects' && !isTemplateRecord(record.record));
         let complete = true;
         const taskMap = new Map();
+        const nextMarkers = [];
         const add = line => {
             const status = line.getTaskStatus?.();
             if (status === null || status === undefined) return;
@@ -204,7 +257,12 @@ const Workflow = {
         // Read actual project pages, so an arbitrary workspace search limit cannot create false gaps.
         for (let index = 0; index < records.length; index += 8) {
             await Promise.all(records.slice(index, index + 8).map(async record => {
-                try { for (const line of await record.getLineItems(false)) add(line); }
+                try {
+                    for (const line of await record.getLineItems(false)) {
+                        add(line);
+                        if (line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER) nextMarkers.push({ line, recordGuid: record.guid, segments: line.segments });
+                    }
+                }
                 catch { complete = false; }
             }));
         }
@@ -217,9 +275,67 @@ const Workflow = {
         const tasks = [...taskMap.values()];
         const today = localDate();
         const recentDone = tasks.filter(task => task.status === 'done' && task.updated instanceof Date && task.updated.getTime() >= Date.now() - 7 * 86400000);
+        const priorNextState = JSON.stringify({ next: state.next, nextLabels: state.nextLabels });
+        const nativeReconciliation = reconcileNativeNextActions(state, projects, tasks, nextMarkers, complete);
         const model = actionModel(projects, tasks, state, today, complete);
-        if (reconcileWorkflowPointers(state, model)) this.persistWorkflow();
+        const stateChanged = reconcileWorkflowPointers(state, model) || priorNextState !== JSON.stringify({ next: state.next, nextLabels: state.nextLabels });
+        if (stateChanged) this.persistWorkflow();
+        if (complete && !this.syncingNativeNextActions) {
+            this.syncingNativeNextActions = true;
+            try {
+                const touchedProjects = new Set();
+                for (const marker of nativeReconciliation.remove) {
+                    if (await marker.line.delete() === false) throw new Error('Stale project next action could not be removed');
+                    if (byGuid.has(marker.recordGuid)) touchedProjects.add(marker.recordGuid);
+                }
+                for (const guid of touchedProjects) await this.pruneNativeNextActionSection(byGuid.get(guid).record);
+                for (const { project, task } of nativeReconciliation.write) await this.writeNativeNextAction(project.record, task);
+            } catch {
+                // Preserve the last good local state; the next refresh can retry native sync.
+            } finally { this.syncingNativeNextActions = false; }
+        }
         return { projects, tasks, model, recentDone, byGuid };
+    },
+
+    async writeNativeNextAction(record, task) {
+        if (!record) throw new Error('Project page is unavailable');
+        const lines = await record.getLineItems(false);
+        const markers = nativeNextActionMarkers(lines);
+        if (!task) {
+            for (const marker of markers) if (await marker.delete() === false) throw new Error('Project next action could not be cleared');
+            await this.pruneNativeNextActionSection(record);
+            return true;
+        }
+        let marker = markers[0];
+        if (marker) {
+            const segments = [{ type: 'text', text: 'Next action: ' }, { type: 'ref', text: { guid: task.guid, title: task.text } }];
+            if (JSON.stringify(marker.segments || []) !== JSON.stringify(segments) && await marker.setSegments(segments) === false) throw new Error('Project next action could not be updated');
+            for (const duplicate of markers.slice(1)) if (await duplicate.delete() === false) throw new Error('Duplicate project next action could not be removed');
+            return true;
+        }
+
+        let section = lines.find(line => line.type === 'heading' && extractLineText(line).toLowerCase().replace(/[^a-z]/g, '') === 'nextactions');
+        if (!section) {
+            const title = lines.find(line => line.type === 'heading' && line.parent_guid === record.guid && (line.getHeadingSize?.() === 1 || line.props?.hsize === 1))
+                || lines.find(line => line.type === 'heading' && line.parent_guid === record.guid);
+            const rootLines = lines.filter(line => line.parent_guid === record.guid);
+            section = await record.createLineItem(title || null, title ? null : rootLines.at(-1) || null, 'heading', [{ type: 'text', text: 'Next actions' }], { hsize: 2, [NEXT_ACTION_PROPERTY]: 'section-v1' });
+            if (!section) throw new Error('Project next actions section could not be created');
+        }
+        const children = lines.filter(line => line.parent_guid === section.guid);
+        const segments = [{ type: 'text', text: 'Next action: ' }, { type: 'ref', text: { guid: task.guid, title: task.text } }];
+        marker = await record.createLineItem(section, children.at(-1) || null, 'text', segments, { [NEXT_ACTION_PROPERTY]: NEXT_ACTION_MARKER });
+        if (!marker) throw new Error('Project next action reference could not be saved');
+        return true;
+    },
+
+    async pruneNativeNextActionSection(record) {
+        const lines = await record.getLineItems(false);
+        const section = lines.find(line => line.props?.[NEXT_ACTION_PROPERTY] === 'section-v1');
+        if (!section) return true;
+        if (lines.some(line => line.parent_guid === section.guid)) return true;
+        if (await section.delete() === false) throw new Error('Empty project next actions section could not be removed');
+        return true;
     },
 
     async setActionStatus(task, status) {
@@ -355,8 +471,10 @@ const Workflow = {
         }, panel));
         row.querySelector('.os-next-action')?.addEventListener('click', event => this.workflowAction(event.target, async () => {
             if (state.next[task.projectGuid] === task.guid) {
+                await this.writeNativeNextAction(this.workflowData.byGuid.get(task.projectGuid)?.record, null);
                 delete state.next[task.projectGuid]; delete state.nextLabels[task.projectGuid];
             } else {
+                await this.writeNativeNextAction(this.workflowData.byGuid.get(task.projectGuid)?.record, task);
                 state.next[task.projectGuid] = task.guid; state.nextLabels[task.projectGuid] = task.text;
             }
             this.persistWorkflow();
@@ -399,8 +517,11 @@ const Workflow = {
             row.querySelector('.os-pick-next').onclick = event => this.workflowAction(event.target, async () => {
                 const guid = row.querySelector('select').value;
                 if (!guid) throw new Error('Choose a task first.');
+                const task = item.tasks.find(candidate => candidate.guid === guid);
+                if (!task) throw new Error('That task is no longer available. Refresh the project review.');
+                await this.writeNativeNextAction(item.project.record, task);
                 this.workflowState.next[item.project.guid] = guid;
-                this.workflowState.nextLabels[item.project.guid] = item.tasks.find(task => task.guid === guid)?.text || '';
+                this.workflowState.nextLabels[item.project.guid] = task.text;
                 this.persistWorkflow();
             }, panel);
             row.querySelector('.os-add-next').onclick = () => {

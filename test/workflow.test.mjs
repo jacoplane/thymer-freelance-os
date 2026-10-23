@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../src/support-time.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const runtime = { AppPlugin: class {}, Date, Map, Set, console };
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions, summarizeSupportTime });`, runtime);
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions, summarizeSupportTime });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
 
@@ -57,6 +57,101 @@ test('incomplete workflow scans preserve pointers until task data is reliable', 
     assert.equal(api.reconcileWorkflowPointers(state, model), false);
     assert.equal(state.next.project, 'not-yet-loaded');
     assert.deepEqual(state.focus.today, ['not-yet-loaded']);
+});
+
+test('native project next-action references take precedence and refresh their labels', () => {
+    const state = api.workflowDefaults(); state.next.project = 'old'; state.nextLabels.project = 'Old local choice';
+    const marker = { recordGuid: 'project', segments: [{ type: 'ref', text: { guid: 'ready' } }] };
+    const result = api.reconcileNativeNextActions(state, [project], [task('ready', { text: 'Native project choice' })], [marker]);
+    assert.equal(state.next.project, 'ready'); assert.equal(state.nextLabels.project, 'Native project choice');
+    assert.equal(result.write[0].task.guid, 'ready'); assert.deepEqual(Array.from(result.remove), []);
+});
+
+test('legacy local next actions are queued for native backfill and stale native references are removed', () => {
+    const state = api.workflowDefaults(); state.next.project = 'ready'; state.nextLabels.project = 'Ready';
+    const markers = [{ recordGuid: 'project', segments: [{ type: 'ref', text: { guid: 'finished' } }] }];
+    const result = api.reconcileNativeNextActions(state, [project], [task('ready'), task('finished', { status: 'done' })], markers);
+    assert.equal(state.next.project, undefined); assert.equal(state.nextLabels.project, undefined);
+    assert.equal(result.write.length, 0); assert.equal(result.remove[0], markers[0]);
+    const legacy = api.workflowDefaults(); legacy.next.project = 'ready';
+    const backfill = api.reconcileNativeNextActions(legacy, [project], [task('ready')], []);
+    assert.equal(backfill.write[0].task.guid, 'ready');
+});
+
+test('incomplete task scans preserve both native references and local selections', () => {
+    const state = api.workflowDefaults(); state.next.project = 'local';
+    const marker = { recordGuid: 'project', segments: [{ type: 'ref', text: { guid: 'native' } }] };
+    const result = api.reconcileNativeNextActions(state, [project], [], [marker], false);
+    assert.equal(state.next.project, 'local'); assert.equal(result.remove.length, 0); assert.equal(result.write.length, 0);
+});
+
+test('closed projects do not regain local action pointers from a retained page reference', () => {
+    const state = api.workflowDefaults(); state.next.closed = 'ready'; state.nextLabels.closed = 'Ready';
+    const closed = { ...project, guid: 'closed', status: 'completed' };
+    const marker = { recordGuid: 'closed', segments: [{ type: 'ref', text: { guid: 'ready', title: 'Ready' } }] };
+    const result = api.reconcileNativeNextActions(state, [closed], [task('ready', { projectGuid: 'closed' })], [marker]);
+    assert.equal(state.next.closed, undefined); assert.equal(state.nextLabels.closed, undefined);
+    assert.equal(result.remove.length, 0); assert.equal(result.write.length, 0);
+});
+
+test('native project reference is replaced and cleared without touching project content', async () => {
+    const section = { guid: 'section', type: 'heading', parent_guid: 'project', segments: [{ type: 'text', text: 'Next actions' }], props: {} };
+    const userTask = { guid: 'user-task', type: 'task', parent_guid: 'section', segments: [{ type: 'text', text: 'User-authored task' }], props: {} };
+    const lines = [section, userTask]; let nextId = 0;
+    const record = {
+        guid: 'project',
+        getLineItems: async () => lines,
+        createLineItem: async (parent, after, type, segments, props) => {
+            const line = {
+                guid: `created-${++nextId}`, type, parent_guid: parent?.guid || 'project', segments, props,
+                setSegments: async value => { line.segments = value; return true; },
+                delete: async () => { const index = lines.indexOf(line); if (index >= 0) lines.splice(index, 1); return true; }
+            };
+            lines.push(line); return line;
+        }
+    };
+    const plugin = new api.Plugin();
+    await plugin.writeNativeNextAction(record, task('first'));
+    let markers = lines.filter(line => line.props?.freelance_os_next_action === 'project-next-v1');
+    assert.equal(markers.length, 1); assert.equal(markers[0].segments[1].text.guid, 'first'); assert.equal(markers[0].segments[1].text.title, 'first');
+    await plugin.writeNativeNextAction(record, task('second'));
+    markers = lines.filter(line => line.props?.freelance_os_next_action === 'project-next-v1');
+    assert.equal(markers.length, 1); assert.equal(markers[0].segments[1].text.guid, 'second'); assert.equal(markers[0].segments[1].text.title, 'second');
+    await plugin.writeNativeNextAction(record, null);
+    assert.equal(lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1'), false);
+    assert.ok(lines.includes(userTask)); assert.equal(userTask.segments[0].text, 'User-authored task');
+});
+
+test('projects without a next-actions section get it beneath the project title', async () => {
+    const title = { guid: 'title', type: 'heading', parent_guid: 'project', segments: [{ type: 'text', text: 'Project title' }], props: { hsize: 1 } };
+    const existing = { guid: 'existing', type: 'heading', parent_guid: 'title', segments: [{ type: 'text', text: 'Project brief' }], props: { hsize: 2 } };
+    const lines = [title, existing]; let nextId = 0;
+    const record = {
+        guid: 'project', getLineItems: async () => lines,
+        createLineItem: async (parent, after, type, segments, props) => {
+            const line = { guid: `created-${++nextId}`, type, parent_guid: parent?.guid || 'project', segments, props, setSegments: async value => { line.segments = value; return true; } };
+            lines.push(line); return line;
+        }
+    };
+    const plugin = new api.Plugin();
+    await plugin.writeNativeNextAction(record, task('linked-task'));
+    const section = lines.find(line => line.props?.freelance_os_next_action === 'section-v1');
+    const marker = lines.find(line => line.props?.freelance_os_next_action === 'project-next-v1');
+    assert.equal(section.parent_guid, title.guid); assert.equal(marker.parent_guid, section.guid);
+    assert.equal(lines.includes(existing), true);
+});
+
+test('clearing a pointer keeps user content and prunes only an empty generated section', async () => {
+    const section = { guid: 'generated', type: 'heading', parent_guid: 'title', segments: [], props: { freelance_os_next_action: 'section-v1' }, delete: async () => { const i = lines.indexOf(section); if (i >= 0) lines.splice(i, 1); return true; } };
+    const userLine = { guid: 'user', type: 'text', parent_guid: 'generated', segments: [{ type: 'text', text: 'Keep this note' }], props: {} };
+    const marker = { guid: 'marker', type: 'text', parent_guid: 'generated', segments: [{ type: 'text', text: 'Next action: ' }, { type: 'ref', text: { guid: 'ready' } }], props: { freelance_os_next_action: 'project-next-v1' }, delete: async () => { const i = lines.indexOf(marker); if (i >= 0) lines.splice(i, 1); return true; } };
+    const lines = [section, userLine, marker]; const record = { getLineItems: async () => lines };
+    const plugin = new api.Plugin();
+    await plugin.writeNativeNextAction(record, null);
+    assert.ok(lines.includes(section)); assert.ok(lines.includes(userLine)); assert.equal(lines.includes(marker), false);
+    lines.splice(lines.indexOf(userLine), 1);
+    await plugin.writeNativeNextAction(record, null);
+    assert.equal(lines.includes(section), false);
 });
 
 test('missing next action and overdue project deadlines are explicit, incomplete scans do not invent gaps', () => {

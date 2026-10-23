@@ -33,7 +33,7 @@ Log support work from Overview with **Log support time**. Choose a client, optio
 Today only includes tasks associated with explicitly active projects (`in_progress` or `in_review`). Tasks on nested project pages are included. A task elsewhere in the workspace can be included when it references exactly one project unambiguously.
 
 1. Open **Needs attention**. Missing next actions, near deadlines, overdue project tasks and due follow-ups appear here.
-2. Choose an existing task and click **Set next**. Choose one next action for each active project, or use **Add task** to capture one into that project.
+2. Choose an existing task and click **Set next**. Choose one next action for each active project, or use **Add task** to capture one into that project. The selected task is also linked under the project page’s **Next actions** section, so the choice syncs with the workspace and stays visible outside Freelance OS.
 3. Use **Focus** to pin up to three tasks for today. **Unpin** removes a task from that daily shortlist. Pins belong to the selected calendar day.
 4. Use the next-action, all-action and waiting tabs to work through the queue. Search and project filters combine.
 
@@ -53,7 +53,7 @@ The review is grouped by the week starting Monday. Its draft is saved on this de
 2. **Check projects.** Review every active project, confirm its current next action, and check deadlines and waiting follow-ups. The selected actions carry into **Today → Next actions** and the saved Journal review.
 3. **Plan next week.** Write wins and observations, choose a few priorities, inspect the Journal preview, and click **Save review to Journal**.
 
-The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. On the same device, saving again during the same week updates the same saved section, including if you return on another day. After saving, the button becomes **Update Journal review**.
+The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. Next-action links on project pages are native workspace content; focus pins, waiting notes, and unsaved review drafts remain local to this device. Saving again during the same week updates the same Journal section, including if you return on another day. After saving, the button becomes **Update Journal review**.
 
 ![Planning next week and updating a saved Journal review with fictional notes](images/plan-next-week.png)
 
