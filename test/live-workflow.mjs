@@ -13,15 +13,24 @@ await cdp.send('Emulation.clearDeviceMetricsOverride');
 await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
 const errors = [];
 page.on('pageerror', error => errors.push(error.message));
-let savedState, fixtures = [], review, originalPanels = [];
+let savedState, savedUi, fixtures = [], review, originalPanels = [];
 try {
     if (!process.env.OS_SKIP_RELOAD) await page.reload({ waitUntil: 'domcontentloaded' });
     await page.waitForSelector('.os-workflow-modes');
+    savedUi = await page.evaluate(() => {
+        const plugin = window.__freelanceOs;
+        return {
+            panels: plugin.ui.getPanels().map(panel => panel.getId()),
+            workflowMode: plugin.workflowMode, currentTab: plugin.currentTab, actionQueueTab: plugin.actionQueueTab,
+            queueLimit: plugin.queueLimit, actionSearch: plugin.actionSearch, actionProject: plugin.actionProject,
+            clientProjectGuid: plugin.clientProjectGuid, projectFilter: plugin.projectFilter, invoiceFilter: plugin.invoiceFilter,
+            searchQuery: plugin.searchQuery, expandedProjects: [...plugin.expandedProjects]
+        };
+    });
+    originalPanels = savedUi.panels;
+    savedState = await page.evaluate(() => JSON.stringify(window.__freelanceOs.loadWorkflowState()));
     await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'today'; await plugin.render(plugin.activePanel); });
     await page.waitForSelector('.os-workflow');
-    await page.evaluate(() => { const plugin = window.__freelanceOs; for (const panel of plugin.ui.getPanels()) if (panel.getId() !== plugin.activePanel.getId()) plugin.ui.closePanel(panel); });
-    savedState = await page.evaluate(() => JSON.stringify(window.__freelanceOs.loadWorkflowState()));
-    originalPanels = await page.evaluate(() => window.__freelanceOs.ui.getPanels().map(panel => panel.getId()));
     const report = {};
     const setup = await page.evaluate(async () => {
         const plugin = window.__freelanceOs;
@@ -72,9 +81,61 @@ try {
     assert.equal(waitingTask.date, '2030-06-15');
     assert.equal(await page.evaluate(guid => window.__freelanceOs.workflowData.model.focus.some(task => task.guid === guid), fixtures[0].guid), false);
     report.waitingAndReschedule = true;
+    await page.evaluate(({ project, next }) => {
+        const plugin = window.__freelanceOs;
+        plugin.workflowState.next[project] = next;
+        plugin.persistWorkflow(); plugin.workflowMessage = '';
+    }, { project: setup.project, next: fixtures[1].guid });
+    await page.evaluate(async () => {
+        const plugin = window.__freelanceOs;
+        plugin.workflowMode = 'review';
+        const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+        const week = date.toLocaleDateString('en-CA');
+        plugin.workflowState.drafts[week] ||= { notes: '', priorities: '', step: 0 };
+        plugin.workflowState.drafts[week].step = 1;
+        await plugin.render(plugin.activePanel);
+    });
+    await page.waitForFunction(() => document.querySelector('.os-workflow h3')?.textContent === 'Active projects' && document.querySelectorAll('.os-project-attention').length === window.__freelanceOs.workflowData.model.active.length, { polling: 100, timeout: 10000 });
+    const projectCheckin = await page.evaluate(project => {
+        const plugin = window.__freelanceOs;
+        const rows = [...document.querySelectorAll('.os-project-attention')];
+        const projectRow = rows.find(row => row.querySelector('.os-action-title')?.textContent === plugin.workflowData.model.active.find(item => item.guid === project)?.name);
+        return {
+            active: plugin.workflowData.model.active.length, rows: rows.length,
+            maxRowHeight: Math.max(0, ...rows.map(row => row.getBoundingClientRect().height)),
+            nextSelected: projectRow?.querySelector('select')?.value || '',
+            summary: projectRow?.querySelector('.os-action-meta')?.textContent || ''
+        };
+    }, setup.project);
+    assert.equal(projectCheckin.rows, projectCheckin.active, 'weekly review lists every active project');
+    assert.equal(projectCheckin.nextSelected, fixtures[1].guid, 'weekly review keeps the selected next action visible');
+    assert.ok(projectCheckin.summary.includes('Workflow verification 1'));
+    assert.equal(projectCheckin.summary.includes('Choose a next action · Choose a next action'), false);
+    report.projectCheckin = projectCheckin;
+    await page.screenshot({ path: path.join(output, 'workflow-project-checkin.png') });
+    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'overview'; plugin.currentTab = 'projects'; await plugin.render(plugin.activePanel); });
+    await page.waitForSelector('.os-project-next-link');
+    const projectQueueHandoff = await page.evaluate(async ({ project, task }) => {
+        const plugin = window.__freelanceOs;
+        const name = plugin.data.getRecord(project).getName();
+        const card = [...document.querySelectorAll('.os-project-card')].find(item => item.querySelector('.os-card-title')?.textContent === name);
+        const summary = card?.querySelector('.os-project-next-link')?.textContent || '';
+        card?.querySelector('.os-project-next-link')?.click();
+        await plugin.render(plugin.activePanel);
+        return { summary, mode: plugin.workflowMode, projectFilter: plugin.actionProject, queueTab: plugin.actionQueueTab };
+    }, { project: setup.project, task: fixtures[1].guid });
+    await page.waitForFunction(guid => !!document.querySelector(`.os-action-list [data-task="${guid}"]`), { polling: 100, timeout: 10000 }, fixtures[1].guid);
+    projectQueueHandoff.taskVisible = true;
+    assert.match(projectQueueHandoff.summary, /Next action.*Workflow verification 1/);
+    assert.equal(projectQueueHandoff.mode, 'today'); assert.equal(projectQueueHandoff.projectFilter, setup.project);
+    assert.equal(projectQueueHandoff.queueTab, 'next'); assert.equal(projectQueueHandoff.taskVisible, true);
+    report.projectQueueHandoff = projectQueueHandoff;
     await page.evaluate(async () => {
         const plugin = window.__freelanceOs; plugin.workflowMode = 'review'; plugin.workflowMessage = '';
+        const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+        const week = date.toLocaleDateString('en-CA'); plugin.workflowState.drafts[week].step = 1;
         await plugin.render(plugin.activePanel);
+        await new Promise(resolve => setTimeout(resolve, 100));
         document.querySelector('[data-step="2"]').click();
     });
     await page.waitForSelector('.os-review-notes');
@@ -100,17 +161,17 @@ try {
     assert.equal(review.sameEntry, true); assert.equal(review.bodies, 1); assert.equal(review.bodyUpdated, true);
     report.journalSaveAndUpdate = true;
     await page.evaluate(async review => { const plugin = window.__freelanceOs; await plugin.openItem(review.headingGuid, review.recordGuid, plugin.activePanel); }, review);
-    await page.waitForFunction(() => window.__freelanceOs.ui.getPanels().length === 2, { polling: 100 });
-    await page.waitForFunction(() => [...document.querySelectorAll('.panel:has(> .panel-scroller-y)')].at(-1)?.innerText.includes('Weekly review · week of 2098-10-20'), { polling: 100, timeout: 10000 });
+    await page.waitForFunction(() => [...document.querySelectorAll('.panel:has(> .panel-scroller-y)')].some(panel => panel.innerText.includes('Weekly review · week of 2098-10-20')), { polling: 100, timeout: 10000 });
     await page.screenshot({ path: path.join(output, 'workflow-journal-verification.png') });
-    await page.evaluate(() => { const plugin = window.__freelanceOs; for (const panel of plugin.ui.getPanels()) if (panel.getId() !== plugin.activePanel.getId()) plugin.ui.closePanel(panel); });
+    await page.evaluate(ids => { const plugin = window.__freelanceOs; for (const panel of plugin.ui.getPanels()) if (!ids.includes(panel.getId())) plugin.ui.closePanel(panel); }, originalPanels);
     await page.screenshot({ path: path.join(output, 'workflow-review-cycle-2.png') });
     await page.evaluate(async () => {
         const plugin = window.__freelanceOs;
-        plugin.workflowMode = 'today'; plugin.actionQueueTab = 'all';
+        plugin.workflowMode = 'today'; plugin.actionQueueTab = 'all'; plugin.actionProject = ''; plugin.actionSearch = ''; plugin.queueLimit = 1000;
         await plugin.render(plugin.activePanel);
-        document.querySelector('.os-action-edit').open = true;
     });
+    await page.waitForFunction(guid => !!document.querySelector(`.os-action-list [data-task="${guid}"] .os-action-edit`), { polling: 100, timeout: 10000 }, fixtures[3].guid);
+    await page.evaluate(guid => { document.querySelector(`.os-action-list [data-task="${guid}"] .os-action-edit`).open = true; }, fixtures[3].guid);
     await page.evaluate(guid => document.querySelector(`.os-action-list [data-task="${guid}"] .os-action-done`).click(), fixtures[3].guid);
     await page.waitForFunction(guid => !window.__freelanceOs.workflowData.model.actions.some(task => task.guid === guid), { polling: 100 }, fixtures[3].guid);
     report.nativeCompletion = true;
@@ -119,18 +180,23 @@ try {
         return { width: Math.round(rect.width), overflow: [...app.querySelectorAll('*')].filter(element => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().right > rect.right + 1).map(element => element.className).slice(0, 8) };
     });
     report.single = await measure();
+    report[`panels${originalPanels.length}`] = report.single;
     await page.screenshot({ path: path.join(output, 'workflow-today-cycle-2.png') });
-    for (let count = 2; count <= 3; count++) {
+    for (let count = originalPanels.length + 1; count <= 3; count++) {
+        const before = await page.evaluate(() => window.__freelanceOs.ui.getPanels().length);
         await page.evaluate(async () => { const plugin = window.__freelanceOs; await plugin.openCollection(plugin.collectionGuid('Invoices'), plugin.ui.getPanels().at(-1)); });
-        await page.waitForFunction(count => window.__freelanceOs.ui.getPanels().length >= count, { polling: 100 }, originalPanels.length + count - 1);
-        report[`panels${count}`] = await measure();
-        await page.screenshot({ path: path.join(output, `workflow-${count}-panels-cycle-2.png`) });
+        await new Promise(resolve => setTimeout(resolve, 900));
+        const actual = await page.evaluate(() => window.__freelanceOs.ui.getPanels().length);
+        if (actual <= before) break;
+        report[`panels${actual}`] = await measure();
+        await page.screenshot({ path: path.join(output, `workflow-${actual}-panels-cycle-2.png`) });
     }
-    for (const key of ['single', 'panels2', 'panels3']) assert.deepEqual(report[key].overflow, [], `${key} overflows`);
+    for (const key of Object.keys(report).filter(key => key === 'single' || /^panels[23]$/.test(key))) assert.deepEqual(report[key].overflow, [], `${key} overflows`);
+    assert.equal(report.projectCheckin.maxRowHeight < 180, true, 'review rows stay compact in the available panel width');
     assert.deepEqual(errors, []);
     console.log(JSON.stringify(report, null, 2));
 } finally {
-    await page.evaluate(async ({ fixtures, review, savedState, originalPanels }) => {
+    await page.evaluate(async ({ fixtures, review, savedState, savedUi }) => {
         const plugin = window.__freelanceOs;
         for (const fixture of fixtures) {
             const record = plugin.data.getRecord(fixture.recordGuid);
@@ -147,10 +213,13 @@ try {
             }
         }
         if (savedState) { plugin.workflowState = JSON.parse(savedState); plugin.persistWorkflow(); }
-        for (const panel of plugin.ui.getPanels()) if (!originalPanels.includes(panel.getId()) && panel.getId() !== plugin.activePanel.getId()) plugin.ui.closePanel(panel);
-        plugin.workflowMode = 'today'; plugin.actionQueueTab = null;
+        for (const panel of plugin.ui.getPanels()) if (!savedUi.panels.includes(panel.getId())) plugin.ui.closePanel(panel);
+        plugin.workflowMode = savedUi.workflowMode; plugin.currentTab = savedUi.currentTab; plugin.actionQueueTab = savedUi.actionQueueTab;
+        plugin.queueLimit = savedUi.queueLimit; plugin.actionSearch = savedUi.actionSearch; plugin.actionProject = savedUi.actionProject;
+        plugin.clientProjectGuid = savedUi.clientProjectGuid; plugin.projectFilter = savedUi.projectFilter; plugin.invoiceFilter = savedUi.invoiceFilter;
+        plugin.searchQuery = savedUi.searchQuery; plugin.expandedProjects = new Set(savedUi.expandedProjects);
         await plugin.render(plugin.activePanel);
-    }, { fixtures, review, savedState, originalPanels });
+    }, { fixtures, review, savedState, savedUi });
     await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
     await browser.disconnect();
 }

@@ -58,6 +58,7 @@
 .os-workflow-empty { color: var(--os-muted); padding: 16px 0; font-size: 13px; }
 .os-workflow-message { padding: 12px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: 6px; margin-bottom: 14px !important; }
 .os-project-attention { display: flex; gap: 20px; justify-content: space-between; border-bottom: 1px solid var(--os-border); padding: 14px 0; }
+.os-project-checkin-copy { flex: 1 1 240px; min-width: 0; }
 .os-next-picker { display: flex; align-items: flex-start; gap: 6px; }
 .os-next-picker select { max-width: 340px; min-width: 0; padding: 7px; background: var(--os-surface); color: var(--os-text); border: 1px solid var(--os-border); border-radius: 6px; }
 .os-review-steps { margin-top: 16px; }
@@ -71,6 +72,7 @@
 .os-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; max-width: 700px; }
 @container osApp (max-width: 720px) {
   .os-project-attention { flex-direction: column; gap: 10px; }
+  .os-project-checkin-copy { flex: 0 1 auto; }
   .os-next-picker { flex-wrap: wrap; }
   .os-next-picker select { flex: 1 1 100%; max-width: 100%; }
   .os-action-row { flex-wrap: wrap; }
@@ -92,6 +94,9 @@
 .os-client-value dd { margin: 0; color: var(--os-text); }
 .os-main, .os-agenda, .os-rail { min-width: 0; }
 .os-card-bottom, .os-client-meta { flex-wrap: wrap; }
+.os-project-next-link { display: block; width: 100%; min-width: 0; padding: 5px 0; border: 0; background: transparent; color: var(--os-accent); text-align: left; font: inherit; font-size: 12px; overflow-wrap: anywhere; cursor: pointer; }
+.os-project-next-link:hover { text-decoration: underline; }
+.os-project-next-label { font-weight: 650; }
 .os-filter-search { flex-wrap: wrap; min-width: 0; }
 .os-app input, .os-app select { font-family: inherit; }
 .os-app input:focus-visible, .os-app select:focus-visible { outline: 2px solid var(--os-accent); outline-offset: 2px; }

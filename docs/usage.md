@@ -50,7 +50,7 @@ When the follow-up date arrives, the project gains a **Follow-up due** attention
 The review is grouped by the week starting Monday. Its draft is saved on this device as you move through three steps:
 
 1. **Clear the decks.** Complete or reschedule overdue actions, or mark dependencies waiting. Look over tasks marked done and updated within the last seven days.
-2. **Check projects.** Give active projects a concrete next action. Check deadlines and waiting follow-ups.
+2. **Check projects.** Review every active project, confirm its current next action, and check deadlines and waiting follow-ups. The selected actions carry into **Today → Next actions** and the saved Journal review.
 3. **Plan next week.** Write wins and observations, choose a few priorities, inspect the Journal preview, and click **Save review to Journal**.
 
 The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. On the same device, saving again during the same week updates the same saved section, including if you return on another day. After saving, the button becomes **Update Journal review**.

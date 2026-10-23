@@ -1,5 +1,5 @@
 function workflowDefaults() {
-    return { version: 1, mappings: {}, next: {}, focus: {}, waiting: {}, drafts: {}, reviews: {} };
+    return { version: 1, mappings: {}, next: {}, nextLabels: {}, focus: {}, waiting: {}, drafts: {}, reviews: {} };
 }
 
 function reviewWeek(today = localDate()) {
@@ -53,13 +53,44 @@ function actionModel(projects, tasks, state, today = localDate(), complete = tru
         else if (dateDay(project.deadline) !== null && dateDay(project.deadline) <= dateDay(today) + 7) issues.push('Project deadline within 7 days');
         if (projectTasks.some(task => task.date && task.date < today)) issues.push('Overdue tasks');
         if (projectTasks.some(task => ['waiting', 'blocked'].includes(task.status) && state.waiting[task.guid]?.followup && state.waiting[task.guid].followup <= today)) issues.push('Follow-up due');
-        return issues.length ? [{ project, issues, tasks: actions.filter(task => task.projectGuid === project.guid) }] : [];
+        return issues.length ? [{ project, issues, tasks: actions.filter(task => task.projectGuid === project.guid), next: next.find(task => task.projectGuid === project.guid) }] : [];
     });
     const rank = task => (task.date && task.date < today ? 0 : task.date === today ? 1 : task.status === 'important' ? 2 : 3);
     const sort = (a, b) => rank(a) - rank(b) || (a.date || '9999').localeCompare(b.date || '9999') || a.text.localeCompare(b.text);
     actions.sort(sort); next.sort(sort); focus.sort(sort);
     waiting.sort((a, b) => (state.waiting[a.guid]?.followup || '9999').localeCompare(state.waiting[b.guid]?.followup || '9999'));
     return { active, actions, next, focus, waiting, attention, overdue: actions.filter(task => task.date && task.date < today), complete };
+}
+
+function reconcileWorkflowPointers(state, model) {
+    if (!model.complete) return false;
+    let changed = false;
+    const actionable = new Map(model.actions.map(task => [task.guid, task]));
+    for (const [projectGuid, taskGuid] of Object.entries(state.next)) {
+        const task = actionable.get(taskGuid);
+        if (!task || task.projectGuid !== projectGuid) {
+            delete state.next[projectGuid];
+            delete state.nextLabels[projectGuid];
+            changed = true;
+        } else if (state.nextLabels[projectGuid] !== task.text) {
+            state.nextLabels[projectGuid] = task.text;
+            changed = true;
+        }
+    }
+    for (const projectGuid of Object.keys(state.nextLabels)) if (!state.next[projectGuid]) {
+        delete state.nextLabels[projectGuid];
+        changed = true;
+    }
+    const valid = new Set(actionable.keys());
+    for (const [day, taskGuids] of Object.entries(state.focus)) {
+        const retained = taskGuids.filter(guid => valid.has(guid));
+        if (retained.length !== taskGuids.length) {
+            if (retained.length) state.focus[day] = retained;
+            else delete state.focus[day];
+            changed = true;
+        }
+    }
+    return changed;
 }
 
 function filterActions(tasks, query = '', projectGuid = '') {
@@ -145,7 +176,9 @@ const Workflow = {
         const tasks = [...taskMap.values()];
         const today = localDate();
         const recentDone = tasks.filter(task => task.status === 'done' && task.updated instanceof Date && task.updated.getTime() >= Date.now() - 7 * 86400000);
-        return { projects, tasks, model: actionModel(projects, tasks, state, today, complete), recentDone, byGuid };
+        const model = actionModel(projects, tasks, state, today, complete);
+        if (reconcileWorkflowPointers(state, model)) this.persistWorkflow();
+        return { projects, tasks, model, recentDone, byGuid };
     },
 
     async setActionStatus(task, status) {
@@ -280,8 +313,11 @@ const Workflow = {
             this.persistWorkflow();
         }, panel));
         row.querySelector('.os-next-action')?.addEventListener('click', event => this.workflowAction(event.target, async () => {
-            if (state.next[task.projectGuid] === task.guid) delete state.next[task.projectGuid];
-            else state.next[task.projectGuid] = task.guid;
+            if (state.next[task.projectGuid] === task.guid) {
+                delete state.next[task.projectGuid]; delete state.nextLabels[task.projectGuid];
+            } else {
+                state.next[task.projectGuid] = task.guid; state.nextLabels[task.projectGuid] = task.text;
+            }
             this.persistWorkflow();
         }, panel));
         row.querySelector('.os-date-save').onclick = event => this.workflowAction(event.target, () => this.rescheduleAction(task, row.querySelector('.os-action-date').value), panel);
@@ -300,17 +336,31 @@ const Workflow = {
         return row;
     },
 
-    renderProjectAttention(workflow, panel) {
+    renderProjectAttention(workflow, panel, { allActive = false } = {}) {
         const list = document.createElement('div'); list.className = 'os-attention-list';
-        if (!workflow.model.attention.length) list.innerHTML = `<p class="os-workflow-empty">${!workflow.model.active.length ? 'No explicitly active projects found. Check your Projects mapping and project statuses in Settings.' : !workflow.model.complete ? 'Project checks are incomplete. Refresh to retry.' : 'Every active project has a next action and no deadline warnings.'}</p>`;
-        for (const item of workflow.model.attention) {
+        const attentionByGuid = new Map(workflow.model.attention.map(item => [item.project.guid, item]));
+        const projects = allActive
+            ? workflow.model.active.map(project => {
+                const item = attentionByGuid.get(project.guid);
+                return { project, issues: item?.issues || [], tasks: workflow.model.actions.filter(task => task.projectGuid === project.guid), next: workflow.model.next.find(task => task.projectGuid === project.guid) };
+            })
+            : workflow.model.attention;
+        if (!projects.length) list.innerHTML = `<p class="os-workflow-empty">${!workflow.model.active.length ? 'No explicitly active projects found. Check your Projects mapping and project statuses in Settings.' : !workflow.model.complete ? 'Project checks are incomplete. Refresh to retry.' : 'Every active project has a next action and no deadline warnings.'}</p>`;
+        for (const item of projects) {
+            const nextStatus = item.next
+                ? `Next: ${item.next.text}`
+                : item.issues.some(issue => issue.toLowerCase().includes('next action') || issue === 'All work is waiting') ? '' : 'Choose a next action';
+            const stateText = [item.issues.join(' · '), nextStatus].filter(Boolean).join(' · ');
             const row = document.createElement('div'); row.className = 'os-project-attention';
-            row.innerHTML = `<div><button class="os-action-title">${escapeHtml(item.project.name)}</button><p class="os-action-meta">${item.issues.map(escapeHtml).join(' · ')}</p></div><div class="os-next-picker"><select aria-label="Next action for ${escapeHtml(item.project.name)}"><option value="">Choose an existing task…</option>${item.tasks.map(task => `<option value="${task.guid}">${escapeHtml(task.text)}</option>`).join('')}</select><button class="os-button os-pick-next" ${item.tasks.length ? '' : 'disabled'}>Set next</button><button class="os-button os-add-next">Add task</button></div>`;
+            row.innerHTML = `<div class="os-project-checkin-copy"><button class="os-action-title">${escapeHtml(item.project.name)}</button><p class="os-action-meta">${escapeHtml(stateText)}</p></div><div class="os-next-picker"><select aria-label="Next action for ${escapeHtml(item.project.name)}"><option value="">Choose an existing task…</option>${item.tasks.map(task => `<option value="${task.guid}">${escapeHtml(task.text)}${task.date ? ` · ${escapeHtml(task.date)}` : ''}</option>`).join('')}</select><button class="os-button os-pick-next" ${item.tasks.length ? '' : 'disabled'}>${item.next ? 'Update next' : 'Set next'}</button><button class="os-button os-add-next">Add task</button></div>`;
+            row.querySelector('select').value = item.next?.guid || '';
             row.querySelector('.os-action-title').onclick = () => this.openRecord(item.project.guid, panel);
             row.querySelector('.os-pick-next').onclick = event => this.workflowAction(event.target, async () => {
                 const guid = row.querySelector('select').value;
                 if (!guid) throw new Error('Choose a task first.');
-                this.workflowState.next[item.project.guid] = guid; this.persistWorkflow();
+                this.workflowState.next[item.project.guid] = guid;
+                this.workflowState.nextLabels[item.project.guid] = item.tasks.find(task => task.guid === guid)?.text || '';
+                this.persistWorkflow();
             }, panel);
             row.querySelector('.os-add-next').onclick = () => {
                 this.captureProjectGuid = item.project.guid;
@@ -345,8 +395,8 @@ const Workflow = {
                 if (workflow.recentDone.length > 12) section.insertAdjacentHTML('beforeend', `<p class="os-action-meta">Showing the first 12. The Journal summary includes all ${workflow.recentDone.length}.</p>`);
                 if (!workflow.recentDone.length) section.insertAdjacentHTML('beforeend', '<p class="os-workflow-empty">No recently updated done tasks.</p>');
             } else if (draft.step === 1) {
-                section.insertAdjacentHTML('beforeend', '<h3>Projects needing attention</h3>');
-                section.appendChild(this.renderProjectAttention(workflow, panel));
+                section.insertAdjacentHTML('beforeend', '<h3>Active projects</h3><p class="os-action-meta">Confirm one concrete next action for each project. These choices appear in Today → Next actions and in the Journal review.</p>');
+                section.appendChild(this.renderProjectAttention(workflow, panel, { allActive: true }));
                 section.insertAdjacentHTML('beforeend', `<h3>Waiting (${model.waiting.length})</h3>`);
                 model.waiting.forEach(task => section.appendChild(this.renderActionRow(task, panel)));
                 if (!model.waiting.length) section.insertAdjacentHTML('beforeend', '<p class="os-workflow-empty">No project tasks are marked waiting.</p>');

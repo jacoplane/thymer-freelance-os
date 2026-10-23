@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../src/support-time.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const runtime = { AppPlugin: class {}, Date, Map, Set, console };
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions, summarizeSupportTime });`, runtime);
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions, summarizeSupportTime });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
 
@@ -32,11 +32,41 @@ test('queue excludes terminal projects, done and blocked tasks from action and f
     assert.equal(api.actionModel([project], [task('ready')], state, '2026-10-23').focus.length, 0);
 });
 
+test('workflow cleanup removes completed, waiting, missing and cross-project pointers', () => {
+    const state = api.workflowDefaults();
+    state.next.project = 'done'; state.next.other = 'ready'; state.next.missing = 'deleted';
+    state.focus['2026-10-22'] = ['ready', 'done', 'wait', 'deleted'];
+    state.focus['2026-10-21'] = ['deleted'];
+    const model = api.actionModel([project], [task('ready'), task('wait', { status: 'waiting' }), task('done', { status: 'done' })], state, '2026-10-22');
+    assert.equal(api.reconcileWorkflowPointers(state, model), true);
+    assert.deepEqual(Object.keys(state.next), []);
+    assert.deepEqual(Array.from(state.focus['2026-10-22']), ['ready']);
+    assert.equal(state.focus['2026-10-21'], undefined);
+});
+
+test('workflow cleanup refreshes the saved next-action label from the task', () => {
+    const state = api.workflowDefaults(); state.next.project = 'ready'; state.nextLabels.project = 'Old task title';
+    const model = api.actionModel([project], [task('ready', { text: 'Current task title' })], state, '2026-10-22');
+    assert.equal(api.reconcileWorkflowPointers(state, model), true);
+    assert.equal(state.nextLabels.project, 'Current task title');
+});
+
+test('incomplete workflow scans preserve pointers until task data is reliable', () => {
+    const state = api.workflowDefaults(); state.next.project = 'not-yet-loaded'; state.focus.today = ['not-yet-loaded'];
+    const model = api.actionModel([project], [], state, '2026-10-22', false);
+    assert.equal(api.reconcileWorkflowPointers(state, model), false);
+    assert.equal(state.next.project, 'not-yet-loaded');
+    assert.deepEqual(state.focus.today, ['not-yet-loaded']);
+});
+
 test('missing next action and overdue project deadlines are explicit, incomplete scans do not invent gaps', () => {
     const state = api.workflowDefaults();
     assert.equal(api.actionModel([project], [], state, '2026-10-22').attention[0].issues[0], 'Add a next action');
     assert.equal(api.actionModel([project], [], state, '2026-10-22', false).attention.length, 0);
     assert.equal(api.actionModel([{ ...project, deadline: '2026-10-21' }], [], state, '2026-10-22').attention[0].issues.includes('Project deadline overdue'), true);
+    state.next.project = 'ready';
+    const selected = api.actionModel([{ ...project, deadline: '2026-10-21' }], [task('ready')], state, '2026-10-22');
+    assert.equal(selected.attention[0].next.guid, 'ready');
 });
 
 test('rescheduling retains links, formatting and additional date segments', () => {

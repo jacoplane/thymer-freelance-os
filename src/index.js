@@ -1770,6 +1770,10 @@ export class Plugin extends AppPlugin {
                 const statusLabel = projectStatusLabel(proj.status);
                 const hasDeliverables = proj.deliverables && proj.deliverables.length > 0;
                 const isExpanded = this.expandedProjects && this.expandedProjects.has(proj.guid);
+                const workflowState = this.loadWorkflowState();
+                const nextGuid = workflowState.next[proj.guid];
+                const nextLabel = workflowState.nextLabels[proj.guid];
+                const activeProject = ['in_progress', 'in_review'].includes(proj.status);
 
                 card.innerHTML = `
                     <div class="os-card-top">
@@ -1778,6 +1782,7 @@ export class Plugin extends AppPlugin {
                     </div>
                     <button type="button" class="os-card-title">${escapeHtml(proj.name)}</button>
                     ${proj.clientName ? `<button type="button" class="os-card-client os-card-client-link" title="Open client profile">${escapeHtml(proj.clientName)}</button>` : '<div class="os-card-client">Internal / no client linked</div>'}
+                    ${activeProject ? `<button type="button" class="os-project-next-link" aria-label="Open actions for ${escapeHtml(proj.name)}">${nextGuid ? `<span class="os-project-next-label">Next action</span>${nextLabel ? ` · ${escapeHtml(nextLabel)}` : ' · Selected in Today'}` : 'Choose a next action →'}</button>` : ''}
 
                     ${hasDeliverables ? `
                         <div class="os-card-deliverables-summary">
@@ -1847,6 +1852,13 @@ export class Plugin extends AppPlugin {
 
                 card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(proj.guid, panel));
                 card.querySelector('.os-card-client-link')?.addEventListener('click', () => this.openRecord(proj.clientGuid, panel));
+                card.querySelector('.os-project-next-link')?.addEventListener('click', event => {
+                    event.stopPropagation();
+                    this.workflowMode = 'today'; this.workflowMessage = '';
+                    this.actionQueueTab = nextGuid ? 'next' : 'attention';
+                    this.actionProject = proj.guid; this.actionSearch = ''; this.queueLimit = 20;
+                    this.render(panel);
+                });
                 card.querySelector('.os-card-open').addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openRecord(proj.guid, panel);
