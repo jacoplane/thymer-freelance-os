@@ -608,6 +608,10 @@ button.os-badge { border: 0; font-family: inherit; line-height: inherit; }
   outline: none;
   transition: border-color .15s;
 }
+.os-app select option, .os-modal-backdrop select option {
+  color: var(--os-text);
+  background-color: var(--os-surface);
+}
 .os-input:focus, .os-select:focus {
   border-color: var(--os-accent);
 }
