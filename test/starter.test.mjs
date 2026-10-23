@@ -23,3 +23,11 @@ test('starter setup preserves existing fields, IDs, custom configuration and unr
     assert.throws(()=>starterConfig('Invoices',{fields:[{label:'amount_chf',type:'text'}],views:[]}),/must be number/);
     assert.throws(()=>starterConfig('Projects',{fields:[{label:'status',type:'choice',choices:[]}],views:[]}),/missing required choice/);
 });
+
+test('existing client fields are restricted to the configured Clients collection',()=>{
+    const current=starterConfig('Projects');
+    current.fields.find(field=>field.label==='client').filter_colguid='unrelated-collection';
+    const next=starterConfig('Projects',current,{Clients:'clients'});
+    assert.equal(next.fields.find(field=>field.label==='client').filter_colguid,'clients');
+    assert.equal(current.fields.find(field=>field.label==='client').filter_colguid,'unrelated-collection');
+});

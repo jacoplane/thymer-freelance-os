@@ -11,12 +11,15 @@ All screenshots use a separate demo workspace with fictional content.
 ## What it does
 
 - **Overview is home.** Recurring revenue, issued invoices, confirmed payments, overdue balances, client relationships, projects and an agenda in one view.
+- **Give projects a useful starting point.** Create a native brief, next actions, deliverable links and decision log. Open a project's client profile or filter a client's projects from their card.
 - **Move each project forward.** Choose one next action per active project. See missing next actions, approaching deadlines, overdue tasks and waiting dependencies.
 - **Pick today’s focus.** Pin up to three project tasks. Search and filter the action queue, complete work, reschedule tasks, or record a waiting reason and follow-up date.
 - **Close the week.** Clear overdue work, check projects and dependencies, write your wins and next priorities, then save the review into Journal.
 - **Stay in Thymer.** Capture native tasks into a project or today’s Journal. Collection links open native working views alongside the dashboard. Layouts adapt to the available panel width.
 
 ![Today’s focus and project action queue](docs/images/today.png)
+
+![A native project plan linked to its fictional client](docs/images/project-template.png)
 
 ## Install
 
@@ -54,7 +57,7 @@ Requires Node.js 22 or newer for the setup scripts. Development and live UI chec
 ```sh
 npm ci
 node build.mjs
-node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/starter.test.mjs
+node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/starter.test.mjs test/projects.test.mjs
 node deploy.mjs --workspace YOUR_WORKSPACE_GUID
 ```
 

@@ -309,6 +309,24 @@ function clientSummary(client, projects, invoices) {
     };
 }
 
+function isTemplateRecord(record) {
+    return String(getProp(record, 'type')).toLowerCase() === 'template' || /^New (Client|Project) Template$/i.test(record.getName?.() || record.name || '');
+}
+
+function projectStatusLabel(status) {
+    return ({ in_progress: 'In Progress', in_review: 'In Review', backlog: 'Backlog', completed: 'Completed', archived: 'Archived', cancelled: 'Cancelled' })[status] || 'No status';
+}
+
+function projectTemplateSections({ brief = '', firstAction = '', deliverables = [] } = {}) {
+    const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    return [
+        { title: 'Project brief', lines: [text(brief || 'Describe the outcome this project should achieve.'), text('Scope and success criteria: add what is included and how you will know it is done.')] },
+        { title: 'Next actions', lines: [{ type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] }] },
+        { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('Link briefs, deliverables and working files here.')] },
+        { title: 'Decisions & updates', lines: [text('Record decisions, client feedback and scope changes here.')] }
+    ];
+}
+
 export class Plugin extends AppPlugin {
     onUnload() {
         clearTimeout(this.refreshTimer);
@@ -324,6 +342,7 @@ export class Plugin extends AppPlugin {
         this.refreshTimer = null;
         this.currentTab = 'projects';
         this.projectFilter = 'all'; // 'all', 'in_progress', 'backlog', 'completed'
+        this.clientProjectGuid = '';
         this.invoiceFilter = 'all';
         this.searchQuery = '';
         this.agendaTab = null;
@@ -364,6 +383,11 @@ export class Plugin extends AppPlugin {
             label: 'Open Freelance OS Dashboard',
             icon: 'layout-grid',
             onSelected: () => this.openDashboard()
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Apply Freelance OS project template',
+            icon: 'ti-template',
+            onSelected: () => this.applyProjectTemplateToActiveRecord()
         });
 
         // 5. Reactive Workspace Listeners
@@ -560,6 +584,7 @@ export class Plugin extends AppPlugin {
             const clientList = [];
 
             for (const cr of clientRecords) {
+                if (isTemplateRecord(cr)) continue;
                 const name = (cr.getName ? cr.getName() : cr.name) || 'Untitled Client';
                 const status = (getProp(cr, 'status') || 'active').toLowerCase();
                 const mrrVal = Number(getProp(cr, 'monthly_chf')) || 0;
@@ -655,25 +680,15 @@ export class Plugin extends AppPlugin {
 
             for (const pr of projRecords) {
                 const name = (pr.getName ? pr.getName() : pr.name) || '';
-                if (!name || name === 'New Project' || name === 'Kanban - Active Projects') continue;
+                if (!name || name === 'New Project' || name === 'Kanban - Active Projects' || isTemplateRecord(pr)) continue;
 
                 const parentGuid = getParentGuid(pr);
                 const status = (getProp(pr, 'status') || 'in_progress').toLowerCase();
                 const priority = (getProp(pr, 'priority') || 'medium').toLowerCase();
                 
-                let clientGuid = getClientGuid(pr);
-                let clientName = clientMap.has(clientGuid) ? clientMap.get(clientGuid) : '';
-
-                // Smart client name inference from title if client prop wasn't directly linked
-                if (!clientName) {
-                    for (const [cg, cn] of clientMap.entries()) {
-                        if (cn && name.toLowerCase().includes(cn.toLowerCase())) {
-                            clientName = cn;
-                            clientGuid = cg;
-                            break;
-                        }
-                    }
-                }
+                const linkedClient = getClientGuid(pr);
+                const clientGuid = clientMap.has(linkedClient) ? linkedClient : '';
+                const clientName = clientMap.get(clientGuid) || '';
                 let deadline = getProp(pr, 'deadline');
                 if (!deadline || typeof deadline === 'object' || String(deadline).includes('object') || String(deadline).includes('Object')) {
                     deadline = 'No deadline';
@@ -714,8 +729,8 @@ export class Plugin extends AppPlugin {
 
             // Cross-reference clients with projects and invoices:
             for (const c of clientList) {
-                c.projectCount = parentList.filter(p => p.clientGuid === c.guid || (p.clientName && p.clientName.toLowerCase() === c.name.toLowerCase())).length;
-                c.invoiceCount = invoiceList.filter(i => i.clientName && i.clientName.toLowerCase() === c.name.toLowerCase()).length;
+                c.projectCount = parentList.filter(p => p.clientGuid === c.guid).length;
+                c.invoiceCount = invoiceList.filter(i => i.clientGuid === c.guid).length;
                 c.summary = clientSummary(c, parentList, invoiceList);
             }
 
@@ -803,7 +818,54 @@ export class Plugin extends AppPlugin {
         return { prioritySaved };
     }
 
-    async createConfiguredRecord(role, title, values) {
+    async initializeProject(record, options = {}) {
+        const lines = await record.getLineItems(false);
+        if (lines.some(line => line.props?.freelance_os_template === 'project-v1')) return { applied: false, reason: 'already-applied' };
+        const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
+        const placeholders = content.filter(line => line.type === 'text' && /^Project workspace migrated from Obsidian\.?$/i.test(extractLineText(line)));
+        if (content.length !== placeholders.length) return { applied: false, reason: 'has-content' };
+        const created = [];
+        try {
+            let previous = null;
+            for (const section of projectTemplateSections(options)) {
+                if (previous) {
+                    const spacer = await record.createLineItem(null, previous, 'text', [], null);
+                    if (!spacer) throw new Error('The project template could not be saved');
+                    created.push(spacer); previous = spacer;
+                }
+                const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'project-v1' });
+                if (!heading) throw new Error('The project template could not be saved');
+                created.push(heading); previous = heading;
+                let priorLine = null;
+                for (const item of section.lines) {
+                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, null);
+                    if (!line) throw new Error('The project template could not be saved');
+                    created.push(line); priorLine = line;
+                }
+            }
+            for (const placeholder of placeholders) if (await placeholder.delete() === false) throw new Error('The migration placeholder could not be removed');
+            return { applied: true };
+        } catch (error) {
+            for (const line of created.reverse()) await line.delete();
+            throw error;
+        }
+    }
+
+    async applyProjectTemplateToActiveRecord() {
+        try {
+            const panel = this.ui.getActivePanel();
+            const record = panel?.getActiveRecord?.();
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const projects = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
+            const records = projects ? await projects.getAllRecords() : [];
+            if (!record || !records.some(item => item.guid === record.guid)) throw new Error('Open a project page before applying the template');
+            const deliverables = records.filter(item => getParentGuid(item) === record.guid);
+            const result = await this.initializeProject(record, { deliverables });
+            this.ui.addToaster({ title: result.applied ? 'Project template added' : result.reason === 'already-applied' ? 'This project already has the template' : 'This project already has content. Its notes were kept.', dismissible: true });
+        } catch (error) { this.ui.addToaster({ title: error.message || 'Project template could not be added', dismissible: true }); }
+    }
+
+    async createConfiguredRecord(role, title, values, options = {}) {
         const collections = this.workflowCollections = await this.data.getAllCollections();
         const collection = collections.find(item => item.getGuid() === this.collectionGuid(role, collections));
         if (!collection) throw new Error(`Choose your ${role} collection in Settings`);
@@ -813,6 +875,10 @@ export class Plugin extends AppPlugin {
             if (value === '' || value === null || value === undefined) continue;
             const field = fields.find(item => item.label === label || item.id === label);
             if (!field || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the ${role}.${label} field in your collection setup`);
+        }
+        if (role === 'Projects' && values.client) {
+            const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
+            if (!clients || !(await clients.getAllRecords()).some(item => item.guid === values.client && !isTemplateRecord(item))) throw new Error('Choose a client from your Clients collection');
         }
         const guid = collection.createRecord(title);
         if (!guid) throw new Error('The page could not be created');
@@ -831,8 +897,9 @@ export class Plugin extends AppPlugin {
                 else if (field.type === 'datetime') {
                     const parts = value.split('-').map(Number);
                     property.set(DateTime.dateOnly(parts[0], parts[1] - 1, parts[2]).value());
-                } else property.set(value);
+                } else if (property.set(value) === false) throw new Error(`Could not set ${label}`);
             }
+            if (role === 'Projects') await this.initializeProject(record, options);
         } catch (error) { record.trash(); throw error; }
         return record;
     }
@@ -844,44 +911,53 @@ export class Plugin extends AppPlugin {
         const clientOptions = data.clients.map(c => `<option value="${c.guid}">${escapeHtml(c.name)}</option>`).join('');
 
         modal.innerHTML = `
-            <div class="os-modal-card">
+            <div class="os-modal-card" role="dialog" aria-modal="true" aria-labelledby="os-project-dialog-title">
                 <div class="os-modal-header">
-                    <h3>Create New Project</h3>
-                    <button class="os-modal-close" type="button">✕</button>
+                    <h3 id="os-project-dialog-title">Create project</h3>
+                    <button class="os-modal-close" type="button" aria-label="Close project form">✕</button>
                 </div>
                 <div class="os-modal-body">
                     <div class="os-form-group">
-                        <label>Project Name *</label>
-                        <input type="text" class="os-input input-title" placeholder="e.g. Website Redesign" autofocus />
+                        <label for="os-project-name">Project name *</label>
+                        <input id="os-project-name" type="text" class="os-input input-title" placeholder="e.g. Website redesign" required autofocus />
                     </div>
                     <div class="os-form-group">
-                        <label>Client</label>
-                        <select class="os-select input-client">
+                        <label for="os-project-client">Client</label>
+                        <select id="os-project-client" class="os-select input-client">
                             <option value="">-- No Client / Internal --</option>
                             ${clientOptions}
                         </select>
                     </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Priority</label>
-                            <select class="os-select input-priority">
+                    <div class="os-form-pair">
+                        <div class="os-form-group">
+                            <label for="os-project-priority">Priority</label>
+                            <select id="os-project-priority" class="os-select input-priority">
                                 <option value="high">High</option>
                                 <option value="medium" selected>Medium</option>
                                 <option value="low">Low</option>
                             </select>
                         </div>
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Status</label>
-                            <select class="os-select input-status">
+                        <div class="os-form-group">
+                            <label for="os-project-status">Status</label>
+                            <select id="os-project-status" class="os-select input-status">
                                 <option value="in_progress" selected>In Progress</option>
                                 <option value="backlog">Backlog</option>
                             </select>
                         </div>
                     </div>
                     <div class="os-form-group">
-                        <label>Deadline (Optional)</label>
-                        <input type="date" class="os-input input-deadline" />
+                        <label for="os-project-deadline">Deadline (optional)</label>
+                        <input id="os-project-deadline" type="date" class="os-input input-deadline" />
                     </div>
+                    <div class="os-form-group">
+                        <label for="os-project-brief">Project brief (optional)</label>
+                        <textarea id="os-project-brief" class="os-input input-brief" rows="2" placeholder="What outcome are you working towards?"></textarea>
+                    </div>
+                    <div class="os-form-group">
+                        <label for="os-project-action">First action (optional)</label>
+                        <input id="os-project-action" class="os-input input-first-action" placeholder="e.g. Agree the launch scope with the client" />
+                    </div>
+                    <p class="os-form-hint">Starts with a brief, native tasks, deliverables and a decision log. The Client field links this project to its client profile.</p>
                 </div>
                 <div class="os-modal-footer">
                     <button class="os-button btn-cancel" type="button">Cancel</button>
@@ -890,7 +966,16 @@ export class Plugin extends AppPlugin {
             </div>
         `;
 
-        const close = () => modal.remove();
+        const priorFocus = document.activeElement;
+        const close = () => { modal.remove(); priorFocus?.focus(); };
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); close(); }
+            if (event.key === 'Tab') {
+                const controls = [...modal.querySelectorAll('button:not(:disabled), input, select, textarea')];
+                if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1).focus(); }
+                else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
+            }
+        });
         modal.querySelector('.os-modal-close').addEventListener('click', close);
         modal.querySelector('.btn-cancel').addEventListener('click', close);
         modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
@@ -908,10 +993,11 @@ export class Plugin extends AppPlugin {
             const deadline = modal.querySelector('.input-deadline').value;
             const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             try {
-                await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline });
+                const record = await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline }, { brief: modal.querySelector('.input-brief').value.trim(), firstAction: modal.querySelector('.input-first-action').value.trim() });
                 this.ui.addToaster({ title: `✓ Created "${title}"`, autoDestroyTime: 2500, dismissible: true });
                 close();
                 this.scheduleRefresh();
+                await this.openRecord(record.guid, panel);
             } catch (err) {
                 submit.disabled = false;
                 this.ui.addToaster({ title: err.message || 'Project could not be created', dismissible: true });
@@ -919,6 +1005,7 @@ export class Plugin extends AppPlugin {
         });
 
         document.body.appendChild(modal);
+        if (this.clientProjectGuid) modal.querySelector('.input-client').value = this.clientProjectGuid;
         modal.querySelector('.input-title').focus();
     }
 
@@ -1354,7 +1441,7 @@ export class Plugin extends AppPlugin {
                     <button class="os-tab ${this.currentTab === 'invoices' ? 'active' : ''} tab-inv">Invoices (${data.invoices.length})</button>
                 </div>
                 <div class="os-filter-search">
-                    <input type="text" class="os-search-input" placeholder="🔍 Filter ${this.currentTab}..." value="${this.searchQuery}" />
+                    <input type="text" class="os-search-input" aria-label="Filter ${this.currentTab}" placeholder="Filter ${this.currentTab}..." value="${escapeHtml(this.searchQuery)}" />
                     <a class="os-view-all">View collection ↗</a>
                 </div>
             </div>
@@ -1362,6 +1449,7 @@ export class Plugin extends AppPlugin {
 
         sectionHead.querySelector('.tab-proj').addEventListener('click', () => {
             this.currentTab = 'projects';
+            this.clientProjectGuid = '';
             this.render(panel);
         });
         sectionHead.querySelector('.tab-cli').addEventListener('click', () => {
@@ -1387,6 +1475,15 @@ export class Plugin extends AppPlugin {
 
         main.appendChild(sectionHead);
 
+        if (this.currentTab === 'projects' && this.clientProjectGuid) {
+            const client = data.clients.find(item => item.guid === this.clientProjectGuid);
+            const context = document.createElement('div');
+            context.className = 'os-client-project-filter';
+            context.innerHTML = `<span>Projects for <strong>${escapeHtml(client?.name || 'this client')}</strong></span><button type="button" class="os-card-open">Show all projects</button>`;
+            context.querySelector('button').onclick = () => { this.clientProjectGuid = ''; this.render(panel); };
+            main.appendChild(context);
+        }
+
         // Project filter pills (if on projects tab)
         if (this.currentTab === 'invoices') {
             const filters = [['all', 'All'], ['outstanding', 'Outstanding'], ['overdue', 'Overdue'], ['review', 'To confirm'], ['to-send', 'To send'], ['paid', 'Paid']];
@@ -1404,14 +1501,15 @@ export class Plugin extends AppPlugin {
             main.appendChild(filterBar);
         }
         if (this.currentTab === 'projects') {
-            const inProgCount = data.projects.filter(p => p.status === 'in_progress').length;
-            const backlogCount = data.projects.filter(p => p.status === 'backlog').length;
-            const completedCount = data.projects.filter(p => p.status === 'completed').length;
+            const scopedProjects = this.clientProjectGuid ? data.projects.filter(p => p.clientGuid === this.clientProjectGuid) : data.projects;
+            const inProgCount = scopedProjects.filter(p => p.status === 'in_progress').length;
+            const backlogCount = scopedProjects.filter(p => p.status === 'backlog').length;
+            const completedCount = scopedProjects.filter(p => p.status === 'completed').length;
 
             const filterBar = document.createElement('div');
             filterBar.className = 'os-filter-pills';
             filterBar.innerHTML = `
-                <button class="os-filter-pill ${this.projectFilter === 'all' ? 'active' : ''} pill-all">All (${data.projects.length})</button>
+                <button class="os-filter-pill ${this.projectFilter === 'all' ? 'active' : ''} pill-all">All (${scopedProjects.length})</button>
                 <button class="os-filter-pill ${this.projectFilter === 'in_progress' ? 'active' : ''} pill-prog">In Progress (${inProgCount})</button>
                 <button class="os-filter-pill ${this.projectFilter === 'backlog' ? 'active' : ''} pill-back">Backlog (${backlogCount})</button>
                 <button class="os-filter-pill ${this.projectFilter === 'completed' ? 'active' : ''} pill-comp">Completed (${completedCount})</button>
@@ -1541,6 +1639,7 @@ export class Plugin extends AppPlugin {
 
         if (this.currentTab === 'projects') {
             let list = data.projects;
+            if (this.clientProjectGuid) list = list.filter(p => p.clientGuid === this.clientProjectGuid);
             if (this.projectFilter !== 'all') {
                 list = list.filter(p => p.status === this.projectFilter);
             }
@@ -1556,19 +1655,17 @@ export class Plugin extends AppPlugin {
             for (const proj of list.slice(0, 30)) {
                 const card = document.createElement('div');
                 card.className = 'os-project-card';
-                const isDone = proj.status === 'completed';
-                const isInProg = proj.status === 'in_progress';
-                const statusLabel = isInProg ? 'In Progress' : (isDone ? 'Completed' : (proj.status === 'in_review' ? 'In Review' : 'Backlog'));
+                const statusLabel = projectStatusLabel(proj.status);
                 const hasDeliverables = proj.deliverables && proj.deliverables.length > 0;
                 const isExpanded = this.expandedProjects && this.expandedProjects.has(proj.guid);
 
                 card.innerHTML = `
                     <div class="os-card-top">
-                        <span class="os-badge status-${proj.status}" title="Click to cycle status">${statusLabel}</span>
+                        <button type="button" class="os-badge status-${escapeHtml(proj.status)}" title="Change project status">${statusLabel}</button>
                         ${proj.priority === 'high' ? '<span class="os-badge priority-high">High</span>' : ''}
                     </div>
-                    <div class="os-card-title">${proj.name}</div>
-                    ${proj.clientName ? `<div class="os-card-client">${proj.clientName}</div>` : ''}
+                    <button type="button" class="os-card-title">${escapeHtml(proj.name)}</button>
+                    ${proj.clientName ? `<button type="button" class="os-card-client os-card-client-link" title="Open client profile">${escapeHtml(proj.clientName)}</button>` : '<div class="os-card-client">Internal / no client linked</div>'}
 
                     ${hasDeliverables ? `
                         <div class="os-card-deliverables-summary">
@@ -1582,19 +1679,19 @@ export class Plugin extends AppPlugin {
                         ${isExpanded ? `
                             <div class="os-deliverables-list">
                                 ${proj.deliverables.map(d => `
-                                    <div class="os-deliverable-item" data-guid="${d.guid}" title="${d.name}">
+                                    <button type="button" class="os-deliverable-item" data-guid="${d.guid}" title="${escapeHtml(d.name)}">
                                         <span class="os-deliverable-arrow">↳</span>
-                                        <span class="os-deliverable-name">${d.name}</span>
+                                        <span class="os-deliverable-name">${escapeHtml(d.name)}</span>
                                         <span class="os-deliverable-open">↗</span>
-                                    </div>
+                                    </button>
                                 `).join('')}
                             </div>
                         ` : ''}
                     ` : ''}
 
                     <div class="os-card-bottom">
-                        <span>📅 ${(!proj.deadline || typeof proj.deadline === 'object' || String(proj.deadline).includes('Object')) ? 'No deadline' : proj.deadline}</span>
-                        <span class="os-card-open">Open note ↗</span>
+                        <span>📅 ${(!proj.deadline || typeof proj.deadline === 'object' || String(proj.deadline).includes('Object')) ? 'No deadline' : escapeHtml(proj.deadline)}</span>
+                        <button type="button" class="os-card-open">Open project ↗</button>
                     </div>
                 `;
 
@@ -1637,6 +1734,7 @@ export class Plugin extends AppPlugin {
                 }
 
                 card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(proj.guid, panel));
+                card.querySelector('.os-card-client-link')?.addEventListener('click', () => this.openRecord(proj.clientGuid, panel));
                 card.querySelector('.os-card-open').addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openRecord(proj.guid, panel);
@@ -1663,10 +1761,10 @@ export class Plugin extends AppPlugin {
                         <span class="os-badge status-${cli.status === 'prospect' ? 'backlog' : 'in_progress'}">${cli.status.toUpperCase()}</span>
                         ${cli.mrr > 0 && cli.status === 'active' ? '<span class="os-badge badge-care-plan">🛡 Care Plan</span>' : ''}
                     </div>
-                    <div class="os-card-title">${escapeHtml(cli.name)}</div>
+                    <button type="button" class="os-card-title">${escapeHtml(cli.name)}</button>
                     <div class="os-card-client">${escapeHtml(cli.plan)}</div>
                     <div class="os-client-meta">
-                        <span class="os-meta-tag">${cli.summary.activeProjects} active projects</span>
+                        <button type="button" class="os-meta-tag os-client-projects" aria-label="View ${cli.projectCount} projects for ${escapeHtml(cli.name)}">${cli.projectCount} projects · ${cli.summary.activeProjects} active</button>
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
                     </div>
                     <dl class="os-client-value">
@@ -1675,11 +1773,14 @@ export class Plugin extends AppPlugin {
                     </dl>
                     <div class="os-card-bottom">
                         <span>${cli.mrr > 0 ? `${cli.status === 'active' ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : 'No care plan'}</span>
-                        <span class="os-card-open">Open profile ↗</span>
+                        <button type="button" class="os-card-open">Open profile ↗</button>
                     </div>
                 `;
 
                 card.querySelector('.os-card-title').addEventListener('click', () => this.openRecord(cli.guid, panel));
+                card.querySelector('.os-client-projects').addEventListener('click', () => {
+                    this.clientProjectGuid = cli.guid; this.currentTab = 'projects'; this.projectFilter = 'all'; this.searchQuery = ''; this.render(panel);
+                });
                 card.querySelector('.os-card-open').addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openRecord(cli.guid, panel);

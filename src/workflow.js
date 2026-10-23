@@ -112,7 +112,7 @@ const Workflow = {
         if (!collection) return { error: 'Choose your Projects collection in Settings.' };
         const records = await collection.getAllRecords();
         const byGuid = new Map(records.map(record => [record.guid, { record, guid: record.guid, name: record.getName(), parentGuid: getParentGuid(record), status: String(getProp(record, 'status')).toLowerCase(), deadline: getProp(record, 'deadline') }]));
-        const projects = [...byGuid.values()].filter(record => !record.parentGuid && record.name !== 'Kanban - Active Projects');
+        const projects = [...byGuid.values()].filter(record => !record.parentGuid && record.name !== 'Kanban - Active Projects' && !isTemplateRecord(record.record));
         let complete = true;
         const taskMap = new Map();
         const add = line => {

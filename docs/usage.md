@@ -14,6 +14,18 @@ Use the capture field at the top of any tab. Choose **Journal inbox** or an acti
 
 Create a new client, project or invoice using the Overview action rail. The invoice action records an issued invoice with separate sent stage and payment state; draft or ready invoices can be maintained in the native Invoices collection. This is an invoice register, not a PDF generator or email sender.
 
+## Start and connect projects
+
+**New project** creates and opens a native Thymer page with four editable sections: **Project brief**, **Next actions**, **Deliverables & references**, and **Decisions & updates**. Add an optional brief and first action in the form; the first action becomes an ordinary Thymer task. If you leave it blank, the page has an empty task ready for you to fill in.
+
+Choose a client in the form to set the project's native **client** property. The client name on a project card opens that client profile. From a client card, click its project count to see only that client's projects; **Show all projects** clears this filter. Counts use actual record links, so similarly named clients and projects are never joined by a title guess. Native client profiles also expose these property references in Thymer's backlinks.
+
+For a project created from the collection itself, open the page and run **Apply Freelance OS project template** from the command palette. The command only fills empty pages or the exact imported migration placeholder. Existing briefs, tasks and notes are preserved. Applying it to an imported hub also adds native references to its existing sub-pages. Template content is ordinary Thymer data and remains editable without Freelance OS.
+
+The starter schema restricts project and invoice Client pickers to the Clients collection. After changing collection mappings, check this picker restriction in your native collection settings as well. Unlinked internal projects are valid; the dashboard shows **Internal / no client linked**. Template records belong in Library rather than the Clients or Projects registers.
+
+![An editable project brief and first action in the fictional demo workspace](images/project-template.png)
+
 ## Today: move projects forward
 
 Today only includes tasks associated with explicitly active projects (`in_progress` or `in_review`). Tasks on nested project pages are included. A task elsewhere in the workspace can be included when it references exactly one project unambiguously.

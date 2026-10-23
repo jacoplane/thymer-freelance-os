@@ -1,5 +1,5 @@
 /* Freelance OS Dashboard for Thymer */
-.os-app {
+.os-app, .os-modal-backdrop {
   --os-text: var(--text-normal, #e0e0e0);
   --os-muted: var(--text-muted, #8b949e);
   --os-border: var(--ed-container-border-color, #30363d);
@@ -7,6 +7,8 @@
   --os-surface-hover: var(--cards-hover-bg, #21262d);
   --os-accent: var(--ed-link-color, #58a6ff);
   --os-gap: 16px;
+}
+.os-app {
   width: 100% !important;
   max-width: 100% !important;
   height: 100%;
@@ -202,6 +204,7 @@
 .os-card-top { display: flex; align-items: center; justify-content: space-between; gap: 6px; }
 .os-badge { font-size: 10px; padding: 2px 7px; border-radius: 4px; font-weight: 600; text-transform: uppercase; letter-spacing: .02em; cursor: pointer; transition: opacity .15s; }
 .os-badge:hover { opacity: .8; }
+button.os-badge { border: 0; font-family: inherit; line-height: inherit; }
 .os-badge.status-in_progress { background: rgba(34, 197, 94, 0.15); color: #4ade80; }
 .os-badge.status-backlog { background: rgba(148, 163, 184, 0.15); color: #94a3b8; }
 .os-badge.status-completed { background: rgba(56, 189, 248, 0.15); color: #38bdf8; }
@@ -210,9 +213,18 @@
 .os-badge.badge-care-plan { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
 .os-badge.priority-high { background: rgba(249, 115, 22, 0.15); color: #fb923c; }
 .os-badge.priority-medium { background: rgba(148, 163, 184, 0.15); color: #cbd5e1; }
+.os-card-title, .os-card-open, .os-card-client-link { appearance: none; border: 0; border-radius: 0; background: transparent; padding: 0; font: inherit; text-align: left; max-width: 100%; overflow-wrap: anywhere; }
 .os-card-title { font-size: 13px; font-weight: 600; line-height: 1.35; color: var(--os-text); cursor: pointer; word-break: break-word; }
 .os-card-title:hover { color: var(--os-accent); text-decoration: underline; }
 .os-card-client { font-size: 11px; color: var(--os-muted); }
+.os-card-client-link { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.os-card-client-link:hover { color: var(--os-accent); }
+.os-client-projects { cursor: pointer; font: inherit; }
+.os-client-projects:hover { color: var(--os-accent); border-color: var(--os-accent); }
+.os-client-project-filter { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: var(--os-muted); overflow-wrap: anywhere; }
+.os-client-project-filter strong { color: var(--os-text); }
+.os-app button:focus-visible, .os-modal-backdrop :is(button, input, select, textarea):focus-visible { outline: 2px solid var(--os-accent); outline-offset: 3px; }
+.os-badge.status-archived, .os-badge.status-cancelled { background: var(--os-surface-hover); color: var(--os-muted); }
 .os-client-meta { display: flex; gap: 8px; align-items: center; margin-top: 2px; }
 .os-meta-tag { font-size: 11px; color: var(--os-muted); background: var(--os-surface-hover); padding: 2px 6px; border-radius: 4px; border: 1px solid var(--os-border); }
 .os-card-bottom { display: flex; align-items: center; justify-content: space-between; gap: 6px; margin-top: auto; padding-top: 6px; border-top: 1px solid rgba(255, 255, 255, 0.05); font-size: 11px; color: var(--os-muted); }
@@ -268,6 +280,11 @@
   overflow-y: auto;
 }
 .os-deliverable-item {
+  border: 0;
+  background: transparent;
+  text-align: left;
+  font-family: inherit;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 6px;
@@ -483,10 +500,13 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
+  color: var(--os-text);
+  font: 14px/1.4 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 .os-modal-card {
   width: 100%;
   max-width: 480px;
+  max-height: calc(100dvh - 40px);
   background: var(--os-surface);
   border: 1px solid var(--os-border);
   border-radius: 12px;
@@ -518,7 +538,14 @@
   display: flex;
   flex-direction: column;
   gap: 14px;
+  overflow-y: auto;
 }
+.os-modal-header, .os-modal-footer { flex-shrink: 0; }
+.os-form-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+.os-form-group { min-width: 0; }
+.os-form-hint { font-size: 12px; line-height: 1.5; color: var(--os-muted); margin: 0; }
+.os-modal-backdrop textarea.os-input { height: auto; min-height: 64px; padding: 9px 12px; resize: vertical; }
+.os-modal-backdrop *, .os-modal-backdrop *::before, .os-modal-backdrop *::after { box-sizing: border-box; }
 .os-form-group {
   display: flex;
   flex-direction: column;

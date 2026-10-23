@@ -37,6 +37,7 @@ export function starterConfig(role, current = {}, links = {}) {
         if (existing) {
             if (existing.type !== type) throw new Error(`${role}.${label} must be ${type}; found ${existing.type}. No existing field was replaced.`);
             if (choices?.some(choice => !existing.choices?.some(value => value.label === choice && value.active !== false))) throw new Error(`${role}.${label} is missing required choice labels. Add ${choices.join(', ')} before running setup.`);
+            if (label === 'client' && links.Clients) existing.filter_colguid = links.Clients;
             continue;
         }
         const field = { id: idFor('f', `${role}.${label}`), label, type, active: true, many: false, read_only: false };
