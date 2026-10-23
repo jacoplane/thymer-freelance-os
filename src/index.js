@@ -770,6 +770,11 @@ export class Plugin extends AppPlugin {
             const nextWeek = localDate(nextDate);
 
             for (const line of taskLines) {
+                const rec = (typeof line.getRecord === 'function' ? line.getRecord() : line.record) || null;
+                // Reusable checklists are intentionally made of native tasks so they
+                // become actionable when copied into a real client or project page.
+                // Keep their source templates out of the live task inbox.
+                if (isTemplateRecord(rec)) continue;
                 const text = extractLineText(line);
                 if (!text) continue;
 
@@ -782,7 +787,6 @@ export class Plugin extends AppPlugin {
                     else category = 'later';
                 }
 
-                const rec = (typeof line.getRecord === 'function' ? line.getRecord() : line.record) || null;
                 const recordGuid = rec ? (rec.guid || (rec.getGuid ? rec.getGuid() : null)) : null;
 
                 taskList.push({

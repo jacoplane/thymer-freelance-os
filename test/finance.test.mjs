@@ -117,6 +117,38 @@ test('collection loading preserves zero totals and excludes prospect retainers',
     assert.equal(data.loadError, undefined);
 });
 
+test('the task inbox hides reusable template checklists but keeps copied tasks actionable', async () => {
+    const plugin = new api.Plugin();
+    const makeRecord = (guid, name, type) => ({
+        guid,
+        getName: () => name,
+        prop: key => key === 'type' ? { text: () => type } : null
+    });
+    const template = makeRecord('template-guid', 'Client Onboarding Checklist', 'template');
+    const client = makeRecord('client-guid', 'New client profile', 'client');
+    const line = (guid, text, record) => ({
+        guid,
+        segments: [{ type: 'text', text }],
+        getRecord: () => record
+    });
+    const collections = ['Clients', 'Invoices', 'Projects'].map((name, index) => ({
+        getGuid: () => `collection-${name}`,
+        getName: () => name,
+        getAllRecords: async () => name === 'Clients' ? [client] : []
+    }));
+    plugin.data = {
+        getAllCollections: async () => collections,
+        searchByQuery: async () => ({ lines: [
+            line('template-task', 'Send the welcome email', template),
+            line('copied-task', 'Send the welcome email', client)
+        ] })
+    };
+
+    const data = await plugin.loadData();
+    assert.deepEqual(Array.from(data.agendaTasks, task => task.guid), ['copied-task']);
+    assert.equal(data.agendaTasks[0].recordGuid, 'client-guid');
+});
+
 test('record creation uses native choice and value setters and rejects an incompatible schema before creating', async () => {
     const plugin = new api.Plugin(); let created = 0; const written = {};
     const fields = [{label:'status',type:'choice',choices:[{label:'active'}]},{label:'monthly_chf',type:'number'},{label:'contact',type:'text'}];

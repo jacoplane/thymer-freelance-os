@@ -12,6 +12,8 @@ Use **Projects / Clients / Invoices** to change the main card list. Project card
 
 Use the capture field at the top of any tab. Choose **Journal inbox** or an active project, optionally mark the task **Important**, type the task, and press **Enter**. `/` focuses capture when you are not already typing into another field. Capture creates an ordinary Thymer task you can edit from its native page.
 
+The Overview agenda’s **Inbox** skips unfinished tasks on records whose `type` is **template**. Keep reusable checklists marked as templates in Library; after copying their tasks into a real client or project page, those tasks appear as normal work.
+
 Create a new client, project or invoice using the Overview action rail. The invoice action records an issued invoice with separate sent stage and payment state; draft or ready invoices can be maintained in the native Invoices collection. This is an invoice register, not a PDF generator or email sender.
 
 ## Start and connect projects
