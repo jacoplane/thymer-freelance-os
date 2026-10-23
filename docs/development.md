@@ -12,6 +12,7 @@ node deploy.mjs --workspace YOUR_WORKSPACE_GUID
 Deployment uses Thymer Desktop’s local MCP endpoint, `http://127.0.0.1:13100/mcp`. Set `THYMER_MCP_ENDPOINT` if your instance uses another endpoint. It updates an installed dashboard by name; pass `--plugin PLUGIN_GUID` if its name has changed or is ambiguous.
 
 Build outputs include `plugin.js`, `plugin.css`, their matching `dist/` files, the dashboard backup, and `dist/freelance-os-starter.json`. The starter is generated from `scripts/starter-schema.mjs`, contains no records or local workflow state, and uses the Plugins Manager schema version 2 backup format.
+Source line endings are normalized and unchanged outputs are left untouched, so repeat builds do not churn the exported JSON files or their timestamps.
 
 ## Live verification
 

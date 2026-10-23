@@ -9,17 +9,24 @@ const __dirname = path.dirname(__filename);
 const srcDir = path.join(__dirname, 'src');
 const distDir = path.join(__dirname, 'dist');
 
+const readText = file => fs.readFileSync(file, 'utf-8').replace(/\r\n/g, '\n');
+const writeIfChanged = (file, content) => {
+    if (fs.existsSync(file) && fs.readFileSync(file, 'utf-8') === content) return false;
+    fs.writeFileSync(file, content, 'utf-8');
+    return true;
+};
+
 if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
 
-const jsSrc = fs.readFileSync(path.join(srcDir, 'support-time.js'), 'utf-8') + '\n' + fs.readFileSync(path.join(srcDir, 'workflow.js'), 'utf-8') + '\n' + fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8') + '\nObject.assign(Plugin.prototype, Workflow);\n';
-const cssSrc = fs.readFileSync(path.join(srcDir, 'styles.css'), 'utf-8');
-const pluginJson = fs.readFileSync(path.join(__dirname, 'plugin.json'), 'utf-8');
+const jsSrc = readText(path.join(srcDir, 'support-time.js')) + '\n' + readText(path.join(srcDir, 'workflow.js')) + '\n' + readText(path.join(srcDir, 'index.js')) + '\nObject.assign(Plugin.prototype, Workflow);\n';
+const cssSrc = readText(path.join(srcDir, 'styles.css'));
+const pluginJson = readText(path.join(__dirname, 'plugin.json'));
 
 // Copy plugin.json and plugin.css to dist
-fs.writeFileSync(path.join(distDir, 'plugin.json'), pluginJson, 'utf-8');
-fs.writeFileSync(path.join(distDir, 'plugin.css'), cssSrc, 'utf-8');
+writeIfChanged(path.join(distDir, 'plugin.json'), pluginJson);
+writeIfChanged(path.join(distDir, 'plugin.css'), cssSrc);
 
 // Inlined bundle: embed STYLES and remove 'export' keyword for Thymer client runtime compatibility
 const bundleJs = `/**
@@ -32,9 +39,9 @@ const STYLES = ${JSON.stringify(cssSrc)};
 ${jsSrc.replace(/^export\s+class\s+Plugin/m, 'class Plugin')}
 `;
 
-fs.writeFileSync(path.join(distDir, 'plugin.js'), bundleJs, 'utf-8');
-fs.writeFileSync(path.join(__dirname, 'plugin.js'), bundleJs, 'utf-8');
-fs.writeFileSync(path.join(__dirname, 'plugin.css'), cssSrc, 'utf-8');
+writeIfChanged(path.join(distDir, 'plugin.js'), bundleJs);
+writeIfChanged(path.join(__dirname, 'plugin.js'), bundleJs);
+writeIfChanged(path.join(__dirname, 'plugin.css'), cssSrc);
 
 // Also create a paste-ready JSON backup format for Plugins Manager
 const parsedConfig = JSON.parse(pluginJson);
@@ -44,7 +51,7 @@ const backupExport = {
     items: [{ name: parsedConfig.name, type: 'app', json: parsedConfig, code: bundleJs, css: cssSrc }]
 };
 
-fs.writeFileSync(path.join(distDir, 'freelance-os-backup.json'), JSON.stringify(backupExport, null, 2), 'utf-8');
+writeIfChanged(path.join(distDir, 'freelance-os-backup.json'), JSON.stringify(backupExport, null, 2));
 
 // A schema-only starter import for Plugins Manager. Includes no records, workspace IDs or local state.
 const starterItems = STARTER_ROLES.map(role => {
@@ -56,7 +63,7 @@ const starterItems = STARTER_ROLES.map(role => {
     return { name: role, type: 'collection', json, code: role === 'Journal' ? 'class Plugin extends JournalCorePlugin {}' : 'class Plugin extends CollectionPlugin {}', css: '' };
 });
 starterItems.push({ name: parsedConfig.name, type: 'app', json: parsedConfig, code: bundleJs, css: cssSrc });
-fs.writeFileSync(path.join(distDir, 'freelance-os-starter.json'), JSON.stringify({ schemaVersion: 2, section: 'all', items: starterItems }, null, 2), 'utf-8');
+writeIfChanged(path.join(distDir, 'freelance-os-starter.json'), JSON.stringify({ schemaVersion: 2, section: 'all', items: starterItems }, null, 2));
 
 console.log('Build completed successfully!');
 console.log('Generated:');
