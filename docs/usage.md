@@ -51,9 +51,9 @@ The review is grouped by the week starting Monday. Its draft is saved on this de
 
 1. **Clear the decks.** Complete or reschedule overdue actions, or mark dependencies waiting. Look over tasks marked done and updated within the last seven days.
 2. **Check projects.** Review every active project, confirm its current next action, and check deadlines and waiting follow-ups. The selected actions carry into **Today → Next actions** and the saved Journal review.
-3. **Plan next week.** Write wins and observations, choose a few priorities, inspect the Journal preview, and click **Save review to Journal**.
+3. **Plan next week.** Write wins and observations, then add one priority per line. For any priority that belongs to active project work, choose its project and click **Add task**. It becomes a native project task in the action queue without changing that project's chosen next action; the priority stays in your review, and the Journal entry links it to the task. Unconverted priorities remain plain text. Inspect the Journal preview and click **Save review to Journal** when ready.
 
-The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. Next-action links on project pages are native workspace content; focus pins, waiting notes, and unsaved review drafts remain local to this device. Saving again during the same week updates the same Journal section, including if you return on another day. After saving, the button becomes **Update Journal review**.
+The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. Converted priorities link directly to their native project tasks. Next-action links on project pages are native workspace content; focus pins, waiting notes, and unsaved review drafts remain local to this device. Saving again during the same week updates the same Journal section, including if you return on another day. After saving, the button becomes **Update Journal review**.
 
 ![Planning next week and updating a saved Journal review with fictional notes](images/plan-next-week.png)
 

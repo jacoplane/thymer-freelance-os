@@ -95,6 +95,15 @@ function reconcileWorkflowPointers(state, model) {
 
 const NEXT_ACTION_MARKER = 'project-next-v1';
 const NEXT_ACTION_PROPERTY = 'freelance_os_next_action';
+const REVIEW_PRIORITY_PROPERTY = 'freelance_os_review_priority';
+
+function weeklyPriorityLines(value = '') {
+    return value.split(/\r?\n/).map(text => text.trim()).filter(Boolean).map(text => ({ text }));
+}
+
+function reviewPriorityKey(week, text) {
+    return `${week}|${text.trim().toLowerCase()}`;
+}
 
 function nativeNextActionMarkers(lines) {
     return lines.filter(line => line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER);
@@ -350,9 +359,17 @@ const Workflow = {
             // Native text segments flatten newlines. Save separate lines so the Journal stays readable.
             const summaryLines = weeklyReviewText(workflow, draft, this.workflowState, today).split('\n').slice(1).filter(line => line.trim());
             const existing = await workflowChildren(body, record);
+            let inPriorities = false;
             let previous = null;
             for (let index = 0; index < summaryLines.length; index++) {
-                const content = [{ type: 'text', text: summaryLines[index] }];
+                const text = summaryLines[index];
+                if (text === 'Priorities for next week') inPriorities = true;
+                const linkedTask = inPriorities && text !== 'Priorities for next week'
+                    ? (workflow.tasks || []).find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === reviewPriorityKey(reviewWeek(today), text))
+                    : null;
+                const content = linkedTask
+                    ? [{ type: 'ref', text: { guid: linkedTask.guid, title: text } }]
+                    : [{ type: 'text', text }];
                 let line = existing[index];
                 if (line) { if (await line.setSegments(content) === false) throw new Error('Review line could not be updated'); }
                 else line = await record.createLineItem(body, previous, 'text', content);
@@ -366,6 +383,19 @@ const Workflow = {
             this.persistWorkflow();
             return reference;
         } finally { this.reviewSaving = false; }
+    },
+
+    async addReviewPriorityTask(workflow, week, priority, projectGuid) {
+        const text = String(priority || '').trim();
+        if (!text) throw new Error('Write a priority first.');
+        const project = workflow.projects.find(item => item.guid === projectGuid && ['in_progress', 'in_review'].includes(item.status));
+        if (!project) throw new Error('Choose an active project.');
+        const key = reviewPriorityKey(week, text);
+        const existing = workflow.tasks.find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === key);
+        if (existing) return { task: existing, existing: true };
+        const line = await project.record.createLineItem(null, null, 'task', [{ type: 'text', text }], { [REVIEW_PRIORITY_PROPERTY]: key });
+        if (!line) throw new Error('Project task could not be created.');
+        return { task: { guid: line.guid, lineItem: line, text, projectGuid, projectName: project.name, recordGuid: project.guid }, existing: false };
     },
 
     async workflowAction(button, operation, panel) {
@@ -523,10 +553,12 @@ const Workflow = {
                 if (!model.waiting.length) section.insertAdjacentHTML('beforeend', '<p class="os-workflow-empty">No project tasks are marked waiting.</p>');
             } else {
                 const form = document.createElement('div'); form.className = 'os-review-form';
-                form.innerHTML = `<label>Wins and observations<textarea class="os-review-notes" rows="3" placeholder="What moved forward? What needs to change?">${escapeHtml(draft.notes)}</textarea></label><label>Priorities for next week<textarea class="os-review-priorities" rows="3" placeholder="Choose a few concrete outcomes for the coming week.">${escapeHtml(draft.priorities)}</textarea></label><details><summary>Preview Journal summary</summary><pre class="os-review-preview"></pre></details><div class="os-review-save-row"><button class="os-button os-primary os-save-review">${this.workflowState.reviews[week] ? 'Update Journal review' : 'Save review to Journal'}</button><span class="os-action-meta">${this.workflowState.reviews[week] ? 'A review has been saved this week.' : 'Your draft stays here until you save.'}</span></div>`;
+                form.innerHTML = `<label>Wins and observations<textarea class="os-review-notes" rows="3" placeholder="What moved forward? What needs to change?">${escapeHtml(draft.notes)}</textarea></label><label>Priorities for next week<textarea class="os-review-priorities" rows="3" placeholder="Choose a few concrete outcomes for the coming week.">${escapeHtml(draft.priorities)}</textarea><span class="os-action-meta">One priority per line. Turn any priority into a project task below when you’re ready.</span></label><div class="os-review-priority-bridge"><h3>Make priorities actionable</h3><p class="os-action-meta">Add a priority to an existing project. It joins the action queue without changing that project’s chosen next action; the review text stays intact.</p><div class="os-review-priority-list"></div></div><details><summary>Preview Journal summary</summary><pre class="os-review-preview"></pre></details><div class="os-review-save-row"><button class="os-button os-primary os-save-review">${this.workflowState.reviews[week] ? 'Update Journal review' : 'Save review to Journal'}</button><span class="os-action-meta">${this.workflowState.reviews[week] ? 'A review has been saved this week.' : 'Your draft stays here until you save.'}</span></div>`;
                 const preview = () => { form.querySelector('pre').textContent = weeklyReviewText(workflow, draft, this.workflowState); };
+                const renderPriorityBridge = () => this.renderReviewPriorityBridge(form.querySelector('.os-review-priority-list'), workflow, week, draft.priorities, panel);
                 form.querySelector('.os-review-notes').oninput = event => { draft.notes = event.target.value; this.persistWorkflow(); preview(); };
-                form.querySelector('.os-review-priorities').oninput = event => { draft.priorities = event.target.value; this.persistWorkflow(); preview(); };
+                form.querySelector('.os-review-priorities').oninput = event => { draft.priorities = event.target.value; this.persistWorkflow(); preview(); renderPriorityBridge(); };
+                renderPriorityBridge();
                 preview();
                 form.querySelector('.os-save-review').onclick = event => this.workflowAction(event.target, async () => { await this.saveReviewToJournal(workflow, draft); this.ui.addToaster({ title: 'Weekly review saved to Journal', autoDestroyTime: 3000, dismissible: true }); }, panel);
                 section.appendChild(form);
@@ -577,6 +609,45 @@ const Workflow = {
             clear.onclick = () => { this.actionSearch = ''; this.actionProject = ''; this.render(panel); }; section.appendChild(clear);
         }
         return section;
+    },
+
+    renderReviewPriorityBridge(container, workflow, week, priorities, panel) {
+        const lines = weeklyPriorityLines(priorities);
+        if (!lines.length) {
+            container.innerHTML = '<p class="os-workflow-empty">Write a priority above to see task options.</p>';
+            return;
+        }
+        const projects = workflow.model.active;
+        container.replaceChildren();
+        lines.forEach((priority, index) => {
+            const row = document.createElement('div'); row.className = 'os-review-priority-row';
+            const copy = document.createElement('div'); copy.className = 'os-review-priority-copy'; copy.textContent = priority.text;
+            row.appendChild(copy);
+            const key = reviewPriorityKey(week, priority.text);
+            const linked = workflow.tasks.find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === key);
+            if (linked) {
+                const status = document.createElement('span'); status.className = 'os-review-priority-linked';
+                status.textContent = `Task exists in ${linked.projectName}${['done', 'canceled', 'cancelled'].includes(linked.status) ? ' · complete' : ''}`;
+                const open = document.createElement('button'); open.type = 'button'; open.className = 'os-button'; open.textContent = 'Open task';
+                open.onclick = () => this.openItem(linked.guid, linked.recordGuid, panel);
+                row.append(status, open);
+            } else if (!projects.length) {
+                const status = document.createElement('span'); status.className = 'os-action-meta'; status.textContent = 'No active projects available'; row.appendChild(status);
+            } else {
+                const select = document.createElement('select'); select.className = 'os-input os-review-priority-project';
+                select.dataset.focusKey = `review-priority-${index}`;
+                select.setAttribute('aria-label', `Project for priority: ${priority.text}`);
+                select.innerHTML = '<option value="">Choose project…</option>' + projects.map(project => `<option value="${escapeHtml(project.guid)}">${escapeHtml(project.name)}</option>`).join('');
+                const add = document.createElement('button'); add.type = 'button'; add.className = 'os-button os-review-priority-add'; add.textContent = 'Add task'; add.disabled = true;
+                select.onchange = () => { add.disabled = !select.value; };
+                add.onclick = event => this.workflowAction(event.currentTarget, async () => {
+                    const result = await this.addReviewPriorityTask(this.workflowData, week, priority.text, select.value);
+                    this.ui.addToaster({ title: result.existing ? 'Priority is already a project task' : 'Priority added to project tasks', autoDestroyTime: 3000, dismissible: true });
+                }, panel);
+                row.append(select, add);
+            }
+            container.appendChild(row);
+        });
     },
 
     renderWorkflowSettings(panel) {

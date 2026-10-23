@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../src/support-time.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const runtime = { AppPlugin: class {}, Date, Map, Set, console };
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions, summarizeSupportTime });`, runtime);
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, weeklyPriorityLines, reviewPriorityKey, filterActions, summarizeSupportTime });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
 
@@ -247,6 +247,39 @@ test('weekly review uses observed signals and preserves the written plan', () =>
     assert.match(text, /Next action still to choose/); assert.match(text, /Finish onboarding/);
 });
 
+test('weekly priorities split into non-empty lines and use stable case-insensitive keys', () => {
+    assert.deepEqual(Array.from(api.weeklyPriorityLines('  Ship the draft\n\n  Ask for feedback  '), item => item.text), ['Ship the draft', 'Ask for feedback']);
+    assert.equal(api.reviewPriorityKey('2026-10-19', ' Ship the draft '), api.reviewPriorityKey('2026-10-19', 'SHIP THE DRAFT'));
+});
+
+test('weekly priority creates one native project task and retries do not duplicate it', async () => {
+    const plugin = new api.Plugin();
+    const created = [];
+    const projectRecord = { guid: 'project', createLineItem: async (parent, after, type, segments, props) => {
+        const line = { guid: `task-${created.length + 1}`, type, segments, props, getTaskStatus: () => 'none' };
+        created.push(line); return line;
+    } };
+    const workflow = { projects: [{ guid: 'project', name: 'Example project', status: 'in_progress', record: projectRecord }], tasks: [], model: { active: [] } };
+    const first = await plugin.addReviewPriorityTask(workflow, '2026-10-19', 'Ship the draft', 'project');
+    workflow.tasks.push(first.task);
+    const retry = await plugin.addReviewPriorityTask(workflow, '2026-10-19', ' Ship the draft ', 'project');
+    assert.equal(first.existing, false);
+    assert.equal(retry.existing, true);
+    assert.equal(retry.task.guid, first.task.guid);
+    assert.equal(created.length, 1);
+    assert.equal(created[0].type, 'task');
+    assert.equal(created[0].segments[0].text, 'Ship the draft');
+    assert.equal(created[0].props.freelance_os_review_priority, '2026-10-19|ship the draft');
+});
+
+test('weekly priority refuses inactive or unknown projects before creating a task', async () => {
+    const plugin = new api.Plugin(); let created = false;
+    const workflow = { projects: [{ guid: 'closed', status: 'completed', record: { createLineItem: async () => { created = true; } } }], tasks: [] };
+    await assert.rejects(plugin.addReviewPriorityTask(workflow, '2026-10-19', 'Ship the draft', 'closed'), /Choose an active project/);
+    await assert.rejects(plugin.addReviewPriorityTask(workflow, '2026-10-19', 'Ship the draft', 'missing'), /Choose an active project/);
+    assert.equal(created, false);
+});
+
 test('weekly review updates the same Journal entry when saved on another day', async () => {
     const plugin = new api.Plugin(); plugin.workflowState = api.workflowDefaults(); plugin.setLocalStorage = () => {};
     const records = new Map(); let day = 0; let created = 0;
@@ -267,6 +300,26 @@ test('weekly review updates the same Journal entry when saved on another day', a
     const second = await plugin.saveReviewToJournal(workflow, { notes: 'Updated' }, '2026-10-23');
     assert.equal(first.headingGuid, second.headingGuid);
     assert.equal(created, firstCount);
+});
+
+test('saved Journal priorities link to project tasks that came from the review', async () => {
+    const plugin = new api.Plugin(); plugin.workflowState = api.workflowDefaults(); plugin.setLocalStorage = () => {};
+    let created = 0; const lines = [];
+    const record = { guid: 'journal-day', getLineItems: async () => lines, createLineItem: async (parent, after, type, segments) => {
+        const line = { guid: `journal-${++created}`, type, segments, parent, getChildren: async () => lines.filter(item => item.parent === line), setSegments: async value => { line.segments = value; return true; } };
+        lines.push(line); return line;
+    } };
+    const journal = { getGuid: () => 'journal', getName: () => 'Journal', isJournalPlugin: () => true, getJournalRecord: async () => record };
+    plugin.data = { getAllCollections: async () => [journal], getActiveUsers: () => [{ guid: 'user' }], getRecord: () => null };
+    const key = api.reviewPriorityKey('2026-10-19', 'Ship the draft');
+    const taskLine = { guid: 'project-task', props: { freelance_os_review_priority: key } };
+    const workflow = { model: api.actionModel([], [], plugin.workflowState, '2026-10-22'), recentDone: [], tasks: [{ guid: taskLine.guid, text: 'Ship the draft', lineItem: taskLine }] };
+    await plugin.saveReviewToJournal(workflow, { notes: '', priorities: 'Ship the draft\nAsk for feedback' }, '2026-10-22');
+    const linked = lines.find(line => line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === 'project-task'));
+    const plain = lines.find(line => line.segments?.some(segment => segment.type === 'text' && segment.text === 'Ask for feedback'));
+    assert.ok(linked, 'converted priority is a native reference in Journal');
+    assert.equal(linked.segments[0].text.title, 'Ship the draft');
+    assert.ok(plain, 'unconverted priority remains readable text');
 });
 
 test('virtual Journal pages are reopened on their original date when no ordinary record exists', async () => {
