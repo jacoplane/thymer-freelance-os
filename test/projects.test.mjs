@@ -21,8 +21,22 @@ test('new projects have an editable brief, a real action and native deliverable 
     assert.ok(state.lines.some(l=>l.segments?.[0]?.text==='Launch the member portal'));
     assert.equal(state.lines.find(l=>l.type==='task').segments[0].text,'Agree the scope');
     assert.equal(state.lines.find(l=>l.segments?.[0]?.type==='ref').segments[0].text.guid,'brief-page');
+    const reviewSection=state.lines.find(l=>l.type==='heading'&&l.segments?.[0]?.text==='Client review checkpoints');
+    assert.ok(reviewSection,'new projects include a client review checkpoint section');
+    assert.ok(state.lines.some(l=>l.parent_guid===reviewSection.guid&&l.type==='task'&&l.segments.length===0&&l.props?.freelance_os_review_checkpoint==='checkpoint-v1'),'checkpoint starts as a marked blank native task, without adding queue noise');
+    assert.equal(state.lines.some(l=>l.parent_guid===state.record.guid&&l.type==='text'&&!l.segments?.length),false,'template sections do not insert blank spacer lines');
     assert.equal((await plugin.initializeProject(state.record)).applied,false);
-    assert.equal(state.lines.filter(l=>l.type==='task').length,1);
+    assert.equal(state.lines.filter(l=>l.type==='task').length,2);
+});
+
+test('existing project templates gain client review checkpoints without duplicating sections',async()=>{
+    const existing={guid:'existing-heading',parent_guid:'project',type:'heading',segments:[{type:'text',text:'Project brief'}],props:{freelance_os_template:'project-v1'}};
+    const state=page([existing]); const plugin=new Plugin();
+    const first=await plugin.initializeProject(state.record);
+    assert.equal(first.reason,'checkpoint-added');
+    assert.ok(state.lines.some(line=>line.type==='heading'&&line.segments?.[0]?.text==='Client review checkpoints'));
+    assert.equal((await plugin.initializeProject(state.record)).reason,'already-applied');
+    assert.equal(state.lines.filter(line=>line.type==='heading'&&line.segments?.[0]?.text==='Client review checkpoints').length,1);
 });
 
 test('applying a project template preserves an existing working note without writing',async()=>{

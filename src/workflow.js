@@ -1,6 +1,8 @@
 function workflowDefaults() {
-    return { version: 1, mappings: {}, next: {}, nextLabels: {}, focus: {}, waiting: {}, drafts: {}, reviews: {} };
+    return { version: 1, mappings: {}, next: {}, nextLabels: {}, nextRecovery: {}, focus: {}, waiting: {}, drafts: {}, reviews: {} };
 }
+
+const CLIENT_REVIEW_CHECKPOINT_PROPERTY = 'freelance_os_review_checkpoint';
 
 function reviewWeek(today = localDate()) {
     const date = new Date(`${today}T12:00:00`);
@@ -47,13 +49,26 @@ function actionModel(projects, tasks, state, today = localDate(), complete = tru
     const focus = actions.filter(task => selected.has(task.guid));
     const attention = active.flatMap(project => {
         const projectTasks = open.filter(task => task.projectGuid === project.guid);
+        // Client review checkpoints get their own clearer deadline cue below.
+        const overdueTasks = projectTasks.filter(task => !task.clientReview && task.date && task.date < today);
+        const waitingTasks = projectTasks.filter(task => ['blocked', 'waiting'].includes(task.status));
+        const followupTasks = waitingTasks.filter(task => state.waiting[task.guid]?.followup && state.waiting[task.guid].followup <= today);
+        const clientReviewTasks = projectTasks.filter(task => task.clientReview);
+        const clientReviewOverdue = clientReviewTasks.filter(task => task.date && task.date < today);
+        const clientReviewDueSoon = clientReviewTasks.filter(task => task.date && task.date >= today && dateDay(task.date) <= dateDay(today) + 7);
+        const clientReviewUndated = clientReviewTasks.filter(task => !task.date);
         const issues = [];
         if (complete && !next.some(task => task.projectGuid === project.guid)) issues.push(projectTasks.some(task => !['blocked', 'waiting'].includes(task.status)) ? 'Choose a next action' : projectTasks.length ? 'All work is waiting' : 'Add a next action');
         if (dateDay(project.deadline) !== null && project.deadline < today) issues.push('Project deadline overdue');
         else if (dateDay(project.deadline) !== null && dateDay(project.deadline) <= dateDay(today) + 7) issues.push('Project deadline within 7 days');
-        if (projectTasks.some(task => task.date && task.date < today)) issues.push('Overdue tasks');
-        if (projectTasks.some(task => ['waiting', 'blocked'].includes(task.status) && state.waiting[task.guid]?.followup && state.waiting[task.guid].followup <= today)) issues.push('Follow-up due');
-        return issues.length ? [{ project, issues, tasks: actions.filter(task => task.projectGuid === project.guid), next: next.find(task => task.projectGuid === project.guid) }] : [];
+        if (overdueTasks.length) issues.push(`${overdueTasks.length} overdue task${overdueTasks.length === 1 ? '' : 's'}`);
+        if (waitingTasks.length) issues.push(`${waitingTasks.length} waiting task${waitingTasks.length === 1 ? '' : 's'}`);
+        if (followupTasks.length) issues.push(`${followupTasks.length} follow-up${followupTasks.length === 1 ? '' : 's'} due`);
+        if (clientReviewOverdue.length) issues.push(`${clientReviewOverdue.length} client review overdue`);
+        if (clientReviewDueSoon.length) issues.push(`${clientReviewDueSoon.length} client review due in 7 days`);
+        if (clientReviewUndated.length) issues.push(`${clientReviewUndated.length} client review missing a date`);
+        const recovery = state.nextRecovery?.[project.guid] || null;
+        return issues.length ? [{ project, issues, tasks: actions.filter(task => task.projectGuid === project.guid), next: next.find(task => task.projectGuid === project.guid), overdueTasks, waitingTasks, followupTasks, clientReviewTasks, recovery }] : [];
     });
     const rank = task => (task.date && task.date < today ? 0 : task.date === today ? 1 : task.status === 'important' ? 2 : 3);
     const sort = (a, b) => rank(a) - rank(b) || (a.date || '9999').localeCompare(b.date || '9999') || a.text.localeCompare(b.text);
@@ -62,18 +77,26 @@ function actionModel(projects, tasks, state, today = localDate(), complete = tru
     return { active, actions, next, focus, waiting, attention, overdue: actions.filter(task => task.date && task.date < today), complete };
 }
 
-function reconcileWorkflowPointers(state, model) {
+function reconcileWorkflowPointers(state, model, allTasks = []) {
     if (!model.complete) return false;
     let changed = false;
     const actionable = new Map(model.actions.map(task => [task.guid, task]));
     for (const [projectGuid, taskGuid] of Object.entries(state.next)) {
         const task = actionable.get(taskGuid);
         if (!task || task.projectGuid !== projectGuid) {
+            const previous = allTasks.find(item => item.guid === taskGuid);
+            const reason = previous && previous.status === 'done' ? 'completed' : previous && ['blocked', 'waiting'].includes(previous.status) ? 'waiting' : 'removed';
+            state.nextRecovery ||= {};
+            state.nextRecovery[projectGuid] = { reason, label: previous?.text || state.nextLabels[projectGuid] || '' };
             delete state.next[projectGuid];
             delete state.nextLabels[projectGuid];
             changed = true;
         } else if (state.nextLabels[projectGuid] !== task.text) {
             state.nextLabels[projectGuid] = task.text;
+            changed = true;
+        }
+        if (state.nextRecovery?.[projectGuid] && task?.projectGuid === projectGuid) {
+            delete state.nextRecovery[projectGuid];
             changed = true;
         }
     }
@@ -105,6 +128,48 @@ function reviewPriorityKey(week, text) {
     return `${week}|${text.trim().toLowerCase()}`;
 }
 
+let reviewPrioritySequence = 0;
+function reviewPriorityIdKey(week, id) {
+    return `${week}|id:${id}`;
+}
+
+function nextReviewPriorityId() {
+    reviewPrioritySequence++;
+    return `priority-${Date.now().toString(36)}-${reviewPrioritySequence.toString(36)}`;
+}
+
+function reconcileReviewPriorityItems(draft, value) {
+    const lines = weeklyPriorityLines(value);
+    const previous = Array.isArray(draft.priorityItems) ? draft.priorityItems : [];
+    const retained = new Set();
+    const items = lines.map((line, index) => {
+        const exact = previous.findIndex((item, itemIndex) => !retained.has(itemIndex) && String(item.text || '').trim().toLowerCase() === line.text.toLowerCase());
+        if (exact >= 0) { retained.add(exact); return { ...previous[exact], text: line.text }; }
+        return { line, index };
+    });
+    for (let index = 0; index < items.length; index++) {
+        if (!items[index]?.line) continue;
+        const sameIndex = index < previous.length && !retained.has(index) ? index : -1;
+        const fallback = sameIndex >= 0 ? sameIndex : previous.findIndex((item, itemIndex) => !retained.has(itemIndex));
+        if (fallback >= 0) {
+            retained.add(fallback);
+            items[index] = { ...previous[fallback], text: items[index].line.text };
+        } else items[index] = { id: nextReviewPriorityId(), text: items[index].line.text };
+    }
+    draft.priorityItems = items;
+    draft.priorities = value;
+    return items;
+}
+
+function reviewPriorityTask(entry, week, tasks = []) {
+    if (entry?.taskGuid) {
+        const linked = tasks.find(task => task.guid === entry.taskGuid);
+        if (linked) return linked;
+    }
+    return tasks.find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === reviewPriorityIdKey(week, entry?.id)
+        || task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === reviewPriorityKey(week, entry?.text));
+}
+
 function nativeNextActionMarkers(lines) {
     return lines.filter(line => line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER);
 }
@@ -120,6 +185,7 @@ function reconcileNativeNextActions(state, projects, tasks, markers, complete = 
         if (!['in_progress', 'in_review'].includes(project.status)) {
             delete state.next[project.guid];
             delete state.nextLabels[project.guid];
+            delete state.nextRecovery?.[project.guid];
             continue;
         }
         if (projectMarkers.length) {
@@ -132,9 +198,17 @@ function reconcileNativeNextActions(state, projects, tasks, markers, complete = 
                 const { task, marker, ref } = valid;
                 state.next[project.guid] = task.guid;
                 state.nextLabels[project.guid] = task.text;
+                delete state.nextRecovery?.[project.guid];
                 remove.push(...projectMarkers.filter(candidate => candidate !== marker));
                 if (typeof ref !== 'object' || ref.title !== task.text) write.push({ project, task });
             } else {
+                const marker = projectMarkers[0];
+                const ref = marker.segments?.find(segment => segment.type === 'ref')?.text;
+                const guid = typeof ref === 'object' ? ref?.guid : ref;
+                const previous = tasks.find(task => task.guid === guid);
+                const reason = previous && previous.status === 'done' ? 'completed' : previous && ['blocked', 'waiting'].includes(previous.status) ? 'waiting' : 'removed';
+                state.nextRecovery ||= {};
+                state.nextRecovery[project.guid] = { reason, label: previous?.text || (typeof ref === 'object' ? ref?.title : '') || state.nextLabels[project.guid] || '' };
                 delete state.next[project.guid];
                 delete state.nextLabels[project.guid];
                 remove.push(...projectMarkers);
@@ -146,6 +220,10 @@ function reconcileNativeNextActions(state, projects, tasks, markers, complete = 
             state.nextLabels[project.guid] = prior.text;
             write.push({ project, task: prior });
         } else if (state.next[project.guid]) {
+            const previous = tasks.find(task => task.guid === state.next[project.guid]);
+            const reason = previous && previous.status === 'done' ? 'completed' : previous && ['blocked', 'waiting'].includes(previous.status) ? 'waiting' : 'removed';
+            state.nextRecovery ||= {};
+            state.nextRecovery[project.guid] = { reason, label: previous?.text || state.nextLabels[project.guid] || '' };
             delete state.next[project.guid];
             delete state.nextLabels[project.guid];
         }
@@ -208,6 +286,7 @@ const Workflow = {
         let complete = true;
         const taskMap = new Map();
         const nextMarkers = [];
+        const clientReviewSections = new Set();
         const add = line => {
             const status = line.getTaskStatus?.();
             if (status === null || status === undefined) return;
@@ -220,13 +299,16 @@ const Workflow = {
             if (!root || !byGuid.has(root)) return;
             const text = extractLineText(line);
             if (!text) return;
-            taskMap.set(line.guid, { guid: line.guid, lineItem: line, text, status, recordGuid, projectGuid: root, projectName: byGuid.get(root).name, date: dateDay(extractLineDate(line)) !== null ? extractLineDate(line) : '', updated: line.getUpdatedAt?.() });
+            const clientReview = line.props?.[CLIENT_REVIEW_CHECKPOINT_PROPERTY] === 'checkpoint-v1' || clientReviewSections.has(line.parent_guid) || taskMap.get(line.guid)?.clientReview === true;
+            taskMap.set(line.guid, { guid: line.guid, lineItem: line, text, status, recordGuid, projectGuid: root, projectName: byGuid.get(root).name, date: dateDay(extractLineDate(line)) !== null ? extractLineDate(line) : '', updated: line.getUpdatedAt?.(), clientReview });
         };
         // Read actual project pages, so an arbitrary workspace search limit cannot create false gaps.
         for (let index = 0; index < records.length; index += 8) {
             await Promise.all(records.slice(index, index + 8).map(async record => {
                 try {
-                    for (const line of await record.getLineItems(false)) {
+                    const lines = await record.getLineItems(false);
+                    for (const line of lines) if (line.type === 'heading' && extractLineText(line).toLowerCase().replace(/[^a-z]/g, '') === 'clientreviewcheckpoints') clientReviewSections.add(line.guid);
+                    for (const line of lines) {
                         add(line);
                         if (line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER) nextMarkers.push({ line, recordGuid: record.guid, segments: line.segments });
                     }
@@ -243,10 +325,10 @@ const Workflow = {
         const tasks = [...taskMap.values()];
         const today = localDate();
         const recentDone = tasks.filter(task => task.status === 'done' && task.updated instanceof Date && task.updated.getTime() >= Date.now() - 7 * 86400000);
-        const priorNextState = JSON.stringify({ next: state.next, nextLabels: state.nextLabels });
+        const priorNextState = JSON.stringify({ next: state.next, nextLabels: state.nextLabels, nextRecovery: state.nextRecovery });
         const nativeReconciliation = reconcileNativeNextActions(state, projects, tasks, nextMarkers, complete);
         const model = actionModel(projects, tasks, state, today, complete);
-        const stateChanged = reconcileWorkflowPointers(state, model) || priorNextState !== JSON.stringify({ next: state.next, nextLabels: state.nextLabels });
+        const stateChanged = reconcileWorkflowPointers(state, model, tasks) || priorNextState !== JSON.stringify({ next: state.next, nextLabels: state.nextLabels, nextRecovery: state.nextRecovery });
         if (stateChanged) this.persistWorkflow();
         if (complete && !this.syncingNativeNextActions) {
             this.syncingNativeNextActions = true;
@@ -346,6 +428,9 @@ const Workflow = {
             const record = await this.getReviewRecord(prior?.journalGuid === journal.getGuid() ? prior : null, journal, user);
             if (!record) throw new Error('Journal is unavailable');
             const title = `Weekly review · week of ${reviewWeek(today)}`;
+            const week = reviewWeek(today);
+            if (!Array.isArray(draft.priorityItems)) reconcileReviewPriorityItems(draft, draft.priorities || '');
+            this.hydrateReviewPriorityLinks(draft, week, workflow.tasks || []);
             const lines = await record.getLineItems();
             let heading = lines.find(line => extractLineText(line) === title);
             if (!heading) heading = await record.createLineItem(null, null, 'heading', [{ type: 'text', text: title }]);
@@ -360,13 +445,18 @@ const Workflow = {
             const summaryLines = weeklyReviewText(workflow, draft, this.workflowState, today).split('\n').slice(1).filter(line => line.trim());
             const existing = await workflowChildren(body, record);
             let inPriorities = false;
+            let priorityIndex = 0;
             let previous = null;
             for (let index = 0; index < summaryLines.length; index++) {
                 const text = summaryLines[index];
                 if (text === 'Priorities for next week') inPriorities = true;
-                const linkedTask = inPriorities && text !== 'Priorities for next week'
-                    ? (workflow.tasks || []).find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === reviewPriorityKey(reviewWeek(today), text))
-                    : null;
+                const entry = inPriorities ? draft.priorityItems?.[priorityIndex] : null;
+                const linkedTask = entry?.text === text ? reviewPriorityTask(entry, week, workflow.tasks || []) : null;
+                if (entry?.text === text) priorityIndex++;
+                if (entry && linkedTask && linkedTask.lineItem?.setMetaProperties) {
+                    await linkedTask.lineItem.setMetaProperties({ [REVIEW_PRIORITY_PROPERTY]: reviewPriorityIdKey(week, entry.id) });
+                    entry.taskGuid = linkedTask.guid;
+                }
                 const content = linkedTask
                     ? [{ type: 'ref', text: { guid: linkedTask.guid, title: text } }]
                     : [{ type: 'text', text }];
@@ -385,17 +475,45 @@ const Workflow = {
         } finally { this.reviewSaving = false; }
     },
 
-    async addReviewPriorityTask(workflow, week, priority, projectGuid) {
+    hydrateReviewPriorityLinks(draft, week, tasks = []) {
+        if (!Array.isArray(draft.priorityItems)) reconcileReviewPriorityItems(draft, draft.priorities || '');
+        for (const entry of draft.priorityItems) {
+            const linked = reviewPriorityTask(entry, week, tasks);
+            if (linked) entry.taskGuid = linked.guid;
+        }
+        return draft.priorityItems;
+    },
+
+    async linkReviewPriorityTask(workflow, week, entry, taskGuid) {
+        const task = (workflow.tasks || []).find(item => item.guid === taskGuid);
+        if (!task || !['in_progress', 'in_review'].includes(workflow.projects.find(project => project.guid === task.projectGuid)?.status)) throw new Error('Choose an open task in an active project.');
+        if (['done', 'canceled', 'cancelled', 'blocked', 'waiting'].includes(task.status)) throw new Error('Choose an actionable task. Waiting or completed tasks cannot be linked as a priority.');
+        const key = reviewPriorityIdKey(week, entry.id);
+        const marker = task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY];
+        if (marker && marker !== key && marker !== reviewPriorityKey(week, entry.text)) throw new Error('This task is already linked to another weekly priority.');
+        const duplicate = (workflow.tasks || []).find(item => item.guid !== task.guid && item.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === key);
+        if (duplicate) throw new Error('This priority is already linked to another task.');
+        if (typeof task.lineItem?.setMetaProperties !== 'function') throw new Error('This Thymer build cannot save task links. Update Thymer and try again.');
+        if (await task.lineItem.setMetaProperties({ [REVIEW_PRIORITY_PROPERTY]: key }) === false) throw new Error('The task link could not be saved.');
+        entry.taskGuid = task.guid;
+        entry.projectGuid = task.projectGuid;
+        this.persistWorkflow();
+        return task;
+    },
+
+    async addReviewPriorityTask(workflow, week, priority, projectGuid, entry = null) {
         const text = String(priority || '').trim();
         if (!text) throw new Error('Write a priority first.');
         const project = workflow.projects.find(item => item.guid === projectGuid && ['in_progress', 'in_review'].includes(item.status));
         if (!project) throw new Error('Choose an active project.');
-        const key = reviewPriorityKey(week, text);
-        const existing = workflow.tasks.find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === key);
-        if (existing) return { task: existing, existing: true };
+        const key = entry?.id ? reviewPriorityIdKey(week, entry.id) : reviewPriorityKey(week, text);
+        const existing = (workflow.tasks || []).find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === key);
+        if (existing) { if (entry) entry.taskGuid = existing.guid; return { task: existing, existing: true }; }
         const line = await project.record.createLineItem(null, null, 'task', [{ type: 'text', text }], { [REVIEW_PRIORITY_PROPERTY]: key });
         if (!line) throw new Error('Project task could not be created.');
-        return { task: { guid: line.guid, lineItem: line, text, projectGuid, projectName: project.name, recordGuid: project.guid }, existing: false };
+        const task = { guid: line.guid, lineItem: line, text, projectGuid, projectName: project.name, recordGuid: project.guid, status: 'none', date: '' };
+        if (entry) { entry.taskGuid = task.guid; entry.projectGuid = projectGuid; }
+        return { task, existing: false };
     },
 
     async workflowAction(button, operation, panel) {
@@ -466,6 +584,7 @@ const Workflow = {
                 await this.writeNativeNextAction(this.workflowData.byGuid.get(task.projectGuid)?.record, task);
                 state.next[task.projectGuid] = task.guid; state.nextLabels[task.projectGuid] = task.text;
             }
+            delete state.nextRecovery?.[task.projectGuid];
             this.persistWorkflow();
         }, panel));
         row.querySelector('.os-date-save').onclick = event => this.workflowAction(event.target, () => this.rescheduleAction(task, row.querySelector('.os-action-date').value), panel);
@@ -490,18 +609,42 @@ const Workflow = {
         const projects = allActive
             ? workflow.model.active.map(project => {
                 const item = attentionByGuid.get(project.guid);
-                return { project, issues: item?.issues || [], tasks: workflow.model.actions.filter(task => task.projectGuid === project.guid), next: workflow.model.next.find(task => task.projectGuid === project.guid) };
+                const projectTasks = workflow.tasks.filter(task => task.projectGuid === project.guid && !['done', 'canceled', 'cancelled'].includes(task.status));
+                return { project, issues: item?.issues || [], tasks: workflow.model.actions.filter(task => task.projectGuid === project.guid), next: workflow.model.next.find(task => task.projectGuid === project.guid), overdueTasks: item?.overdueTasks || projectTasks.filter(task => task.date && task.date < localDate()), waitingTasks: item?.waitingTasks || projectTasks.filter(task => ['blocked', 'waiting'].includes(task.status)), followupTasks: item?.followupTasks || [], clientReviewTasks: item?.clientReviewTasks || projectTasks.filter(task => task.clientReview), recovery: item?.recovery || this.workflowState.nextRecovery?.[project.guid] || null };
             })
             : workflow.model.attention;
         if (!projects.length) list.innerHTML = `<p class="os-workflow-empty">${!workflow.model.active.length ? 'No explicitly active projects found. Check your Projects mapping and project statuses in Settings.' : !workflow.model.complete ? 'Project checks are incomplete. Refresh to retry.' : 'Every active project has a next action and no deadline warnings.'}</p>`;
         for (const item of projects) {
+            const issueSummary = item.issues.filter(issue => !['Choose a next action', 'Add a next action', 'All work is waiting'].includes(issue));
+            const recoveryReason = ({ completed: 'was completed', waiting: 'is waiting', removed: 'is no longer available' })[item.recovery?.reason];
             const nextStatus = item.next
                 ? `Next: ${item.next.text}`
-                : item.issues.some(issue => issue.toLowerCase().includes('next action') || issue === 'All work is waiting') ? '' : 'Choose a next action';
-            const stateText = [item.issues.join(' · '), nextStatus].filter(Boolean).join(' · ');
+                : item.recovery ? `Previous next action ${recoveryReason || 'changed'}${item.recovery.label ? `: “${item.recovery.label}”` : ''} · choose another`
+                    : item.issues.includes('All work is waiting') ? 'All work is waiting'
+                        : item.issues.some(issue => issue.toLowerCase().includes('next action') || issue === 'Add a next action') ? '' : 'Choose a next action';
+            const clientReviewText = item.clientReviewTasks?.length && !issueSummary.some(issue => issue.includes('client review')) ? `${item.clientReviewTasks.length} client review checkpoint${item.clientReviewTasks.length === 1 ? '' : 's'} open` : '';
+            const stateText = [issueSummary.join(' · '), clientReviewText, nextStatus].filter(Boolean).join(' · ');
             const row = document.createElement('div'); row.className = 'os-project-attention';
-            row.innerHTML = `<div class="os-project-checkin-copy"><button class="os-action-title">${escapeHtml(item.project.name)}</button><p class="os-action-meta">${escapeHtml(stateText)}</p></div><div class="os-next-picker"><select aria-label="Next action for ${escapeHtml(item.project.name)}"><option value="">Choose an existing task…</option>${item.tasks.map(task => `<option value="${task.guid}">${escapeHtml(task.text)}${task.date ? ` · ${escapeHtml(task.date)}` : ''}</option>`).join('')}</select><button class="os-button os-pick-next" ${item.tasks.length ? '' : 'disabled'}>${item.next ? 'Update next' : 'Set next'}</button><button class="os-button os-add-next">Add task</button></div>`;
+            row.innerHTML = `<div class="os-project-checkin-copy"><button class="os-action-title">${escapeHtml(item.project.name)}</button><p class="os-action-meta ${item.recovery ? 'os-project-recovery' : ''}">${escapeHtml(stateText || (item.next ? `Next: ${item.next.text}` : 'Choose a next action'))}</p></div><div class="os-next-picker"><select aria-label="Next action for ${escapeHtml(item.project.name)}"><option value="">Choose an existing task…</option>${item.tasks.map(task => `<option value="${task.guid}">${escapeHtml(task.text)}${task.date ? ` · ${escapeHtml(task.date)}` : ''}</option>`).join('')}</select><button class="os-button os-pick-next" ${item.tasks.length ? '' : 'disabled'}>${item.next ? 'Update next' : 'Set next'}</button><button class="os-button os-add-next">Add task</button></div>`;
             row.querySelector('select').value = item.next?.guid || '';
+            const attentionTasks = [...new Map([...(item.overdueTasks || []), ...(item.waitingTasks || []), ...(item.clientReviewTasks || [])].map(task => [task.guid, task])).values()];
+            if (attentionTasks.length) {
+                const details = document.createElement('details'); details.className = 'os-project-cues';
+                const summary = document.createElement('summary'); summary.textContent = `${item.clientReviewTasks?.length ? `${item.clientReviewTasks.length} client review checkpoint${item.clientReviewTasks.length === 1 ? '' : 's'}` : `${attentionTasks.length} task${attentionTasks.length === 1 ? '' : 's'} need attention`}`;
+                const cueList = document.createElement('div'); cueList.className = 'os-project-cue-list';
+                for (const task of attentionTasks.slice(0, 4)) {
+                    const cue = document.createElement('button'); cue.type = 'button'; cue.className = 'os-project-cue';
+                    const labels = [];
+                    if ((item.overdueTasks || []).some(candidate => candidate.guid === task.guid)) labels.push(`Overdue${task.date ? ` · ${task.date}` : ''}`);
+                    if ((item.waitingTasks || []).some(candidate => candidate.guid === task.guid)) labels.push(`Waiting${this.workflowState.waiting[task.guid]?.followup ? ` · follow up ${this.workflowState.waiting[task.guid].followup}` : ''}`);
+                    if ((item.clientReviewTasks || []).some(candidate => candidate.guid === task.guid)) labels.push(`Client review${task.date ? ` · due ${task.date}` : ' · due date needed'}`);
+                    cue.textContent = `${task.text} · ${labels.join(' · ')}`;
+                    cue.onclick = () => this.openItem(task.guid, task.recordGuid, panel);
+                    cueList.appendChild(cue);
+                }
+                if (attentionTasks.length > 4) { const more = document.createElement('span'); more.className = 'os-action-meta'; more.textContent = `+ ${attentionTasks.length - 4} more in the action queue`; cueList.appendChild(more); }
+                details.append(summary, cueList); row.querySelector('.os-project-checkin-copy').appendChild(details);
+            }
             row.querySelector('.os-action-title').onclick = () => this.openRecord(item.project.guid, panel);
             row.querySelector('.os-pick-next').onclick = event => this.workflowAction(event.target, async () => {
                 const guid = row.querySelector('select').value;
@@ -511,6 +654,7 @@ const Workflow = {
                 await this.writeNativeNextAction(item.project.record, task);
                 this.workflowState.next[item.project.guid] = guid;
                 this.workflowState.nextLabels[item.project.guid] = task.text;
+                delete this.workflowState.nextRecovery?.[item.project.guid];
                 this.persistWorkflow();
             }, panel);
             row.querySelector('.os-add-next').onclick = () => {
@@ -532,6 +676,7 @@ const Workflow = {
         if (this.workflowMode === 'review') {
             const week = reviewWeek();
             const draft = this.workflowState.drafts[week] ||= { notes: '', priorities: '', step: 0 };
+            this.hydrateReviewPriorityLinks(draft, week, workflow.tasks || []);
             const names = ['Clear the decks', 'Check projects', 'Plan next week'];
             const header = document.createElement('div'); header.className = 'os-review-heading';
             header.innerHTML = `<h2>Weekly review</h2><p class="os-action-meta">Week of ${week} · draft saved on this device</p><div class="os-review-steps">${names.map((name, index) => `<button class="os-button ${draft.step === index ? 'os-primary' : ''}" data-step="${index}" aria-current="${draft.step === index ? 'step' : 'false'}">${name}</button>`).join('')}</div>`;
@@ -555,9 +700,13 @@ const Workflow = {
                 const form = document.createElement('div'); form.className = 'os-review-form';
                 form.innerHTML = `<label>Wins and observations<textarea class="os-review-notes" rows="3" placeholder="What moved forward? What needs to change?">${escapeHtml(draft.notes)}</textarea></label><label>Priorities for next week<textarea class="os-review-priorities" rows="3" placeholder="Choose a few concrete outcomes for the coming week.">${escapeHtml(draft.priorities)}</textarea><span class="os-action-meta">One priority per line. Turn any priority into a project task below when you’re ready.</span></label><div class="os-review-priority-bridge"><h3>Make priorities actionable</h3><p class="os-action-meta">Add a priority to an existing project. It joins the action queue without changing that project’s chosen next action; the review text stays intact.</p><div class="os-review-priority-list"></div></div><details><summary>Preview Journal summary</summary><pre class="os-review-preview"></pre></details><div class="os-review-save-row"><button class="os-button os-primary os-save-review">${this.workflowState.reviews[week] ? 'Update Journal review' : 'Save review to Journal'}</button><span class="os-action-meta">${this.workflowState.reviews[week] ? 'A review has been saved this week.' : 'Your draft stays here until you save.'}</span></div>`;
                 const preview = () => { form.querySelector('pre').textContent = weeklyReviewText(workflow, draft, this.workflowState); };
-                const renderPriorityBridge = () => this.renderReviewPriorityBridge(form.querySelector('.os-review-priority-list'), workflow, week, draft.priorities, panel);
+                const renderPriorityBridge = () => this.renderReviewPriorityBridge(form.querySelector('.os-review-priority-list'), workflow, week, draft, panel);
                 form.querySelector('.os-review-notes').oninput = event => { draft.notes = event.target.value; this.persistWorkflow(); preview(); };
-                form.querySelector('.os-review-priorities').oninput = event => { draft.priorities = event.target.value; this.persistWorkflow(); preview(); renderPriorityBridge(); };
+                form.querySelector('.os-review-priorities').oninput = event => {
+                    this.hydrateReviewPriorityLinks(draft, week, workflow.tasks || []);
+                    reconcileReviewPriorityItems(draft, event.target.value);
+                    this.persistWorkflow(); preview(); renderPriorityBridge();
+                };
                 renderPriorityBridge();
                 preview();
                 form.querySelector('.os-save-review').onclick = event => this.workflowAction(event.target, async () => { await this.saveReviewToJournal(workflow, draft); this.ui.addToaster({ title: 'Weekly review saved to Journal', autoDestroyTime: 3000, dismissible: true }); }, panel);
@@ -611,40 +760,60 @@ const Workflow = {
         return section;
     },
 
-    renderReviewPriorityBridge(container, workflow, week, priorities, panel) {
-        const lines = weeklyPriorityLines(priorities);
-        if (!lines.length) {
+    renderReviewPriorityBridge(container, workflow, week, draft, panel) {
+        const entries = this.hydrateReviewPriorityLinks(draft, week, workflow.tasks || []);
+        if (!entries.length) {
             container.innerHTML = '<p class="os-workflow-empty">Write a priority above to see task options.</p>';
             return;
         }
         const projects = workflow.model.active;
         container.replaceChildren();
-        lines.forEach((priority, index) => {
+        entries.forEach((priority, index) => {
             const row = document.createElement('div'); row.className = 'os-review-priority-row';
             const copy = document.createElement('div'); copy.className = 'os-review-priority-copy'; copy.textContent = priority.text;
             row.appendChild(copy);
-            const key = reviewPriorityKey(week, priority.text);
-            const linked = workflow.tasks.find(task => task.lineItem?.props?.[REVIEW_PRIORITY_PROPERTY] === key);
-            if (linked) {
+            const linked = reviewPriorityTask(priority, week, workflow.tasks || []);
+            if (linked && this.editingReviewPriorityId !== priority.id) {
                 const status = document.createElement('span'); status.className = 'os-review-priority-linked';
-                status.textContent = `Task exists in ${linked.projectName}${['done', 'canceled', 'cancelled'].includes(linked.status) ? ' · complete' : ''}`;
+                status.textContent = `${linked.projectName} · ${linked.text}${['done', 'canceled', 'cancelled'].includes(linked.status) ? ' · complete' : ''}`;
                 const open = document.createElement('button'); open.type = 'button'; open.className = 'os-button'; open.textContent = 'Open task';
                 open.onclick = () => this.openItem(linked.guid, linked.recordGuid, panel);
-                row.append(status, open);
-            } else if (!projects.length) {
-                const status = document.createElement('span'); status.className = 'os-action-meta'; status.textContent = 'No active projects available'; row.appendChild(status);
+                const change = document.createElement('button'); change.type = 'button'; change.className = 'os-button'; change.textContent = 'Change link';
+                change.onclick = () => { this.editingReviewPriorityId = priority.id; this.render(panel); };
+                row.append(status, open, change);
             } else {
-                const select = document.createElement('select'); select.className = 'os-input os-review-priority-project';
-                select.dataset.focusKey = `review-priority-${index}`;
-                select.setAttribute('aria-label', `Project for priority: ${priority.text}`);
-                select.innerHTML = '<option value="">Choose project…</option>' + projects.map(project => `<option value="${escapeHtml(project.guid)}">${escapeHtml(project.name)}</option>`).join('');
-                const add = document.createElement('button'); add.type = 'button'; add.className = 'os-button os-review-priority-add'; add.textContent = 'Add task'; add.disabled = true;
-                select.onchange = () => { add.disabled = !select.value; };
-                add.onclick = event => this.workflowAction(event.currentTarget, async () => {
-                    const result = await this.addReviewPriorityTask(this.workflowData, week, priority.text, select.value);
+                const controls = document.createElement('div'); controls.className = 'os-review-priority-controls';
+                const projectSelect = document.createElement('select'); projectSelect.className = 'os-input os-review-priority-project';
+                projectSelect.dataset.focusKey = `review-priority-project-${priority.id}`;
+                projectSelect.setAttribute('aria-label', `Project for priority: ${priority.text}`);
+                projectSelect.innerHTML = '<option value="">Choose project…</option>' + projects.map(project => `<option value="${escapeHtml(project.guid)}">${escapeHtml(project.name)}</option>`).join('');
+                projectSelect.value = priority.projectGuid || linked?.projectGuid || '';
+                const taskSelect = document.createElement('select'); taskSelect.className = 'os-input os-review-priority-task';
+                taskSelect.dataset.focusKey = `review-priority-task-${priority.id}`;
+                taskSelect.setAttribute('aria-label', `Existing task for priority: ${priority.text}`);
+                const populateTasks = () => {
+                    const available = (workflow.model.actions || []).filter(task => task.projectGuid === projectSelect.value);
+                    taskSelect.innerHTML = `<option value="">${available.length ? 'Choose existing task…' : projectSelect.value ? 'No open tasks in this project' : 'Choose a project first'}</option>` + available.map(task => `<option value="${escapeHtml(task.guid)}">${escapeHtml(task.text)}</option>`).join('');
+                    taskSelect.disabled = !projectSelect.value || !available.length;
+                    link.disabled = !taskSelect.value;
+                };
+                const link = document.createElement('button'); link.type = 'button'; link.className = 'os-button os-review-priority-link'; link.textContent = 'Link task'; link.disabled = true;
+                const create = document.createElement('button'); create.type = 'button'; create.className = 'os-button os-review-priority-add'; create.textContent = 'Create task'; create.disabled = !projectSelect.value;
+                projectSelect.onchange = () => { priority.projectGuid = projectSelect.value; populateTasks(); create.disabled = !projectSelect.value; this.persistWorkflow(); };
+                taskSelect.onchange = () => { link.disabled = !taskSelect.value; };
+                populateTasks();
+                link.onclick = event => this.workflowAction(event.currentTarget, async () => {
+                    const task = await this.linkReviewPriorityTask(this.workflowData, week, priority, taskSelect.value);
+                    this.editingReviewPriorityId = null;
+                    this.ui.addToaster({ title: `Priority linked to ${task.projectName}`, autoDestroyTime: 3000, dismissible: true });
+                }, panel);
+                create.onclick = event => this.workflowAction(event.currentTarget, async () => {
+                    const result = await this.addReviewPriorityTask(this.workflowData, week, priority.text, projectSelect.value, priority);
+                    this.editingReviewPriorityId = null;
                     this.ui.addToaster({ title: result.existing ? 'Priority is already a project task' : 'Priority added to project tasks', autoDestroyTime: 3000, dismissible: true });
                 }, panel);
-                row.append(select, add);
+                controls.append(projectSelect, taskSelect, link, create);
+                row.appendChild(controls);
             }
             container.appendChild(row);
         });

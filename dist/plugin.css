@@ -59,6 +59,12 @@
 .os-workflow-message { padding: 12px; background: var(--os-surface); border: 1px solid var(--os-border); border-radius: 6px; margin-bottom: 14px !important; }
 .os-project-attention { display: flex; gap: 20px; justify-content: space-between; border-bottom: 1px solid var(--os-border); padding: 14px 0; }
 .os-project-checkin-copy { flex: 1 1 240px; min-width: 0; }
+.os-project-recovery { color: var(--os-warning, #d29922) !important; }
+.os-project-cues { margin-top: 6px; color: var(--os-muted); font-size: 12px; }
+.os-project-cues summary { cursor: pointer; padding: 2px 0; }
+.os-project-cue-list { display: grid; gap: 3px; margin-top: 5px; }
+.os-project-cue { min-width: 0; padding: 2px 0; border: 0; background: transparent; color: var(--os-accent); text-align: left; font: inherit; font-size: 12px; overflow-wrap: anywhere; cursor: pointer; }
+.os-project-cue:hover { text-decoration: underline; }
 .os-next-picker { display: flex; align-items: flex-start; gap: 6px; }
 .os-next-picker select { max-width: 340px; min-width: 0; padding: 7px; background: var(--os-surface); color: var(--os-text); border: 1px solid var(--os-border); border-radius: 6px; }
 .os-review-steps { margin-top: 16px; }
@@ -70,7 +76,9 @@
 .os-review-priority-list { display: grid; gap: 8px; }
 .os-review-priority-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding-top: 8px; border-top: 1px solid var(--os-border); }
 .os-review-priority-copy { flex: 1 1 220px; min-width: 0; overflow-wrap: anywhere; color: var(--os-text); }
-.os-review-priority-project { flex: 0 1 220px; min-width: 120px; width: auto; }
+.os-review-priority-controls { flex: 1 1 520px; min-width: 0; display: grid; grid-template-columns: minmax(120px, 1fr) minmax(150px, 1.3fr) auto auto; gap: 6px; }
+.os-review-priority-controls select { min-width: 0; width: 100%; }
+.os-review-priority-project { min-width: 0; width: auto; }
 .os-review-priority-linked { color: var(--os-muted); font-size: 12px; }
 .os-review-preview { white-space: pre-wrap; overflow-wrap: anywhere; font: inherit; font-size: 12px; color: var(--os-muted); max-height: 350px; overflow-y: auto; }
 .os-review-save-row, .os-review-footer { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
@@ -79,16 +87,19 @@
 .os-workflow-settings > p { max-width: 75ch; font-size: 13px; margin-top: 12px; }
 .os-settings-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; margin: 24px 0; max-width: 700px; }
 @container osApp (max-width: 720px) {
-  .os-project-attention { flex-direction: column; gap: 10px; }
+  .os-project-attention { flex-direction: column; gap: 6px; padding: 10px 0; }
   .os-project-checkin-copy { flex: 0 1 auto; }
-  .os-next-picker { flex-wrap: wrap; }
-  .os-next-picker select { flex: 1 1 100%; max-width: 100%; }
+  .os-next-picker { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: center; gap: 6px; }
+  .os-next-picker select { flex: none; grid-column: 1; width: 100%; max-width: 100%; }
+  .os-next-picker .os-button { white-space: nowrap; padding: 5px 7px; }
   .os-action-row { flex-wrap: wrap; }
   .os-action-buttons { margin-left: 25px; }
   .os-settings-fields { grid-template-columns: 1fr; }
   .os-review-priority-row { flex-wrap: wrap; }
   .os-review-priority-copy { flex-basis: 100%; }
-  .os-review-priority-project { flex: 1 1 160px; min-width: 0; max-width: 100%; }
+  .os-review-priority-controls { flex-basis: 100%; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+  .os-review-priority-controls .os-review-priority-link, .os-review-priority-controls .os-review-priority-add { justify-self: start; }
+  .os-review-priority-linked { flex: 1 1 100%; }
 }
 .os-capture-options { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-top: 6px; font-size: 11px; color: var(--os-muted); }
 .os-capture-project { min-width: 0; max-width: 200px; flex: 1 1 120px; background: var(--os-surface); color: var(--os-text); border: 1px solid var(--os-border); border-radius: 4px; padding: 3px 6px; font: inherit; }

@@ -324,6 +324,7 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
         { title: 'Project brief', lines: [text(brief || 'Describe the outcome this project should achieve.'), text('Scope and success criteria: add what is included and how you will know it is done.')] },
         { title: 'Next actions', lines: [{ type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] }] },
         { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('Link briefs, deliverables and working files here.')] },
+        { title: 'Client review checkpoints', lines: [text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'), { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }] },
         { title: 'Decisions & updates', lines: [text('Record decisions, client feedback and scope changes here.')] }
     ];
 }
@@ -833,7 +834,28 @@ export class Plugin extends AppPlugin {
 
     async initializeProject(record, options = {}) {
         const lines = await record.getLineItems(false);
-        if (lines.some(line => line.props?.freelance_os_template === 'project-v1')) return { applied: false, reason: 'already-applied' };
+        const hasTemplate = lines.some(line => line.props?.freelance_os_template === 'project-v1');
+        const checkpoint = projectTemplateSections().find(section => section.title === 'Client review checkpoints');
+        if (hasTemplate) {
+            if (lines.some(line => line.type === 'heading' && extractLineText(line) === checkpoint.title)) return { applied: false, reason: 'already-applied' };
+            const created = [];
+            try {
+                const previous = lines.filter(line => line.parent_guid === record.guid).at(-1) || null;
+                const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: checkpoint.title }], { hsize: 2, freelance_os_template: 'project-v1' });
+                if (!heading) throw new Error('The client review checkpoint section could not be saved');
+                created.push(heading);
+                let priorLine = null;
+                for (const item of checkpoint.lines) {
+                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, item.props || null);
+                    if (!line) throw new Error('The client review checkpoint section could not be saved');
+                    created.push(line); priorLine = line;
+                }
+                return { applied: true, reason: 'checkpoint-added' };
+            } catch (error) {
+                for (const line of created.reverse()) await line.delete();
+                throw error;
+            }
+        }
         const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
         const placeholders = content.filter(line => line.type === 'text' && /^Project workspace migrated from Obsidian\.?$/i.test(extractLineText(line)));
         if (content.length !== placeholders.length) return { applied: false, reason: 'has-content' };
@@ -841,17 +863,12 @@ export class Plugin extends AppPlugin {
         try {
             let previous = null;
             for (const section of projectTemplateSections(options)) {
-                if (previous) {
-                    const spacer = await record.createLineItem(null, previous, 'text', [], null);
-                    if (!spacer) throw new Error('The project template could not be saved');
-                    created.push(spacer); previous = spacer;
-                }
                 const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'project-v1' });
                 if (!heading) throw new Error('The project template could not be saved');
                 created.push(heading); previous = heading;
                 let priorLine = null;
                 for (const item of section.lines) {
-                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, null);
+                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, item.props || null);
                     if (!line) throw new Error('The project template could not be saved');
                     created.push(line); priorLine = line;
                 }
@@ -874,7 +891,7 @@ export class Plugin extends AppPlugin {
             if (!record || !records.some(item => item.guid === record.guid)) throw new Error('Open a project page before applying the template');
             const deliverables = records.filter(item => getParentGuid(item) === record.guid);
             const result = await this.initializeProject(record, { deliverables });
-            this.ui.addToaster({ title: result.applied ? 'Project template added' : result.reason === 'already-applied' ? 'This project already has the template' : 'This project already has content. Its notes were kept.', dismissible: true });
+            this.ui.addToaster({ title: result.applied ? result.reason === 'checkpoint-added' ? 'Client review checkpoints added' : 'Project template added' : result.reason === 'already-applied' ? 'This project already has the template' : 'This project already has content. Its notes were kept.', dismissible: true });
         } catch (error) { this.ui.addToaster({ title: error.message || 'Project template could not be added', dismissible: true }); }
     }
 

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../src/support-time.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const runtime = { AppPlugin: class {}, Date, Map, Set, console };
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, weeklyPriorityLines, reviewPriorityKey, filterActions, summarizeSupportTime });`, runtime);
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, weeklyPriorityLines, reviewPriorityKey, reviewPriorityIdKey, reconcileReviewPriorityItems, filterActions, summarizeSupportTime });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
 
@@ -28,8 +28,21 @@ test('queue excludes terminal projects, done and blocked tasks from action and f
     const state = api.workflowDefaults(); state.next.project = 'ready'; state.focus['2026-10-22'] = ['ready', 'wait', 'done'];
     const result = api.actionModel([project, { guid: 'closed', status: 'completed' }], [task('ready'), task('wait', { status: 'blocked' }), task('done', { status: 'done' }), task('old', { projectGuid: 'closed' })], state, '2026-10-22');
     assert.deepEqual(Array.from(result.focus, item => item.guid), ['ready']);
-    assert.equal(result.waiting.length, 1); assert.equal(result.actions.length, 1); assert.equal(result.attention.length, 0);
+    assert.equal(result.waiting.length, 1); assert.equal(result.actions.length, 1); assert.equal(result.attention.length, 1);
+    assert.ok(result.attention[0].issues.includes('1 waiting task'));
     assert.equal(api.actionModel([project], [task('ready')], state, '2026-10-23').focus.length, 0);
+});
+
+test('client review checkpoints surface overdue, due-soon and missing-date cues', () => {
+    const state = api.workflowDefaults();
+    const tasks = [
+        task('review-overdue', { clientReview: true, date: '2026-10-20' }),
+        task('review-soon', { clientReview: true, date: '2026-10-28' }),
+        task('review-undated', { clientReview: true })
+    ];
+    const result = api.actionModel([project], tasks, state, '2026-10-24');
+    assert.deepEqual(Array.from(result.attention[0].issues), ['Choose a next action', '1 client review overdue', '1 client review due in 7 days', '1 client review missing a date']);
+    assert.equal(result.attention[0].clientReviewTasks.length, 3);
 });
 
 test('workflow cleanup removes completed, waiting, missing and cross-project pointers', () => {
@@ -49,6 +62,16 @@ test('workflow cleanup refreshes the saved next-action label from the task', () 
     const model = api.actionModel([project], [task('ready', { text: 'Current task title' })], state, '2026-10-22');
     assert.equal(api.reconcileWorkflowPointers(state, model), true);
     assert.equal(state.nextLabels.project, 'Current task title');
+});
+
+test('a completed or removed next action leaves a clear recovery reason', () => {
+    const state = api.workflowDefaults(); state.next.project = 'done'; state.nextLabels.project = 'Finish the draft';
+    const model = api.actionModel([project], [], state, '2026-10-22');
+    api.reconcileWorkflowPointers(state, model, [task('done', { text: 'Finish the draft', status: 'done' })]);
+    assert.equal(state.nextRecovery.project.reason, 'completed'); assert.equal(state.nextRecovery.project.label, 'Finish the draft');
+    const removedState = api.workflowDefaults(); removedState.next.project = 'missing'; removedState.nextLabels.project = 'Deleted action';
+    api.reconcileWorkflowPointers(removedState, api.actionModel([project], [], removedState, '2026-10-22'), []);
+    assert.equal(removedState.nextRecovery.project.reason, 'removed'); assert.equal(removedState.nextRecovery.project.label, 'Deleted action');
 });
 
 test('incomplete workflow scans preserve pointers until task data is reliable', () => {
@@ -238,7 +261,8 @@ test('queue search combines project scope with task and project text', () => {
 test('waiting follow-ups due today raise a project attention signal', () => {
     const state = api.workflowDefaults(); state.waiting.wait = { followup: '2026-10-22' };
     const result = api.actionModel([project], [task('wait', { status: 'waiting' })], state, '2026-10-22');
-    assert.equal(result.attention[0].issues.includes('Follow-up due'), true);
+    assert.equal(result.attention[0].issues.includes('1 follow-up due'), true);
+    assert.equal(result.attention[0].waitingTasks.length, 1);
 });
 
 test('weekly review uses observed signals and preserves the written plan', () => {
@@ -250,6 +274,22 @@ test('weekly review uses observed signals and preserves the written plan', () =>
 test('weekly priorities split into non-empty lines and use stable case-insensitive keys', () => {
     assert.deepEqual(Array.from(api.weeklyPriorityLines('  Ship the draft\n\n  Ask for feedback  '), item => item.text), ['Ship the draft', 'Ask for feedback']);
     assert.equal(api.reviewPriorityKey('2026-10-19', ' Ship the draft '), api.reviewPriorityKey('2026-10-19', 'SHIP THE DRAFT'));
+});
+
+test('weekly priority identity survives wording edits and reordering', () => {
+    const draft = { priorities: 'Finish proposal\nRequest feedback' };
+    api.reconcileReviewPriorityItems(draft, draft.priorities);
+    draft.priorityItems[0].taskGuid = 'proposal-task';
+    draft.priorityItems[1].taskGuid = 'feedback-task';
+    const ids = Object.fromEntries(draft.priorityItems.map(item => [item.text, item.id]));
+    api.reconcileReviewPriorityItems(draft, 'Finish the proposal\nRequest feedback');
+    assert.equal(draft.priorityItems[0].id, ids['Finish proposal']);
+    assert.equal(draft.priorityItems[0].taskGuid, 'proposal-task');
+    api.reconcileReviewPriorityItems(draft, 'Request feedback\nFinish the proposal');
+    assert.equal(draft.priorityItems[0].id, ids['Request feedback']);
+    assert.equal(draft.priorityItems[0].taskGuid, 'feedback-task');
+    assert.equal(draft.priorityItems[1].id, ids['Finish proposal']);
+    assert.equal(draft.priorityItems[1].taskGuid, 'proposal-task');
 });
 
 test('weekly priority creates one native project task and retries do not duplicate it', async () => {
@@ -270,6 +310,18 @@ test('weekly priority creates one native project task and retries do not duplica
     assert.equal(created[0].type, 'task');
     assert.equal(created[0].segments[0].text, 'Ship the draft');
     assert.equal(created[0].props.freelance_os_review_priority, '2026-10-19|ship the draft');
+});
+
+test('weekly priority can link an existing native task and keeps its identity stable', async () => {
+    const plugin = new api.Plugin(); plugin.workflowState = api.workflowDefaults(); plugin.setLocalStorage = () => {};
+    const properties = {};
+    const existing = { guid: 'existing-task', text: 'Review the proposal', status: 'none', projectGuid: 'project', projectName: 'Example project', lineItem: { props: properties, setMetaProperties: async update => { Object.assign(properties, update); return true; } } };
+    const workflow = { projects: [{ guid: 'project', name: 'Example project', status: 'in_progress' }], tasks: [existing] };
+    const entry = { id: 'priority-1', text: 'Finish the proposal' };
+    const linked = await plugin.linkReviewPriorityTask(workflow, '2026-10-19', entry, existing.guid);
+    assert.equal(linked, existing);
+    assert.equal(entry.taskGuid, existing.guid);
+    assert.equal(properties.freelance_os_review_priority, api.reviewPriorityIdKey('2026-10-19', entry.id));
 });
 
 test('weekly priority refuses inactive or unknown projects before creating a task', async () => {
@@ -320,6 +372,33 @@ test('saved Journal priorities link to project tasks that came from the review',
     assert.ok(linked, 'converted priority is a native reference in Journal');
     assert.equal(linked.segments[0].text.title, 'Ship the draft');
     assert.ok(plain, 'unconverted priority remains readable text');
+});
+
+test('a linked priority keeps its task reference when edited and a saved review is reopened', async () => {
+    const plugin = new api.Plugin(); plugin.workflowState = api.workflowDefaults(); plugin.setLocalStorage = () => {};
+    const lines = []; let sequence = 0;
+    const record = { guid: 'journal-day', getLineItems: async () => lines, createLineItem: async (parent, after, type, segments) => {
+        const line = { guid: `journal-${++sequence}`, type, segments, parent, parent_guid: parent?.guid || 'journal-day', getChildren: async () => lines.filter(item => item.parent === line), setSegments: async value => { line.segments = value; return true; } };
+        lines.push(line); return line;
+    } };
+    const journal = { getGuid: () => 'journal', isJournalPlugin: () => true, getJournalRecord: async () => record };
+    plugin.data = { getAllCollections: async () => [journal], getActiveUsers: () => [{ guid: 'user' }], getRecord: () => record };
+    const week = api.reviewWeek('2098-10-20'); const id = 'priority-stable'; const properties = { freelance_os_review_priority: api.reviewPriorityIdKey(week, id) };
+    const taskLine = { guid: 'project-task', props: properties, setMetaProperties: async update => { Object.assign(properties, update); return true; } };
+    const workflow = { model: api.actionModel([], [], plugin.workflowState, '2098-10-20'), recentDone: [], tasks: [{ guid: 'project-task', text: 'Deliver approved draft', lineItem: taskLine, projectName: 'Example project' }] };
+    const draft = { notes: 'A clear outcome', priorities: 'Deliver first draft', priorityItems: [{ id, text: 'Deliver first draft', taskGuid: 'project-task' }] };
+    const first = await plugin.saveReviewToJournal(workflow, draft, '2098-10-20');
+    const reopened = JSON.parse(JSON.stringify(draft));
+    api.reconcileReviewPriorityItems(reopened, 'Send approved draft');
+    assert.equal(reopened.priorityItems[0].id, id);
+    assert.equal(reopened.priorityItems[0].taskGuid, 'project-task');
+    const second = await plugin.saveReviewToJournal(workflow, reopened, '2098-10-21');
+    const heading = lines.find(line => line.guid === second.headingGuid);
+    const body = lines.find(line => line.parent === heading);
+    const linked = lines.find(line => line.parent === body && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === 'project-task'));
+    assert.equal(first.headingGuid, second.headingGuid);
+    assert.equal(linked.segments[0].text.title, 'Send approved draft');
+    assert.equal(properties.freelance_os_review_priority, api.reviewPriorityIdKey(week, id));
 });
 
 test('virtual Journal pages are reopened on their original date when no ordinary record exists', async () => {
