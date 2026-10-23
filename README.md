@@ -4,6 +4,8 @@ A home for running a freelance business inside Thymer: clients, projects, cashfl
 
 ![Freelance OS overview with fictional clients, projects and invoices](docs/images/overview.png)
 
+![Monthly support-hour roll-up with fictional demo records](docs/images/support-time.png)
+
 All screenshots use a separate demo workspace with fictional content.
 
 **[Set up Freelance OS](docs/setup.md)** · **[Daily workflow and weekly review](docs/usage.md)** · **[Collection fields](docs/collections.md)**
