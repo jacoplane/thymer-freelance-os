@@ -35,6 +35,11 @@ export function demoData(today = new Date()) {
             ['DEMO-006 · Portal discovery','Cedarworks Co.',900,'sent','unpaid',date(-3),date(11)],
             ['DEMO-007 · Brand workshop','Paper Lantern Books',1600,'draft','unpaid',date(0),date(21)]
         ],
+        sessions: [
+            ['Northwind Studio · 1.5 h · navigation review','Northwind Studio','Website refresh',date(-2),1.5,'Reviewed mobile navigation and agreed the next prototype changes.'],
+            ['Maple & Moss · 0.75 h · checkout support','Maple & Moss','Online shop launch',date(0),0.75,'Checked checkout feedback and answered launch questions.'],
+            ['Orbit Coffee · 1 h · monthly health check','Orbit Coffee','Care plan · Q4',date(-5),1,'Reviewed updates and completed the monthly site health check.']
+        ],
         review: {notes:'Shipped the campaign landing page and signed off the storefront prototype. Keep a closer eye on external assets before promising launch dates.',priorities:'Launch the online shop. Finish the website navigation. Agree the member portal onboarding flow.'},
         waiting: {reason:'Client is selecting the final product images.',followup:date(0)},
         today:date(0)

@@ -9,6 +9,7 @@ Start in an empty workspace if you want to try the system before adapting your e
 | Freelance OS | The dashboard app plugin |
 | Clients, Projects, Invoices | Native collections with the starter fields |
 | Library | Care plan descriptions, reference material and templates |
+| Support Sessions | Optional time log for monthly support-hour totals |
 | Journal | Thymer’s native Journal collection, used for inbox capture and saved reviews |
 
 No third-party runtime plugins are required. Daily Focus, Tables and Outline Installer are independent plugins. **Plugins Manager** is optional and makes installing or updating the dashboard convenient.
@@ -39,10 +40,17 @@ For an **empty workspace** with [Plugins Manager](https://github.com/ahpatel/thy
 1. Download or open [`freelance-os-starter.json`](../dist/freelance-os-starter.json), use GitHub’s **Raw** view, and copy the complete JSON.
 2. Open Plugins Manager’s **Restore/Import** dialog. Choose the section that accepts apps and collections together, if your version offers that choice.
 3. Paste the JSON. Leave **Full Override (Delete existing)** unchecked.
-4. Import the five collections and Freelance OS. This file contains configuration and plugin code only; it contains no client records, tasks or personal settings.
+4. Import the six collections and Freelance OS. This file contains configuration and plugin code only; it contains no client records, tasks or personal settings.
 5. Open Freelance OS and check its Settings mappings.
 
 The starter follows the Plugins Manager schema version 2 backup format. Its `Journal` item uses Thymer’s built-in `JournalCorePlugin`; its other collections use `CollectionPlugin`. It is a fresh-workspace template, not a migration tool for collections with existing records. For an existing workspace, use the preview-first command or configure fields using the [reference](collections.md).
+
+To add support time tracking without rechecking or changing the other collection schemas, preview and apply only the Support Sessions setup:
+
+```sh
+node scripts/setup-support-sessions.mjs --workspace YOUR_WORKSPACE_GUID
+node scripts/setup-support-sessions.mjs --workspace YOUR_WORKSPACE_GUID --apply
+```
 
 ## Install only the dashboard
 
@@ -50,7 +58,7 @@ If the collections already exist with the required fields:
 
 1. In Plugins Manager, install from `https://github.com/jacoplane/thymer-freelance-os`.
 2. Open Freelance OS from the sidebar or **Open Freelance OS Dashboard** in the command palette.
-3. Open its **Settings** tab and map the five collection roles. Journal must be a native Journal collection; an ordinary collection merely named “Journal” will not work.
+3. Open its **Settings** tab and map the collection roles. Journal must be a native Journal collection; an ordinary collection merely named “Journal” will not work. Support Sessions can be left unmapped if you do not want time tracking.
 4. Save mappings. **Overview** remains the landing view after the plugin starts.
 
 For manual installation, create a **Global Plugin** in Thymer’s plugin settings. Use [`plugin.json`](../plugin.json) for Configuration and [`dist/plugin.js`](../dist/plugin.js) for Custom Code, then save. The bundle embeds its styles; [`dist/plugin.css`](../dist/plugin.css) is also supplied for installations that store CSS separately.

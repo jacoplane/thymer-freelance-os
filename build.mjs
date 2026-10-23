@@ -13,7 +13,7 @@ if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
 
-const jsSrc = fs.readFileSync(path.join(srcDir, 'workflow.js'), 'utf-8') + '\n' + fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8') + '\nObject.assign(Plugin.prototype, Workflow);\n';
+const jsSrc = fs.readFileSync(path.join(srcDir, 'support-time.js'), 'utf-8') + '\n' + fs.readFileSync(path.join(srcDir, 'workflow.js'), 'utf-8') + '\n' + fs.readFileSync(path.join(srcDir, 'index.js'), 'utf-8') + '\nObject.assign(Plugin.prototype, Workflow);\n';
 const cssSrc = fs.readFileSync(path.join(srcDir, 'styles.css'), 'utf-8');
 const pluginJson = fs.readFileSync(path.join(__dirname, 'plugin.json'), 'utf-8');
 
@@ -49,7 +49,10 @@ fs.writeFileSync(path.join(distDir, 'freelance-os-backup.json'), JSON.stringify(
 // A schema-only starter import for Plugins Manager. Includes no records, workspace IDs or local state.
 const starterItems = STARTER_ROLES.map(role => {
     const json = { ...starterConfig(role), type: 'collection' };
-    for (const field of json.fields) if (field.label === 'client') { field.filter_colname = 'Clients'; field.filter_colguid = 'starter-clients'; }
+    for (const field of json.fields) {
+        if (field.label === 'client') { field.filter_colname = 'Clients'; field.filter_colguid = 'starter-clients'; }
+        if (field.label === 'project') { field.filter_colname = 'Projects'; field.filter_colguid = 'starter-projects'; }
+    }
     return { name: role, type: 'collection', json, code: role === 'Journal' ? 'class Plugin extends JournalCorePlugin {}' : 'class Plugin extends CollectionPlugin {}', css: '' };
 });
 starterItems.push({ name: parsedConfig.name, type: 'app', json: parsedConfig, code: bundleJs, css: cssSrc });

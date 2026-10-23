@@ -5,12 +5,13 @@
 
 const DASHBOARD_PANEL_ID = 'freelance-os-dashboard';
 
-const COLLECTION_ROLES = ['Projects', 'Clients', 'Invoices', 'Library', 'Journal'];
+const COLLECTION_ROLES = ['Projects', 'Clients', 'Invoices', 'Library', 'Journal', 'Support Sessions'];
 
 const COLLECTION_VIEWS = {
     Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
     Projects: { all: 'Register', board: 'Board', in_progress: 'Active', overdue: 'Overdue', deadlines: 'Due dates' },
-    Clients: { all: 'Directory', active: 'Active', prospects: 'Prospects', 'care-plans': 'Care plans' }
+    Clients: { all: 'Directory', active: 'Active', prospects: 'Prospects', 'care-plans': 'Care plans' },
+    'Support Sessions': { all: 'Register' }
 };
 
 function collectionViewId(guid, config, key = 'all', role) {
@@ -560,7 +561,8 @@ export class Plugin extends AppPlugin {
             projects: [],
             clients: [],
             invoices: [],
-            agendaTasks: []
+            agendaTasks: [],
+            supportTime: null
         };
 
         try {
@@ -610,7 +612,8 @@ export class Plugin extends AppPlugin {
                     name,
                     status,
                     mrr: mrrVal,
-                    plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} CHF/mo` : 'Active')
+                    plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} CHF/mo` : 'Active'),
+                    includedHours: Math.max(0, Number(getProp(cr, 'included_hours')) || 0)
                 });
             }
 
@@ -744,6 +747,16 @@ export class Plugin extends AppPlugin {
             });
 
             data.projects = parentList;
+
+            const supportGuid = this.collectionGuid('Support Sessions', collections);
+            if (supportGuid) {
+                try {
+                    const sessions = await readCollection(supportGuid);
+                    data.supportTime = summarizeSupportTime(clientList, sessions);
+                } catch (error) {
+                    console.warn('[FreelanceOS] Support sessions could not be loaded:', error);
+                }
+            }
 
             // 4. Fetch Tasks
             const taskRes = await this.data.searchByQuery('@task @todo', 150);
@@ -880,6 +893,18 @@ export class Plugin extends AppPlugin {
             const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
             if (!clients || !(await clients.getAllRecords()).some(item => item.guid === values.client && !isTemplateRecord(item))) throw new Error('Choose a client from your Clients collection');
         }
+        if (role === 'Support Sessions') {
+            if (!values.client) throw new Error('Choose a client for this support session');
+            const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
+            const clientRecord = clients && (await clients.getAllRecords()).find(item => item.guid === values.client && !isTemplateRecord(item));
+            if (!clientRecord) throw new Error('Choose a client from your Clients collection');
+            if (values.project) {
+                const projects = collections.find(item => item.getGuid() === this.collectionGuid('Projects', collections));
+                const projectRecord = projects && (await projects.getAllRecords()).find(item => item.guid === values.project && !isTemplateRecord(item));
+                if (!projectRecord || (getClientGuid(projectRecord) && getClientGuid(projectRecord) !== values.client)) throw new Error('Choose a project linked to this client');
+            }
+            if (!(Number(values.hours) > 0) || !/^\d{4}-\d{2}-\d{2}$/.test(values.date || '') || !values.description?.trim()) throw new Error('Enter a date, a positive number of hours, and a short description');
+        }
         const guid = collection.createRecord(title);
         if (!guid) throw new Error('The page could not be created');
         let record;
@@ -902,6 +927,62 @@ export class Plugin extends AppPlugin {
             if (role === 'Projects') await this.initializeProject(record, options);
         } catch (error) { record.trash(); throw error; }
         return record;
+    }
+
+    showCreateSupportSessionModal(panel, data) {
+        if (!this.collectionGuid('Support Sessions')) {
+            this.ui.addToaster({ title: 'Add the Support Sessions collection with the starter setup to enable time tracking', dismissible: true });
+            return;
+        }
+        const clients = data.clients.filter(client => client.status !== 'archived' && client.status !== 'cancelled');
+        const modal = document.createElement('div'); modal.className = 'os-modal-backdrop';
+        modal.innerHTML = `
+            <div class="os-modal-card" role="dialog" aria-modal="true" aria-labelledby="os-support-dialog-title">
+                <div class="os-modal-header"><h3 id="os-support-dialog-title">Log support time</h3><button class="os-modal-close" type="button" aria-label="Close support time form">✕</button></div>
+                <div class="os-modal-body">
+                    <div class="os-form-group"><label for="os-support-client">Client *</label><select id="os-support-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}">${escapeHtml(client.name)}</option>`).join('')}</select></div>
+                    <div class="os-form-group"><label for="os-support-project">Project (optional)</label><select id="os-support-project" class="os-select input-project"><option value="">No project linked</option></select></div>
+                    <div class="os-form-pair">
+                        <div class="os-form-group"><label for="os-support-date">Date *</label><input id="os-support-date" type="date" class="os-input input-date" value="${localDate()}" required /></div>
+                        <div class="os-form-group"><label for="os-support-hours">Hours *</label><input id="os-support-hours" type="number" class="os-input input-hours" min="0.25" step="0.25" placeholder="1.5" required /></div>
+                    </div>
+                    <div class="os-form-group"><label for="os-support-description">What did you work on? *</label><textarea id="os-support-description" class="os-input input-description" rows="3" placeholder="e.g. Reviewed the mobile layout and agreed next changes" required></textarea></div>
+                    <p class="os-form-hint">The dashboard includes this session in the selected month’s support total.</p>
+                </div>
+                <div class="os-modal-footer"><button class="os-button btn-cancel" type="button">Cancel</button><button class="os-button os-primary btn-submit" type="button">Save session</button></div>
+            </div>`;
+        const priorFocus = document.activeElement;
+        const close = () => { modal.remove(); priorFocus?.focus(); };
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); close(); }
+            if (event.key === 'Tab') {
+                const controls = [...modal.querySelectorAll('button:not(:disabled), input, select, textarea')];
+                if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1).focus(); }
+                else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
+            }
+        });
+        modal.querySelector('.os-modal-close').onclick = close; modal.querySelector('.btn-cancel').onclick = close;
+        modal.addEventListener('click', event => { if (event.target === modal) close(); });
+        const clientSelect = modal.querySelector('.input-client'); const projectSelect = modal.querySelector('.input-project');
+        const refreshProjects = () => {
+            const selectedClient = clientSelect.value;
+            projectSelect.innerHTML = '<option value="">No project linked</option>' + data.projects.filter(project => !project.clientGuid || project.clientGuid === selectedClient).map(project => `<option value="${project.guid}">${escapeHtml(project.name)}</option>`).join('');
+        };
+        clientSelect.onchange = refreshProjects;
+        modal.querySelector('.btn-submit').onclick = async () => {
+            const client = clientSelect.value, project = projectSelect.value, date = modal.querySelector('.input-date').value;
+            const hours = Number(modal.querySelector('.input-hours').value), description = modal.querySelector('.input-description').value.trim();
+            if (!client || !date || !(hours > 0) || !description) { this.ui.addToaster({ title: 'Choose a client and enter a date, positive hours, and description', dismissible: true }); return; }
+            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
+            const clientName = clients.find(item => item.guid === client)?.name || 'Client';
+            const title = `${clientName} · ${hours} h · ${description}`;
+            try {
+                await this.createConfiguredRecord('Support Sessions', title, { client, project, date, hours, description });
+                this.ui.addToaster({ title: 'Support session saved', autoDestroyTime: 2500, dismissible: true });
+                close(); this.scheduleRefresh();
+            } catch (error) { submit.disabled = false; this.ui.addToaster({ title: error.message || 'Support session could not be saved', dismissible: true }); }
+        };
+        document.body.appendChild(modal); refreshProjects(); clientSelect.focus();
     }
 
     showCreateProjectModal(panel, data) {
@@ -1384,6 +1465,31 @@ export class Plugin extends AppPlugin {
             app.appendChild(cashflow);
         }
 
+        if (!data.loadError) {
+            const support = document.createElement('section');
+            support.className = 'os-support-time';
+            if (data.supportTime) {
+                const report = data.supportTime;
+                const monthLabel = new Date(`${report.month}-01T12:00:00`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' });
+                const used = report.hours.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+                const included = report.allowance.toFixed(2).replace(/\.00$/, '').replace(/(\.\d)0$/, '$1');
+                const percent = report.allowance > 0 ? Math.min(100, Math.round(report.hours / report.allowance * 100)) : 0;
+                support.innerHTML = `
+                    <div class="os-support-copy">
+                        <div class="os-cash-heading"><h2>Support time</h2><span>${escapeHtml(monthLabel)}</span></div>
+                        <strong class="os-support-total">${used} <small>h logged</small><span>/</span>${included} <small>h included</small></strong>
+                        <progress max="100" value="${percent}" aria-label="Included support hours used"></progress>
+                        <div class="os-cash-note">${report.clients.length ? `${report.clients.length} active client${report.clients.length === 1 ? '' : 's'} with included monthly hours` : 'Set included_hours on active clients to track plan allowances'} · ${report.sessions.length} session${report.sessions.length === 1 ? '' : 's'} this month${report.hours > report.allowance && report.allowance > 0 ? ' · allowance exceeded' : ''}</div>
+                    </div>
+                    <div class="os-support-actions"><button class="os-button os-primary btn-log-support" type="button">+ Log support time</button><button class="os-button btn-support-register" type="button">Open register ↗</button></div>`;
+                support.querySelector('.btn-log-support').onclick = () => this.showCreateSupportSessionModal(panel, data);
+                support.querySelector('.btn-support-register').onclick = () => this.openCollection(this.collectionGuid('Support Sessions'), panel);
+            } else {
+                support.innerHTML = `<div><div class="os-cash-heading"><h2>Support time</h2><span>Optional</span></div><p class="os-cash-note">Add the Support Sessions collection using the starter setup to log client hours and see monthly totals here.</p></div>`;
+            }
+            app.appendChild(support);
+        }
+
         // 3. Main Grid (3 columns)
         const grid = document.createElement('div');
         grid.className = 'os-grid';
@@ -1406,12 +1512,16 @@ export class Plugin extends AppPlugin {
                 <button class="os-button btn-new-invoice" type="button">
                     <span>+ New invoice</span>
                 </button>
+                <button class="os-button btn-log-support" type="button">
+                    <span>+ Log support time</span>
+                </button>
             </div>
             <nav class="os-navigation">
                 <a class="os-nav-link nav-projects">📁 All Projects</a>
                 <a class="os-nav-link nav-clients">👥 All Clients</a>
                 <a class="os-nav-link nav-invoices">🧾 All Invoices</a>
                 <a class="os-nav-link nav-library">📚 Care Plans</a>
+                <a class="os-nav-link nav-support">⏱ Support Sessions</a>
             </nav>
         `;
 
@@ -1419,11 +1529,13 @@ export class Plugin extends AppPlugin {
         rail.querySelector('.btn-new-project').addEventListener('click', () => this.showCreateProjectModal(panel, data));
         rail.querySelector('.btn-new-client').addEventListener('click', () => this.showCreateClientModal(panel));
         rail.querySelector('.btn-new-invoice').addEventListener('click', () => this.showCreateInvoiceModal(panel, data));
+        rail.querySelector('.btn-log-support').addEventListener('click', () => this.showCreateSupportSessionModal(panel, data));
 
         rail.querySelector('.nav-projects').addEventListener('click', () => this.openCollection(this.collectionGuid('Projects'), panel));
         rail.querySelector('.nav-clients').addEventListener('click', () => this.openCollection(this.collectionGuid('Clients'), panel));
         rail.querySelector('.nav-invoices').addEventListener('click', () => this.openCollection(this.collectionGuid('Invoices'), panel));
         rail.querySelector('.nav-library').addEventListener('click', () => this.openCollection(this.collectionGuid('Library'), panel));
+        rail.querySelector('.nav-support').addEventListener('click', () => this.openCollection(this.collectionGuid('Support Sessions'), panel));
 
         grid.appendChild(rail);
 

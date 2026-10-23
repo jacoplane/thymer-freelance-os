@@ -56,6 +56,18 @@ Library contains service descriptions and reference material. The starter adds `
 
 Journal must use Thymer’s native `JournalCorePlugin`, not a plain collection named Journal. The starter creates it when absent. No custom Journal fields are required. Daily capture and saved weekly reviews use native Journal pages.
 
+## Support Sessions
+
+This optional register records support work by date. The overview totals only sessions dated in the current month and compares them with the sum of `included_hours` on active clients. Existing records are not backfilled, and the dashboard does not infer hours from notes or invoices.
+
+| Field label | Type | Values or meaning |
+| --- | --- | --- |
+| `client` | Record link | Required client |
+| `project` | Record link | Optional project; the form filters projects by the selected client |
+| `date` | Date/time | Session date used for monthly totals |
+| `hours` | Number | Positive time amount; decimal hours are supported |
+| `description` | Text | Short description of work |
+
 ## Existing collections
 
 The setup script adds missing fields and keeps existing IDs. It stops when a required label has an incompatible type, or a choice field lacks a required value. It does not replace such fields automatically. Export a backup before changing an existing schema, resolve the mismatch, and rerun the preview.

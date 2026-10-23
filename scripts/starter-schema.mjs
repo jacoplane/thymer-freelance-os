@@ -18,7 +18,10 @@ const definitions = {
     Library: { icon: 'ti-books', description: 'Care plan descriptions, reference notes and templates', fields: {
         type: ['choice', ['note', 'care-plan', 'template']], status: ['text'], source: ['url']
     } },
-    Journal: { icon: 'ti-notebook', description: 'Daily inbox and weekly reviews', fields: {} }
+    Journal: { icon: 'ti-notebook', description: 'Daily inbox and weekly reviews', fields: {} },
+    'Support Sessions': { icon: 'ti-clock-hour-4', description: 'Client support time log', fields: {
+        client: ['record'], project: ['record'], date: ['datetime'], hours: ['number'], description: ['text']
+    } }
 };
 export const STARTER_ROLES = Object.keys(definitions);
 const idFor = (prefix, key) => prefix + createHash('sha256').update(`freelance-os:${key}`).digest('hex').slice(0, 14).toUpperCase();
@@ -38,11 +41,13 @@ export function starterConfig(role, current = {}, links = {}) {
             if (existing.type !== type) throw new Error(`${role}.${label} must be ${type}; found ${existing.type}. No existing field was replaced.`);
             if (choices?.some(choice => !existing.choices?.some(value => value.label === choice && value.active !== false))) throw new Error(`${role}.${label} is missing required choice labels. Add ${choices.join(', ')} before running setup.`);
             if (label === 'client' && links.Clients) existing.filter_colguid = links.Clients;
+            if (label === 'project' && links.Projects) existing.filter_colguid = links.Projects;
             continue;
         }
         const field = { id: idFor('f', `${role}.${label}`), label, type, active: true, many: false, read_only: false };
         if (choices) field.choices = choices.map((choice, index) => ({id: idFor('c', `${role}.${label}.${choice}`), label: choice, color: ['gray','blue','green','orange','purple','red'][index % 6], icon: '', active: true}));
         if (label === 'client' && links.Clients) field.filter_colguid = links.Clients;
+        if (label === 'project' && links.Projects) field.filter_colguid = links.Projects;
         config.fields.push(field);
     }
     if (!config.views.length) config.views.push({id:'list',label:'List',type:'list',shown:true,read_only:false,field_ids:['title'],sort_field_id:'title',sort_dir:'asc'});

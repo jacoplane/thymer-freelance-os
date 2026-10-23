@@ -12,7 +12,7 @@ const target=(await call('list_workspaces',{})).workspaces.find(item=>item.guid=
 if(!target||target.mcp_access!=='readwrite') throw new Error('The target workspace needs read/write MCP access.');
 const collections=(await call('list_collections',{workspace})).collections;
 const links={};
-for(const role of ['Clients','Projects','Invoices','Library','Journal']){
+for(const role of ['Clients','Projects','Invoices','Library','Journal','Support Sessions']){
     const collection=collections.find(item=>item.name===role);
     if(!collection)throw new Error(`Missing ${role}; run setup-workspace.mjs first.`);
     links[role]=collection.guid;
@@ -22,7 +22,7 @@ for(const role of ['Clients','Projects','Invoices','Library','Journal']){
 const demo=demoData();
 console.log(`Target: ${target.name} (${workspace}). Fictional demo: ${demo.clients.length} clients, ${demo.projects.length} projects, ${demo.invoices.length} invoices.`);
 if(!args.includes('--apply')){console.log('No changes made. Add --apply to seed this empty workspace.');process.exit(0);}
-const manifest={workspace,collections:links,clients:{},projects:{},tasks:[],invoices:[],date:demo.today,review:demo.review,waiting:demo.waiting};
+const manifest={workspace,collections:links,clients:{},projects:{},tasks:[],invoices:[],sessions:[],date:demo.today,review:demo.review,waiting:demo.waiting};
 const directory=process.env.OS_DEMO_STATE_DIR||path.join(os.tmpdir(),'freelance-os-demo');
 await fs.mkdir(directory,{recursive:true});
 const manifestPath=path.join(directory,`${workspace}.json`);
@@ -35,7 +35,8 @@ async function create(collection,title,properties){
     return guid;
 }
 for(const [title,status,plan,monthly_chf,billing_cycle,contact]of demo.clients){
-    manifest.clients[title]=await create('Clients',title,{status,plan,monthly_chf,billing_cycle,contact,included_hours:monthly_chf?2:0});await save();
+    const included_hours=['Studio care','Commerce care'].includes(plan)?2:0;
+    manifest.clients[title]=await create('Clients',title,{status,plan,monthly_chf,billing_cycle,contact,included_hours});await save();
 }
 for(const project of demo.projects){
     const guid=manifest.projects[project.title]=await create('Projects',project.title,{client:manifest.clients[project.client],status:project.status,priority:project.priority,deadline:project.deadline});await save();
@@ -50,6 +51,9 @@ for(const project of demo.projects){
 }
 for(const [title,client,amount_chf,status,payment_status,issued,due]of demo.invoices){
     manifest.invoices.push(await create('Invoices',title,{invoice_id:title.split(' · ')[0],client:manifest.clients[client],amount_chf,currency:'CHF',status,payment_status,issued,due,...(payment_status==='paid'?{paid_date:demo.today}:{})}));await save();
+}
+for(const [title,client,project,date,hours,description] of demo.sessions){
+    manifest.sessions.push(await create('Support Sessions',title,{client:manifest.clients[client],project:manifest.projects[project],date,hours,description}));await save();
 }
 const note=await create('Library','Care plans · Service guide',{type:'care-plan',status:'active'});
 await call('insert_markdown',{workspace,record:note,markdown:'# Care plans\nFictional service menu for the demo workspace.\n\n- Essential: updates, backups and a monthly health check.\n- Studio: essential care plus small website improvements.\n- Commerce: storefront monitoring and checkout checks.'});

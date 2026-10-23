@@ -25,6 +25,9 @@ export const VIEW_PLANS = {
         { key: 'active', label: 'Active', columns: clientColumns, query: '@Clients.status = "active"', sort: 'title' },
         { key: 'prospects', label: 'Prospects', columns: clientColumns, query: '@Clients.status = "prospect"', sort: 'title' },
         { key: 'care-plans', label: 'Care plans', columns: ['title', 'monthly_chf', 'plan', 'billing_cycle', 'included_hours'], query: '@Clients.status = "active" @Clients.monthly_chf > 0', sort: 'monthly_chf', direction: 'desc' }
+    ],
+    'Support Sessions': [
+        { key: 'register', label: 'Register', columns: ['title', 'date', 'client', 'project', 'hours', 'description'], query: '', sort: 'date', direction: 'desc', icon: 'ti-table' }
     ]
 };
 

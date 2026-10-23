@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { starterConfig, STARTER_ROLES } from '../scripts/starter-schema.mjs';
 
 test('starter schemas are independent of workspace IDs and every view column resolves', () => {
@@ -30,4 +31,18 @@ test('existing client fields are restricted to the configured Clients collection
     const next=starterConfig('Projects',current,{Clients:'clients'});
     assert.equal(next.fields.find(field=>field.label==='client').filter_colguid,'clients');
     assert.equal(current.fields.find(field=>field.label==='client').filter_colguid,'unrelated-collection');
+});
+
+test('support session links are restricted to Clients and Projects and the register exposes logged fields',()=>{
+    const config=starterConfig('Support Sessions',undefined,{Clients:'clients',Projects:'projects'});
+    assert.equal(config.fields.find(field=>field.label==='client').filter_colguid,'clients');
+    assert.equal(config.fields.find(field=>field.label==='project').filter_colguid,'projects');
+    assert.deepEqual(config.views[0].field_ids,['title',...['date','client','project','hours','description'].map(label=>config.fields.find(field=>field.label===label).id)]);
+});
+
+test('Plugins Manager starter import keeps support client and project links targeted by collection name',()=>{
+    const starter=JSON.parse(fs.readFileSync(new URL('../dist/freelance-os-starter.json',import.meta.url),'utf8'));
+    const sessions=starter.items.find(item=>item.name==='Support Sessions');
+    assert.equal(sessions.json.fields.find(field=>field.label==='client').filter_colname,'Clients');
+    assert.equal(sessions.json.fields.find(field=>field.label==='project').filter_colname,'Projects');
 });

@@ -2,11 +2,20 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source = fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
+const source = fs.readFileSync(new URL('../src/support-time.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const runtime = { AppPlugin: class {}, Date, Map, Set, console };
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions });`, runtime);
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, filterActions, summarizeSupportTime });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
+
+test('support time totals only valid sessions in the current month and compares active client allowances', () => {
+    const now = new Date('2026-10-23T12:00:00');
+    const clients = [{guid:'AAAAAAAAAAAAAAAAAAAAAAAAAA',name:'Studio',status:'active',includedHours:2},{guid:'BBBBBBBBBBBBBBBBBBBBBBBBBB',name:'Archive',status:'archived',includedHours:5}];
+    const record = (name,date,hours,client) => ({guid:name,name,getName:()=>name,prop:key=>key==='date'?{date:()=>date}:key==='hours'?{number:()=>hours}:key==='description'?{text:()=>''}:null,linkedRecord:key=>key==='client'?{guid:client}:null});
+    const summary = api.summarizeSupportTime(clients,[record('Current','2026-10-20',1.5,'AAAAAAAAAAAAAAAAAAAAAAAAAA'),record('Earlier','2026-09-30',2,'AAAAAAAAAAAAAAAAAAAAAAAAAA'),record('Other','2026-10-21',0,'AAAAAAAAAAAAAAAAAAAAAAAAAA')],now);
+    assert.equal(summary.hours,1.5); assert.equal(summary.allowance,2); assert.equal(summary.sessions.length,1);
+    assert.equal(summary.clients[0].logged,1.5); assert.equal(summary.month,'2026-10');
+});
 
 test('nested pages resolve to their project and cycles do not loop', () => {
     const map = new Map([['project', project], ['child', { parentGuid: 'project' }], ['grandchild', { parentGuid: 'child' }]]);

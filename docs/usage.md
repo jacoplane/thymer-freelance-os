@@ -24,6 +24,8 @@ For a project created from the collection itself, open the page and run **Apply 
 
 The starter schema restricts project and invoice Client pickers to the Clients collection. After changing collection mappings, check this picker restriction in your native collection settings as well. Unlinked internal projects are valid; the dashboard shows **Internal / no client linked**. Template records belong in Library rather than the Clients or Projects registers.
 
+Log support work from Overview with **Log support time**. Choose a client, optionally link one of that client’s projects, then enter the date, decimal hours and a short description. The month total counts sessions by their date and compares them with active clients’ `included_hours` values. Set that field to the monthly allowance for each care plan; the dashboard never guesses historical hours.
+
 ![An editable project brief and first action in the fictional demo workspace](images/project-template.png)
 
 ## Today: move projects forward

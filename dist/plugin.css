@@ -160,11 +160,21 @@
 .os-cash-action strong { font-size: 16px; font-weight: 600; }
 .os-cash-action small { font-size: 11px; color: var(--os-muted); overflow-wrap: anywhere; }
 .os-cash-warning, .os-cash-warning > span { color: #fb923c; }
+.os-support-time { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 20px; align-items: center; padding: 14px 16px; margin: -3px 0 20px; border: 1px solid var(--os-border); border-radius: 8px; background: var(--os-surface); }
+.os-support-total { display: flex; align-items: baseline; gap: 7px; margin-top: 7px; font-size: 21px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.os-support-total small { font-size: 12px; font-weight: 500; color: var(--os-muted); }
+.os-support-total > span { color: var(--os-muted); font-weight: 400; }
+.os-support-time progress { display: block; width: 100%; height: 6px; margin: 8px 0 5px; border: 0; border-radius: 3px; overflow: hidden; accent-color: var(--os-accent); }
+.os-support-time progress::-webkit-progress-bar { background: var(--os-surface-hover); }
+.os-support-time progress::-webkit-progress-value { background: var(--os-accent); }
+.os-support-actions { display: flex; flex-direction: column; align-items: stretch; gap: 7px; min-width: 160px; }
+.os-support-actions .os-button { justify-content: center; }
 .os-badge.status-unconfirmed { background: rgba(249, 115, 22, .15); color: #fb923c; }
 .os-data-error { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; padding: 12px 0; color: var(--os-text); }
 .os-cashflow button:focus-visible, .os-app button:focus-visible, .os-app a:focus-visible { outline: 2px solid var(--os-accent); outline-offset: 3px; }
 @container osApp (max-width: 1120px) { .os-cashflow { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; } }
 @container osApp (max-width: 480px) { .os-cashflow { grid-template-columns: 1fr; gap: 8px; } }
+@container osApp (max-width: 580px) { .os-support-time { grid-template-columns: 1fr; gap: 12px; } .os-support-actions { flex-direction: row; flex-wrap: wrap; min-width: 0; } }
 
 .os-grid { display: grid; grid-template-columns: 170px minmax(0, 1.3fr) minmax(280px, 1fr); gap: var(--os-gap); align-items: start; }
 

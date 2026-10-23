@@ -15,6 +15,7 @@ All screenshots use a separate demo workspace with fictional content.
 - **Move each project forward.** Choose one next action per active project. See missing next actions, approaching deadlines, overdue tasks and waiting dependencies.
 - **Pick today’s focus.** Pin up to three project tasks. Search and filter the action queue, complete work, reschedule tasks, or record a waiting reason and follow-up date.
 - **Close the week.** Clear overdue work, check projects and dependencies, write your wins and next priorities, then save the review into Journal.
+- **Track included support time.** Log dated sessions against a client and optional project; the overview totals this month against active clients’ `included_hours` allowances.
 - **Stay in Thymer.** Capture native tasks into a project or today’s Journal. Collection links open native working views alongside the dashboard. Layouts adapt to the available panel width.
 
 ![Today’s focus and project action queue](docs/images/today.png)
@@ -23,7 +24,7 @@ All screenshots use a separate demo workspace with fictional content.
 
 ## Install
 
-Freelance OS has **no required third-party plugin dependencies**. It uses Clients, Projects, Invoices and Library collections, plus Thymer’s native Journal. The starter setup creates these for you. Daily Focus, Tables and Outline Installer are not required. Plugins Manager is an optional installer.
+Freelance OS has **no required third-party plugin dependencies**. It uses Clients, Projects, Invoices, Library and Support Sessions collections, plus Thymer’s native Journal. The starter setup creates these for you. Daily Focus, Tables and Outline Installer are not required. Plugins Manager is an optional installer.
 
 For a fresh workspace, follow the [setup guide](docs/setup.md). It includes a preview-first setup command and an optional [starter import](dist/freelance-os-starter.json) for Plugins Manager.
 
@@ -46,6 +47,7 @@ The [usage guide](docs/usage.md) explains capture, waiting work, payment states,
 ## Current scope
 
 - Financial totals use **CHF**. Other currencies are excluded from CHF totals and are not converted. The dashboard does not generate or send invoices, QR bills, or payment reminders.
+- Support time is an optional workflow. `included_hours` is a monthly allowance reference; enter sessions in the Support Sessions collection for automatic month totals. No historical hours are inferred.
 - Focus pins, next-action choices, waiting notes, mappings and review drafts are **local to this device and workspace**. Native tasks, dates, statuses, collection records and saved Journal reviews sync through Thymer.
 - “Done recently” means tasks currently marked done whose last modification was within seven days. It is not an exact completion history.
 - Active project workflows require `in_progress` or `in_review` status. Field labels and choice values currently follow the provided starter schema.
