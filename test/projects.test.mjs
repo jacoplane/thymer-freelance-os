@@ -24,6 +24,11 @@ test('new projects have an editable brief, a real action and native deliverable 
     const reviewSection=state.lines.find(l=>l.type==='heading'&&l.segments?.[0]?.text==='Client review checkpoints');
     assert.ok(reviewSection,'new projects include a client review checkpoint section');
     assert.ok(state.lines.some(l=>l.parent_guid===reviewSection.guid&&l.type==='task'&&l.segments.length===0&&l.props?.freelance_os_review_checkpoint==='checkpoint-v1'),'checkpoint starts as a marked blank native task, without adding queue noise');
+    assert.ok(state.lines.some(l=>l.type==='linkbtn'&&l.segments?.[0]?.text==='+ Add task'),'includes + Add task button');
+    assert.ok(state.lines.some(l=>l.type==='linkbtn'&&l.segments?.[0]?.text==='+ Log time'),'includes + Log time button');
+    assert.ok(state.lines.some(l=>l.type==='heading'&&l.segments?.[0]?.text==='💳 Billing & Invoices'),'includes Billing & Invoices section');
+    assert.ok(state.lines.some(l=>l.type==='linkbtn'&&l.segments?.[0]?.text==='+ Create invoice'),'includes + Create invoice button');
+    assert.ok(state.lines.some(l=>l.type==='linkbtn'&&l.segments?.[0]?.text==='+ Add review checkpoint'),'includes + Add review checkpoint button');
     assert.equal(state.lines.some(l=>l.parent_guid===state.record.guid&&l.type==='text'&&!l.segments?.length),false,'template sections do not insert blank spacer lines');
     assert.equal((await plugin.initializeProject(state.record)).applied,false);
     assert.equal(state.lines.filter(l=>l.type==='task').length,2);

@@ -343,15 +343,70 @@ function projectStatusLabel(status) {
     return ({ in_progress: 'In Progress', in_review: 'In Review', backlog: 'Backlog', completed: 'Completed', archived: 'Archived', cancelled: 'Cancelled' })[status] || 'No status';
 }
 
-function projectTemplateSections({ brief = '', firstAction = '', deliverables = [] } = {}) {
+function projectTemplateSections({ brief = '', firstAction = '', deliverables = [], repoUrl = '', figmaUrl = '', liveUrl = '' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const ulist = value => ({ type: 'ulist', segments: [{ type: 'text', text: value }] });
+    const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
+
     return [
-        { title: 'Project brief', lines: [text(brief || 'Describe the outcome this project should achieve.'), text('Scope and success criteria: add what is included and how you will know it is done.')] },
-        { title: 'Next actions', lines: [{ type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] }] },
-        { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('*(Link briefs, deliverables and working files with [[Title]], or create child sub-pages.)*')] },
-        { title: 'Client review checkpoints', lines: [text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'), { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }] },
-        { title: 'Activity & time log', lines: [text('*(Log work sessions with Command Palette → "Log Freelance OS support time", dashboard, or tell your agent: "Logged 1.5h on this project".)*')] },
-        { title: 'Decisions & updates', lines: [text('Record decisions, client feedback and scope changes here.')] }
+        {
+            title: 'Project brief',
+            lines: [
+                text(brief || 'Describe the outcome this project should achieve.'),
+                text('Scope and success criteria: add what is included and how you will know it is done.')
+            ]
+        },
+        {
+            title: 'Next actions',
+            lines: [
+                btn('+ Add task'),
+                { type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] },
+                text('*(Tasks added here automatically sync to the Freelance OS Today queue and Client dashboard rollup)*')
+            ]
+        },
+        {
+            title: 'Deliverables & references',
+            lines: deliverables.length
+                ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] }))
+                : [
+                    text('### 🔗 Key Links & Repositories'),
+                    ulist(`Repository / Code: ${repoUrl || '[GitHub / GitLab repo ↗]'}`),
+                    ulist(`Design & Figma: ${figmaUrl || '[Figma / Design link ↗]'}`),
+                    ulist(`Live / Staging: ${liveUrl || '[Preview site ↗]'}`),
+                    ulist('Shared Drive / Assets: [Folder link ↗]')
+                ]
+        },
+        {
+            title: 'Activity & time log',
+            lines: [
+                btn('+ Log time'),
+                text('*(Click above to log a work session, use + Time in the header, or tell your agent: "Logged 2h on this project".)*')
+            ]
+        },
+        {
+            title: '💳 Billing & Invoices',
+            lines: [
+                btn('+ Create invoice'),
+                text('*(Click above, use + Invoice in the header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*'),
+                ulist('Billing Schedule: Milestone deposit (50%) / Final delivery (50%)'),
+                ulist('Payment Method: Bank Transfer / QR-bill (CHF)')
+            ]
+        },
+        {
+            title: 'Client review checkpoints',
+            lines: [
+                btn('+ Add review checkpoint'),
+                text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'),
+                { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }
+            ]
+        },
+        {
+            title: 'Decisions & updates',
+            lines: [
+                text(`- **${localDate()}**: Project initialized.`),
+                text('*(Tip: record client feedback, scope modifications, and architectural decisions below)*')
+            ]
+        }
     ];
 }
 
@@ -519,7 +574,9 @@ export class Plugin extends AppPlugin {
                 const panelEl = linkbtn.closest('.panel');
                 const targetPanel = this.ui.getPanels?.().find(pan => pan.getElement?.().closest('.panel') === panelEl) || this.ui.getActivePanel?.();
                 const listview = linkbtn.closest('.listview-items');
-                const clientGuid = listview?.getAttribute('data-guid') || targetPanel?.getActiveRecord?.()?.guid;
+                const pageGuid = listview?.getAttribute('data-guid') || targetPanel?.getActiveRecord?.()?.guid;
+
+                const { isClient, isProject, clientGuid, projectGuid } = await this.resolveRecordContext(targetPanel, pageGuid);
 
                 if (text.includes('Create project') || text.includes('+ Project')) {
                     e.preventDefault();
@@ -530,11 +587,21 @@ export class Plugin extends AppPlugin {
                     e.preventDefault();
                     e.stopPropagation();
                     const data = await this.loadData();
-                    this.showCreateInvoiceModal(targetPanel, data, clientGuid, '');
-                } else if (text.includes('Log support time') || text.includes('+ Time')) {
+                    this.showCreateInvoiceModal(targetPanel, data, clientGuid, projectGuid);
+                } else if (text.includes('Log time') || text.includes('support time') || text.includes('+ Time')) {
                     e.preventDefault();
                     e.stopPropagation();
-                    this.logSupportSessionForActiveRecord(clientGuid, targetPanel);
+                    const data = await this.loadData();
+                    this.showCreateSupportSessionModal(targetPanel, data, clientGuid, projectGuid);
+                } else if (text.includes('Add task') || text.includes('+ Task')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showAddTaskModal(targetPanel, data, projectGuid);
+                } else if (text.includes('checkpoint') || text.includes('+ Checkpoint')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.addReviewCheckpointForActiveProject(projectGuid, targetPanel);
                 }
             };
             document.addEventListener('click', this.docActionHandler, true);
@@ -1300,7 +1367,16 @@ export class Plugin extends AppPlugin {
             if (!journal) throw new Error('Choose your Journal collection in Settings, or select a project.');
         }
         if (!record) throw new Error('Capture destination unavailable');
-        const line = await record.createLineItem(null, null, 'task');
+        let heading = null;
+        let lastChild = null;
+        if (projectGuid && typeof record.getLineItems === 'function') {
+            try {
+                const lines = await record.getLineItems(false);
+                heading = lines.find(l => l.type === 'heading' && (extractLineText(l).includes('Next actions') || extractLineText(l).includes('Tasks')));
+                lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
+            } catch {}
+        }
+        const line = await record.createLineItem(heading || null, lastChild || null, 'task');
         if (!line) throw new Error('Task creation failed');
         try {
             if (await line.setSegments([{ type: 'text', text }]) === false) throw new Error('Task content was not saved');
@@ -1620,6 +1696,138 @@ export class Plugin extends AppPlugin {
         }
     }
 
+    async resolveRecordContext(targetPanel, explicitGuid = '') {
+        let collections = this.workflowCollections;
+        if (!collections && this.data?.getAllCollections) {
+            try { collections = this.workflowCollections = await this.data.getAllCollections(); } catch {}
+        }
+        const clientsCol = collections ? collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections)) : null;
+        const projectsCol = collections ? collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections)) : null;
+        const activeRecord = targetPanel?.getActiveRecord?.();
+        const guid = explicitGuid || activeRecord?.guid || '';
+
+        let isClient = false;
+        let isProject = false;
+        let clientGuid = '';
+        let projectGuid = '';
+
+        if (guid) {
+            if (clientsCol) {
+                const clientRec = (await clientsCol.getAllRecords()).find(r => r.guid === guid && !isTemplateRecord(r));
+                if (clientRec) {
+                    isClient = true;
+                    clientGuid = guid;
+                }
+            }
+            if (!isClient && projectsCol) {
+                const projectRec = (await projectsCol.getAllRecords()).find(r => r.guid === guid && !isTemplateRecord(r));
+                if (projectRec) {
+                    isProject = true;
+                    projectGuid = guid;
+                    clientGuid = getClientGuid(projectRec) || '';
+                }
+            }
+        }
+        return { isClient, isProject, clientGuid, projectGuid };
+    }
+
+    showAddTaskModal(panel, data, defaultProjectGuid = '') {
+        const modal = document.createElement('div');
+        modal.className = 'os-modal-backdrop';
+        const initialProject = defaultProjectGuid || '';
+        const projects = (data.projects || []).filter(p => !['completed', 'archived', 'cancelled'].includes(p.status));
+
+        modal.innerHTML = `
+            <div class="os-modal-card" role="dialog" aria-modal="true" aria-labelledby="os-task-dialog-title">
+                <div class="os-modal-header">
+                    <h3 id="os-task-dialog-title">Add project task</h3>
+                    <button class="os-modal-close" type="button" aria-label="Close task form">✕</button>
+                </div>
+                <div class="os-modal-body">
+                    <div class="os-form-group">
+                        <label for="os-task-project">Project *</label>
+                        <select id="os-task-project" class="os-select input-project" required>
+                            <option value="">Select project…</option>
+                            ${projects.map(p => `<option value="${p.guid}" ${p.guid === initialProject ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div class="os-form-group">
+                        <label for="os-task-description">Task description *</label>
+                        <input id="os-task-description" type="text" class="os-input input-task-text" placeholder="e.g. Finish mobile responsive navigation" required />
+                    </div>
+                    <div class="os-form-group">
+                        <label class="os-checkbox-label" style="display: inline-flex; align-items: center; gap: 8px; cursor: pointer;">
+                            <input type="checkbox" id="os-task-important" class="input-task-important" />
+                            <span>Mark as high priority / important</span>
+                        </label>
+                    </div>
+                </div>
+                <div class="os-modal-footer">
+                    <button class="os-button btn-cancel" type="button">Cancel</button>
+                    <button class="os-button os-primary btn-submit" type="button">Add task</button>
+                </div>
+            </div>
+        `;
+
+        const priorFocus = document.activeElement;
+        const close = () => { modal.remove(); priorFocus?.focus(); };
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); close(); }
+        });
+        modal.querySelector('.os-modal-close').onclick = close;
+        modal.querySelector('.btn-cancel').onclick = close;
+        modal.addEventListener('click', event => { if (event.target === modal) close(); });
+
+        const projectSelect = modal.querySelector('.input-project');
+        const textInput = modal.querySelector('.input-task-text');
+        const importantCheck = modal.querySelector('.input-task-important');
+        const submitBtn = modal.querySelector('.btn-submit');
+
+        submitBtn.onclick = async () => {
+            const project = projectSelect.value;
+            const text = textInput.value.trim();
+            const important = importantCheck.checked;
+            if (!project) { this.ui.addToaster({ title: 'Please select a project', dismissible: true }); return; }
+            if (!text) { this.ui.addToaster({ title: 'Please enter a task description', dismissible: true }); textInput.focus(); return; }
+
+            submitBtn.disabled = true;
+            try {
+                await this.captureTask(text, project, important);
+                this.ui.addToaster({ title: 'Task added to project', autoDestroyTime: 2500, dismissible: true });
+                close();
+                this.scheduleRefresh();
+            } catch (err) {
+                submitBtn.disabled = false;
+                this.ui.addToaster({ title: err.message || 'Task could not be saved', dismissible: true });
+            }
+        };
+
+        document.body.appendChild(modal);
+        if (initialProject) textInput.focus();
+        else projectSelect.focus();
+    }
+
+    async addReviewCheckpointForActiveProject(projectGuid, targetPanel = null) {
+        try {
+            const collections = this.workflowCollections || await this.data.getAllCollections();
+            const projects = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
+            if (!projects) throw new Error('Projects collection not found.');
+            const record = (await projects.getAllRecords()).find(r => r.guid === projectGuid);
+            if (!record) throw new Error('Project record not found.');
+
+            const lines = await record.getLineItems(false);
+            const heading = lines.find(l => l.type === 'heading' && l.text?.includes('checkpoint'));
+            const lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
+
+            const line = await record.createLineItem(heading || null, lastChild || null, 'task', [{ type: 'text', text: 'Client review checkpoint' }], { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' });
+            if (!line) throw new Error('Could not create checkpoint task.');
+            this.ui.addToaster({ title: 'Review checkpoint added to project', autoDestroyTime: 2500, dismissible: true });
+            this.scheduleRefresh();
+        } catch (err) {
+            this.ui.addToaster({ title: err.message || 'Could not add review checkpoint', dismissible: true });
+        }
+    }
+
     async updatePanelHeaderActions() {
         if (!this.ui?.getPanels || typeof document === 'undefined') return;
         const panels = this.ui.getPanels();
@@ -1628,7 +1836,8 @@ export class Plugin extends AppPlugin {
             try { collections = this.workflowCollections = await this.data.getAllCollections(); } catch {}
         }
         const clientsColGuid = this.collectionGuid('Clients', collections);
-        if (!clientsColGuid) return;
+        const projectsColGuid = this.collectionGuid('Projects', collections);
+        if (!clientsColGuid && !projectsColGuid) return;
 
         for (const panel of panels) {
             const panelEl = panel.getElement?.();
@@ -1637,6 +1846,7 @@ export class Plugin extends AppPlugin {
             const col = panel.getActiveCollection?.();
             const rec = panel.getActiveRecord?.();
             const isClientPanel = col && col.getGuid() === clientsColGuid && rec && !isTemplateRecord(rec);
+            const isProjectPanel = col && col.getGuid() === projectsColGuid && rec && !isTemplateRecord(rec);
 
             const outerPanel = panelEl.closest?.('.panel') || panelEl;
             const menubar = outerPanel.querySelector('.panel-menubar-buttons');
@@ -1644,7 +1854,7 @@ export class Plugin extends AppPlugin {
 
             let container = menubar.querySelector('.os-client-header-actions');
 
-            if (!isClientPanel) {
+            if (!isClientPanel && !isProjectPanel) {
                 if (container) container.remove();
                 continue;
             }
@@ -1655,32 +1865,79 @@ export class Plugin extends AppPlugin {
                 menubar.appendChild(container);
             }
 
-            if (container.dataset.clientGuid === rec.guid) continue;
-            container.dataset.clientGuid = rec.guid;
+            if (container.dataset.recordGuid === rec.guid) continue;
+            container.dataset.recordGuid = rec.guid;
 
-            const clientName = rec.name || 'this client';
-            container.innerHTML = `
-                <button type="button" class="os-header-action-btn os-header-btn-project" title="Create a new project for ${escapeHtml(clientName)}">
-                    <span class="ti ti-folder"></span>
-                    <span>+ Project</span>
-                </button>
-                <button type="button" class="os-header-action-btn os-header-btn-invoice" title="Create an invoice for ${escapeHtml(clientName)}">
-                    <span class="ti ti-receipt"></span>
-                    <span>+ Invoice</span>
-                </button>
-            `;
+            if (isClientPanel) {
+                const clientName = rec.name || 'this client';
+                container.innerHTML = `
+                    <button type="button" class="os-header-action-btn os-header-btn-project" title="Create a new project for ${escapeHtml(clientName)}">
+                        <span class="ti ti-folder"></span>
+                        <span>+ Project</span>
+                    </button>
+                    <button type="button" class="os-header-action-btn os-header-btn-invoice" title="Create an invoice for ${escapeHtml(clientName)}">
+                        <span class="ti ti-receipt"></span>
+                        <span>+ Invoice</span>
+                    </button>
+                    <button type="button" class="os-header-action-btn os-header-btn-time" title="Log support time for ${escapeHtml(clientName)}">
+                        <span class="ti ti-clock"></span>
+                        <span>+ Time</span>
+                    </button>
+                `;
 
-            container.querySelector('.os-header-btn-project').onclick = async (e) => {
-                e.stopPropagation();
-                const data = await this.loadData();
-                this.showCreateProjectModal(panel, data, rec.guid);
-            };
+                container.querySelector('.os-header-btn-project').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateProjectModal(panel, data, rec.guid);
+                };
 
-            container.querySelector('.os-header-btn-invoice').onclick = async (e) => {
-                e.stopPropagation();
-                const data = await this.loadData();
-                this.showCreateInvoiceModal(panel, data, rec.guid, '');
-            };
+                container.querySelector('.os-header-btn-invoice').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateInvoiceModal(panel, data, rec.guid, '');
+                };
+
+                container.querySelector('.os-header-btn-time').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateSupportSessionModal(panel, data, rec.guid, '');
+                };
+            } else if (isProjectPanel) {
+                const projectName = rec.name || 'this project';
+                const clientGuid = getClientGuid(rec) || '';
+                container.innerHTML = `
+                    <button type="button" class="os-header-action-btn os-header-btn-task" title="Add a task to ${escapeHtml(projectName)}">
+                        <span class="ti ti-checkbox"></span>
+                        <span>+ Task</span>
+                    </button>
+                    <button type="button" class="os-header-action-btn os-header-btn-invoice" title="Create an invoice for ${escapeHtml(projectName)}">
+                        <span class="ti ti-receipt"></span>
+                        <span>+ Invoice</span>
+                    </button>
+                    <button type="button" class="os-header-action-btn os-header-btn-time" title="Log time for ${escapeHtml(projectName)}">
+                        <span class="ti ti-clock"></span>
+                        <span>+ Time</span>
+                    </button>
+                `;
+
+                container.querySelector('.os-header-btn-task').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showAddTaskModal(panel, data, rec.guid);
+                };
+
+                container.querySelector('.os-header-btn-invoice').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateInvoiceModal(panel, data, clientGuid, rec.guid);
+                };
+
+                container.querySelector('.os-header-btn-time').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateSupportSessionModal(panel, data, clientGuid, rec.guid);
+                };
+            }
         }
     }
 
