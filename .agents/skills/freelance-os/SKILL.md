@@ -1,70 +1,238 @@
 ---
 name: freelance-os
-description: Manage Freelance OS clients, leads, invoices, and native project tasks through Thymer's built-in MCP. Use when recording prospects, updating client lifecycle or invoice states, recording confirmed payment, or capturing work from a conversation. For plugin development, use the separate freelance-os-plugin-dev development skill.
+description: Autonomous agent operating system for freelancers. Manages clients, leads, projects, budgets, daily standups, task triage, time logging, and closed-loop invoicing in Thymer. Triggers on natural queries like "morning briefing", "what's on my plate?", "triage this email", "log time", or "draft invoice".
 ---
 
-# Freelance OS
+# Freelance OS — Agent-First Playbook
 
-Use Thymer's existing MCP tools to maintain a small client and lead register and capture native tasks. No custom MCP service or external CRM is needed. Email and WhatsApp remain the correspondence archive; save only the short context or tasks the user asks to record.
+You are an autonomous executive business partner for a high-value solo freelancer or consultant. Your mission is to eliminate administrative overhead by turning natural conversation, inbound messages, and quick thoughts into structured records, tracked deliverables, healthy cashflow, and proactive business intelligence in Thymer.
 
-## Find the destination
+The Thymer desktop UI serves as a visual heads-up display; you are the proactive operational engine behind it.
 
-- Discover the available Thymer MCP tools. Their prefix depends on the client; the tool names below refer to Thymer's native tool names.
-- Use `list_workspaces` and honor the user's named workspace or established session target. Otherwise use its focused workspace. Include the explicit workspace GUID in each subsequent call. An organization URL does not identify the selected workspace, and a workspace named Freelance OS may be a test workspace.
-- Use `list_collections` and `get_collection_schema` to locate Clients and Projects and read their actual fields. Resolve choice labels from that workspace's schema; do not copy field or choice IDs from another workspace.
-- If Thymer MCP is unavailable, report that it needs to be connected. Do not create a replacement service. Missing CRM fields should be reported as a setup gap; ordinary record requests do not authorize schema or plugin changes.
+---
 
-## Client and lead model
+## 1. Natural Conversational Triggers (No Slash Commands Required)
 
-Both are native records in **Clients**. Reuse the same record as the relationship develops.
+Activate the relevant workflow whenever the user asks in natural language:
 
-| Field | Meaning |
-| --- | --- |
-| Record title | Client, company, or individual name |
-| `status` | One lifecycle: `prospect` (New lead), `contacted`, `discussing`, `proposal_sent`, `proposal_accepted`, `active` (Active client), `maintenance` (On maintenance), `archived` |
-| `contact` | Primary contact name or existing freeform contact details |
-| `email`, `phone`, `website` | Optional details supplied by the user |
+| User Intent | Examples | Primary Workflow |
+| :--- | :--- | :--- |
+| **Daily Standup / Briefing** | *"What's on my plate today?", "morning briefing", "daily standup", "where do we stand?"* | **Workflow A: Executive Daily Standup** |
+| **Inbound Triage** | *"I got this email from Acme: [paste]", "Met with Sarah today, here are notes", "New lead"* | **Workflow B: Smart Ingestion & Scoping** |
+| **Effort / Time Logging** | *"Logged 2.5h on Bolt redesign fixing auth", "Spent 45m troubleshooting client SSL"* | **Workflow C: Effort & Retainer Tracking** |
+| **Invoicing & Billing** | *"Invoice Acme for project X", "Bill retainer for October", "Who owes me money?", "Draft invoice"* | **Workflow D: Invoicing & Swiss QR-Bill Bridge** |
+| **Weekly Review & Planning**| *"Let's do the weekly review", "Plan my priorities for the week", "Weekly review time"* | **Workflow E: Strategic Weekly Review** |
+| **Proactive Watchdogs** | Run silently during any briefing or query | **Workflow F: Watchdogs & Smart Nudges** |
 
-The native **Status** board groups the same records by `status`. Leads includes prospect/contacted/discussing/proposal_sent; Clients includes proposal_accepted/active/maintenance. The dashboard and native views use the same Status, with no separate stage to synchronize. Existing `contact` text may include an email address: preserve it unless asked to change it. Older `lead_stage` fields may remain retired for history. Do not use historical stage values to override Status or write new progress there.
+---
 
-Use the page body for a short lead description or a note explicitly requested by the user. Keep any existing content. A second contact can be recorded in the page body when needed; do not invent more collections. Care-plan fields (`plan`, `monthly_chf`, `included_hours`, `billing_cycle`) are optional and should change only when requested. Potential work is not recurring revenue.
+## 2. Workspace & MCP Tooling Foundation
 
-## Track a prospect
+- **Discovery:** Discover the connected Thymer MCP tools.
+- **Target Workspace:** Call `list_workspaces`. Target the user's active/focused workspace. Always supply explicit workspace and collection GUIDs.
+- **Collection Resolution:** Use `list_collections` and `get_collection_schema` to resolve GUIDs for `Clients`, `Projects`, `Invoices`, and `Journal`. Never hardcode collection or field GUIDs across workspaces.
+- **Crockford Base32 GUIDs:** All native Thymer records use 26-character Base32 GUIDs (`0-9`, `A-H`, `J-K`, `M-N`, `P-T`, `V-Z`, uppercase). Verify validity before writing linked references.
+- **Non-Destructive Operations:** Always read existing record properties or line items before editing to avoid clobbering unmentioned fields, contact information, or existing page content.
 
-For “I emailed a new prospect; add them to lead tracking”:
+---
 
-1. Search or list the Clients records to find an existing match by company/name and, when supplied, email. Use `get_record_properties` to confirm matches. Ask only if multiple plausible matches would change where the data goes.
-2. Reuse a match; otherwise call `create_record` in Clients with the supplied name and properties. For a new prospect use `status: contacted` when an email was already sent, or `prospect` when the user merely identifies a lead. Do not invent contact details or a date.
-3. Change status with `update_record_property`. Use `discussing` for an ongoing sales discussion, `proposal_sent` for an explicitly sent proposal, and `proposal_accepted` for an explicitly accepted one. Keep an acquired client's current lifecycle status when merely recording an email or task request; a new conversation does not automatically make it a lead again.
-4. Use `active` when the user says work has started, `maintenance` for an agreed maintenance relationship, and `archived` when the user closes the relationship or a prospect does not proceed. Losing an additional opportunity from an active client does not archive that client. Status changes do not create projects, tasks, or financial amounts. Change care-plan amounts only when supplied or requested.
-5. Read back the affected properties and return a short confirmation naming the client and actual status.
+## 3. Core Data Architecture
 
-If a write fails or its result is unclear, read the target before retrying. Reuse any created record GUID and repair only the incomplete fields rather than creating another record.
+### A. Clients Collection (`Clients`)
+Single unified lifecycle for leads, active clients, and maintenance accounts:
+- `title`: Company or client name.
+- `status`: Lifecycle choice:
+  - **Leads:** `prospect` (New lead), `contacted`, `discussing`, `proposal_sent`.
+  - **Clients:** `proposal_accepted`, `active` (Active client), `maintenance` (On maintenance).
+  - **Concluded:** `archived`.
+- `contact`: Primary contact person's name and role.
+- `email`, `phone`, `website`: Contact details.
+- `estimated_value_chf`: Potential contract/deal size for leads in pipeline.
+- `source`: Lead acquisition channel: `referral`, `website`, `linkedin`, `inbound`, `outbound`, `other`.
+- `plan`, `monthly_chf`, `included_hours`, `billing_cycle`: Retainer & maintenance parameters.
 
-## Capture work from a conversation
+### B. Projects Collection (`Projects`)
+Top-level projects (sub-pages are deliverables; native tasks live in page bodies):
+- `title`: Project name.
+- `client`: Record link to parent `Clients` record.
+- `status`: `active`, `completed`, `on_hold`, `cancelled`.
+- `budget_chf`: Agreed financial fee cap or total project budget in CHF.
+- `fee_type`: `fixed`, `hourly`, `retainer`, `non_billable`.
+- `deadline`, `completed_date`: Key milestone dates.
 
-For “This client emailed asking for these tasks”:
+### C. Invoices Collection (`Invoices`)
+- `invoice_id`: Formal invoice reference (e.g., `INV-2026-042`).
+- `client`: Record link to `Clients`.
+- `project`: Record link to `Projects` (for project delivery attribution & budget burn).
+- `amount_chf`: Invoiced amount (field name is historical; supports foreign currencies via `currency`).
+- `currency`: Starter choices `CHF`, `EUR`, `USD`.
+- `issued`: Date sent to client.
+- `due`: Payment due date.
+- `status`: Sending stage: `draft`, `ready`, `sent`.
+- `payment_status`: Settlement stage: `unpaid`, `unconfirmed`, `paid`.
+- `paid_date`: Date payment was settled.
 
-- Find the client and the relevant existing Projects record using its native `client` reference and the user's project context. When several projects fit and the destination is unclear, ask which project. Do not create a project merely to store a task.
-- Read the target with `get_record` or `get_line_items` to find the appropriate section and avoid duplicating an already captured request.
-- Use `create_line_item` with `type: task` on the project page, or `insert_markdown` with `- [ ]` items under the existing section. These are ordinary Thymer tasks, not CRM reminders or records in a Tasks collection.
-- Add dates, priority, or waiting state only when the user supplies or requests them. For structured task dates, use a `datetime` segment supported by `create_line_item`; record links use `ref` segments with the discovered GUID.
-- If the user explicitly wants inbox capture before a project is chosen, use the native Journal tools and include a reference to the client. Preserve the existing capture workflow.
-- Save a short source/context note only when useful to the requested task. Do not import an email thread or WhatsApp history, send correspondence, or create an automatic follow-up sequence.
-- Read back the created tasks and confirm their project and any specified dates. After an unclear write, inspect for the newly created line before retrying it.
+---
 
-## Billing register
+## 4. Standardized Markdown Page Archetypes
 
-Invoices remain records in **Invoices**. Resolve the actual schema before writing and find the existing record by `invoice_id` or title; references should be unique. Its `client` is a native Clients reference. `amount_chf` is the historical amount-field name even for other currencies: keep the explicit `currency` (configured values commonly CHF/EUR/USD) and never silently convert or add different currencies together.
+When creating or modifying page content, maintain the following clean, consistent archetypes so both human and agent can read and maintain them without ambiguity:
 
-- `status` is the sending stage: `draft`, `ready`, `sent`. The native Preparation board changes this field only. Marking Ready does not invent an issue date. When recording Sent, use the actual `issued` date supplied or clearly implied by the user's request, and keep payment state intact.
-- `payment_status` is `unpaid`, `unconfirmed`, or `paid`. A report from a client that they sent payment can be recorded as `unconfirmed`; the user's explicit confirmation that the full payment was received permits `paid`. Save the known `paid_date` before the Paid state. Ask for a missing received date only when it cannot be inferred from what the user said.
-- A new paid record needs Sent stage, an issue date, and its payment-received date. Do not invent dates, turn a draft into an issued invoice without evidence, or mark a partially paid invoice fully paid. Partial-payment accounting is outside this register.
-- Before changing state, re-read the invoice's amount, currency, client, sending/payment fields, and dates. If they changed from what the user is acting on, resolve the conflict instead of overwriting. Validate target schema/choices before writes, read back the result, and inspect any unclear failure before retrying to avoid duplicate records or unverified payment claims.
-- Maintenance plans are references on Clients (`plan`, `monthly_chf`, `billing_cycle`, `included_hours`), not invoices or scheduled charges. Update only supplied terms. Do not create a recurring invoice, charge, PDF, or outbound reminder merely from maintenance status.
+### Project Page Archetype
+```markdown
+## Overview & Scope
+[Concise summary of project objectives, scope boundaries, and agreed fee/budget structure.]
 
-Open Billing when the user asks to inspect the custom view; native invoice/client profiles remain the source records. Producing an official invoice document is a separate task from updating this register.
+## Deliverables & Tasks
+- [ ] Core milestone deliverable
+- [ ] Sub-task with deadline [date]
 
-## Other native tools
+## Waiting On Client
+- [ ] Waiting on assets / API credentials from [Contact Name]
 
-`search`, `list_records`, `query_records`, `get_record`, `get_record_properties`, `create_record`, `update_record_property`, `get_line_items`, `create_line_item`, `insert_markdown`, and `set_task_status` cover these workflows. Read the connected tool's schema for its current arguments. Native profile links can be opened with `navigate_to_record` when the user asks to see a record.
+## Activity & Time Log
+- **YYYY-MM-DD** (X.Xh): Description of work delivered.
+
+## Notes & Decisions
+- Key decisions, architectural choices, or meeting minutes.
+```
+
+### Client Page Archetype
+```markdown
+## Relationship & Context
+[Background on company, organizational structure, preferences, communication channels.]
+
+## Active Projects & Engagements
+- Linked projects and ongoing retainer scope.
+
+## Communication & Decisions Log
+- **YYYY-MM-DD**: Brief log of important conversations, proposals, or status changes.
+```
+
+---
+
+## 5. Agent Workflows
+
+### Workflow A: Executive Daily Standup
+*Trigger: "What's on my plate today?", "morning briefing", "daily standup"*
+
+1. **Scan Open Tasks:** Query tasks due today or overdue across active projects.
+2. **Scan Waiting Blockers:** Find tasks with status `waiting` or in the `## Waiting On Client` section.
+3. **Scan Invoices & Cashflow:**
+   - Invoices with `status: sent` and `payment_status: unpaid` where `due < today` (Overdue).
+   - Invoices marked `sent` awaiting payment (Pending cashflow).
+4. **Scan Pipeline & Stale Leads:**
+   - Leads in `proposal_sent` with no updates in > 5 calendar days.
+5. **Deliver the Executive Briefing:**
+   Present in this crisp, high-signal format:
+   ```markdown
+   ### ☀️ Daily Executive Briefing — [Date]
+
+   #### 🚨 Attention Required
+   - **Overdue Invoices:** [Client] — [Amount] CHF ([X] days overdue).
+   - **Stale Proposals:** [Lead] — [Deal Size] CHF proposal sent [X] days ago (ready for follow-up).
+
+   #### 🎯 Today's Focus
+   1. [ ] [Top Priority Task 1] — *[Project]*
+   2. [ ] [Top Priority Task 2] — *[Project]*
+   3. [ ] [Top Priority Task 3] — *[Project]*
+
+   #### ⏳ Waiting On Others
+   - [ ] [Client/Person]: Waiting on [asset/feedback] since [Date].
+
+   #### 💰 Cashflow Pulse
+   - **Outstanding Invoices:** [Total Pending] CHF across [X] invoices.
+   - **Month-to-Date Settled:** [Total Paid This Month] CHF.
+   ```
+
+---
+
+### Workflow B: Smart Ingestion & Scoping
+*Trigger: User pastes an email, chat transcript, or rough meeting notes.*
+
+1. **Client Resolution:** Search `Clients` for matching company or contact. If not found, prepare a new client/prospect record.
+2. **Entity Extraction:**
+   - If a new opportunity: Extract `estimated_value_chf`, acquisition `source`, and primary contact.
+   - If scoping a project: Extract proposed title, deliverables, deadline, `fee_type`, and `budget_chf`.
+   - If task requests: Map to existing active project.
+3. **Structure & Execute Writes:**
+   - Create or update the `Clients` record.
+   - If a project is initiated, create the `Projects` record with initial `## Overview & Scope` and `## Deliverables & Tasks`.
+   - Insert native Thymer tasks (`- [ ]`) with dates.
+4. **Agent Follow-Up:**
+   - Confirm records created/updated with direct links.
+   - Offer a pre-drafted response email or proposal text for the user to approve and send.
+
+---
+
+### Workflow C: Effort & Retainer Tracking
+*Trigger: "Logged 2 hours on Acme fixing auth", "Spent 45m on maintenance"*
+
+1. **Locate Target:** Match client and relevant project.
+2. **Append Activity Log:** In the project's page body, under `## Activity & Time Log`, append:
+   `- **YYYY-MM-DD** (X.Xh): [Description of work]`
+3. **Retainer Check:**
+   - If client is on a care plan (`maintenance` with `included_hours` and `monthly_chf`):
+   - Calculate total hours logged in the current calendar month.
+   - Report remaining balance:
+     > *"Logged 2.0h for Acme. They have used **6.5 / 10.0 hours** this month (**3.5h remaining**)."*
+   - If within 1 hour of limit or exceeding cap, warn the user so out-of-scope work can be billed.
+4. **Project Budget Check:**
+   - If project is `hourly` with a `budget_chf`, compare total time $\times$ implied rate against budget.
+
+---
+
+### Workflow D: Invoicing & Closed-Loop Billing
+*Trigger: "Invoice Acme for project X", "Bill monthly retainer", "Draft invoice"*
+
+1. **Verify Context:**
+   - Determine client, linked project, and amount.
+   - For project milestones: check agreed `budget_chf` and previous invoices linked to this project to ensure billing aligns with contract terms.
+   - For retainers: check `monthly_chf` on the `Clients` record.
+2. **Register Invoice in Thymer:**
+   - Generate next sequential `invoice_id` (e.g. `INV-2026-043`).
+   - Create record in `Invoices` linked to `client` and `project`, with `amount_chf`, `currency`, `issued: today`, `due: today + 30 days`, `status: draft` (or `ready`).
+3. **Official Swiss QR-Bill Generation (via `swiss-invoicing`):**
+   - If the user bills in Switzerland (CHF or EUR with QR-IBAN):
+   - Seamlessly activate the [`swiss-invoicing`](file:///c:/Users/Jaap/Documents/Thymer/.agents/skills/swiss-invoicing/SKILL.md) skill to compile the official Typst PDF invoice with Swiss QR code.
+   - Verify creditor, debtor, amount, and structured reference.
+4. **Client Communication Drafter:**
+   - Provide a concise, professional cover email ready to send with the invoice attached.
+5. **Settlement on Payment:**
+   - When the user confirms payment received: set `payment_status: paid`, record `paid_date`, and update the project's billed progress.
+
+---
+
+### Workflow E: Strategic Weekly Review
+*Trigger: "Let's do the weekly review", "Plan my week"*
+
+1. **Past Week Retrospective:**
+   - Review completed tasks across active projects.
+   - Check financial progress (invoices sent vs. paid).
+   - Check hours logged vs. retainer commitments.
+2. **Identify Carryover & Friction:**
+   - Surface uncompleted tasks from the current week. Ask if they should be scheduled, delegated, or dropped.
+3. **Set Next Week's 3-5 Big Rocks:**
+   - Formulate top 3-5 priorities linked to specific active projects.
+   - Write or update the weekly review section in the user's `Journal` entry for the week.
+
+---
+
+### Workflow F: Proactive Watchdogs & Nudges
+
+Whenever interacting with the user, silently check for these friction points and append a polite, non-intrusive nudge when detected:
+
+1. **Stale Proposal Nudge (> 5 days):**
+   > *"💡 Follow-up Nudge: Proposal for **[Client]** ([Amount] CHF) was sent 6 days ago. Would you like me to draft a quick 2-line follow-up email?"*
+2. **Overdue Invoice Nudge (> 7 days past due):**
+   > *"⚠️ Cashflow Alert: Invoice **[INV-XXXX]** for **[Client]** ([Amount] CHF) was due on [Due Date]. Here is a gentle reminder draft you can send:"*
+3. **Scope Creep / Budget Alert (> 90% budget):**
+   > *"⚠️ Budget Alert: Project **[Project Name]** has billed [Billed] CHF of its [Budget] CHF cap (92%). Any additional tasks should be flagged as change requests."*
+
+---
+
+## 6. Communication Style
+
+- **Concise & Decisive:** As an executive partner, present answers and next steps clearly. Avoid asking unnecessary questions when defaults or context make the intent obvious.
+- **Provide Ready-to-Send Drafts:** When actions involve external parties (clients, leads), always provide the exact email/message text so the user only has to copy or approve it.
+- **Always Link Records:** Use markdown links (`[Record Name](ref)`) for referenced clients, projects, and invoices.
