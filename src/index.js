@@ -359,7 +359,10 @@ function clientTemplateSections({ context = '', initialTask = '' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
     return [
         { title: 'Relationship & Context', lines: [text(context || 'Record organization background, communication preferences, and key commercial terms.')] },
-        { title: 'Active Projects & Engagements', lines: [text('*(No active projects in flight. Press Ctrl/Cmd+K → "Create Freelance OS project for active client", click + Project in the dashboard, or tell your agent: "Start project [Name] for this client".)*')] },
+        { title: 'Active Projects & Engagements', lines: [
+            { type: 'linkbtn', segments: [{ type: 'text', text: '+ Create project for this client' }] },
+            text('*(No active projects in flight. Click above, use + Project in the top header, or press Ctrl/Cmd+K → "Create Freelance OS project for active client".)*')
+        ] },
         { title: '📋 Open Tasks & Actions', lines: [
             text('### Account & Relationship Tasks'),
             { type: 'task', segments: initialTask ? [{ type: 'text', text: initialTask }] : [{ type: 'text', text: 'Initial client kickoff / follow-up' }] },
@@ -443,12 +446,50 @@ export class Plugin extends AppPlugin {
         }
         this.workflowEventHandlers = [];
         this.workflowRefreshPending = false;
+        if (typeof document !== 'undefined') {
+            if (this.docActionHandler) {
+                document.removeEventListener('click', this.docActionHandler, true);
+                delete this.docActionHandler;
+            }
+            document.querySelectorAll('.os-client-header-actions').forEach(el => el.remove());
+        }
         if (typeof window !== 'undefined' && window.__freelanceOs === this) delete window.__freelanceOs;
     }
 
     onLoad() {
         if (typeof window !== 'undefined') {
             window.__freelanceOs = this;
+        }
+        if (typeof document !== 'undefined') {
+            if (this.docActionHandler) {
+                document.removeEventListener('click', this.docActionHandler, true);
+            }
+            this.docActionHandler = async (e) => {
+                const linkbtn = e.target.closest?.('.listitem-linkbtn, [data-doc-action]');
+                if (!linkbtn) return;
+                const text = linkbtn.innerText?.trim() || '';
+                const panelEl = linkbtn.closest('.panel');
+                const targetPanel = this.ui.getPanels?.().find(pan => pan.getElement?.().closest('.panel') === panelEl) || this.ui.getActivePanel?.();
+                const listview = linkbtn.closest('.listview-items');
+                const clientGuid = listview?.getAttribute('data-guid') || targetPanel?.getActiveRecord?.()?.guid;
+
+                if (text.includes('Create project') || text.includes('+ Project')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateProjectModal(targetPanel, data, clientGuid);
+                } else if (text.includes('Create invoice') || text.includes('+ Invoice')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateInvoiceModal(targetPanel, data, clientGuid, '');
+                } else if (text.includes('Log support time') || text.includes('+ Time')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    this.logSupportSessionForActiveRecord();
+                }
+            };
+            document.addEventListener('click', this.docActionHandler, true);
         }
         this.activePanel = null;
         clearInterval(this.workflowDayTimer);
@@ -555,6 +596,7 @@ export class Plugin extends AppPlugin {
         // 5. Reactive Workspace Listeners
         if (this.events) {
             const schedule = () => this.scheduleRefresh();
+            const updateActions = () => this.updatePanelHeaderActions();
             const subscriptions = [
                 ['lineitem.updated', schedule],
                 ['lineitem.created', schedule],
@@ -564,13 +606,17 @@ export class Plugin extends AppPlugin {
                 ['record.updated', schedule],
                 ['record.created', schedule],
                 ['record.moved', schedule],
-                ['collection.updated', schedule]
+                ['collection.updated', schedule],
+                ['panel.navigated', updateActions],
+                ['panel.focused', updateActions],
+                ['panel.closed', updateActions]
             ];
             this.workflowEventHandlers = subscriptions.map(([event, handler]) => this.events.on(event, handler)).filter(id => typeof id === 'string' && id);
         }
         // Desktop hot reload can retain a custom panel without invoking its new registration callback.
         const existing = this.ui.getPanels?.().find(panel => panel.getNavigation()?.type === 'custom' && String(panel.getNavigation().subId || '').endsWith(`${this.getGuid()}-${DASHBOARD_PANEL_ID}`));
         if (existing) { this.activePanel = existing; existing.setTitle('Freelance OS'); this.render(existing); }
+        this.updatePanelHeaderActions();
     }
 
     async openDashboard() {
@@ -593,6 +639,7 @@ export class Plugin extends AppPlugin {
             }
             this.workflowRefreshPending = false;
             if (this.activePanel) this.render(this.activePanel);
+            this.updatePanelHeaderActions();
         }, 200);
     }
 
@@ -1522,6 +1569,70 @@ export class Plugin extends AppPlugin {
             this.ui.addToaster({ title: notice || `Capture destination: ${root.name}${clientName ? ` · ${clientName}` : ''}`, autoDestroyTime: 3500, dismissible: true });
         } catch (error) {
             this.ui.addToaster({ title: error.message || 'Project capture context is unavailable.', dismissible: true });
+        }
+    }
+
+    async updatePanelHeaderActions() {
+        if (!this.ui?.getPanels || typeof document === 'undefined') return;
+        const panels = this.ui.getPanels();
+        let collections = this.workflowCollections;
+        if (!collections && this.data?.getAllCollections) {
+            try { collections = this.workflowCollections = await this.data.getAllCollections(); } catch {}
+        }
+        const clientsColGuid = this.collectionGuid('Clients', collections);
+        if (!clientsColGuid) return;
+
+        for (const panel of panels) {
+            const panelEl = panel.getElement?.();
+            if (!panelEl) continue;
+
+            const col = panel.getActiveCollection?.();
+            const rec = panel.getActiveRecord?.();
+            const isClientPanel = col && col.getGuid() === clientsColGuid && rec && !isTemplateRecord(rec);
+
+            const outerPanel = panelEl.closest?.('.panel') || panelEl;
+            const menubar = outerPanel.querySelector('.panel-menubar-buttons');
+            if (!menubar) continue;
+
+            let container = menubar.querySelector('.os-client-header-actions');
+
+            if (!isClientPanel) {
+                if (container) container.remove();
+                continue;
+            }
+
+            if (!container) {
+                container = document.createElement('div');
+                container.className = 'os-client-header-actions';
+                menubar.appendChild(container);
+            }
+
+            if (container.dataset.clientGuid === rec.guid) continue;
+            container.dataset.clientGuid = rec.guid;
+
+            const clientName = rec.name || 'this client';
+            container.innerHTML = `
+                <button type="button" class="os-header-action-btn os-header-btn-project" title="Create a new project for ${escapeHtml(clientName)}">
+                    <span class="ti ti-folder"></span>
+                    <span>+ Project</span>
+                </button>
+                <button type="button" class="os-header-action-btn os-header-btn-invoice" title="Create an invoice for ${escapeHtml(clientName)}">
+                    <span class="ti ti-receipt"></span>
+                    <span>+ Invoice</span>
+                </button>
+            `;
+
+            container.querySelector('.os-header-btn-project').onclick = async (e) => {
+                e.stopPropagation();
+                const data = await this.loadData();
+                this.showCreateProjectModal(panel, data, rec.guid);
+            };
+
+            container.querySelector('.os-header-btn-invoice').onclick = async (e) => {
+                e.stopPropagation();
+                const data = await this.loadData();
+                this.showCreateInvoiceModal(panel, data, rec.guid, '');
+            };
         }
     }
 

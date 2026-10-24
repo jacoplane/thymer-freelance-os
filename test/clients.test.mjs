@@ -140,6 +140,7 @@ test('initializeClient populates client template sections with relationship and 
     assert.equal(result.applied, true);
     assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Relationship & Context'));
     assert.ok(state.lines.some(l => l.segments?.[0]?.text === 'Fintech startup based in Geneva'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Create project for this client'));
     assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === '📋 Open Tasks & Actions'));
     assert.ok(state.lines.some(l => l.type === 'task' && l.segments?.[0]?.text === 'Initial client kickoff / follow-up'));
 
