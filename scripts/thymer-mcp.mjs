@@ -9,7 +9,10 @@ export async function connectMcp(endpoint = 'http://127.0.0.1:13100/mcp') {
             if (session) headers['Mcp-Session-Id'] = session;
         }
         const payload = await response.json();
-        if (payload.error || payload.result?.isError) throw new Error(`Thymer MCP ${method} failed`);
+        if (payload.error || payload.result?.isError) {
+            console.error('MCP Error detail:', JSON.stringify(payload.error || payload.result));
+            throw new Error(`Thymer MCP ${method} failed: ${JSON.stringify(payload.error || payload.result)}`);
+        }
         return payload.result;
     };
     await request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'freelance-os-views', version: '1' } });

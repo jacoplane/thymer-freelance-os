@@ -2899,21 +2899,69 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
     ];
 }
 
-function clientTemplateSections({ context = '', initialTask = '' } = {}) {
+function clientTemplateSections({ context = '', initialTask = '', plan = '', monthlyChf = 0, website = '', contactName = '', email = '' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const ulist = value => ({ type: 'ulist', segments: [{ type: 'text', text: value }] });
+    const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
+
+    const planLabel = plan || (monthlyChf > 0 ? `${monthlyChf} CHF / month care plan` : 'Ad-hoc / on-demand support');
+    const includedHours = monthlyChf >= 100 ? '4h / month included' : monthlyChf > 0 ? '2h / month included' : 'Billed hourly';
+
     return [
-        { title: 'Relationship & Context', lines: [text(context || 'Record organization background, communication preferences, and key commercial terms.')] },
-        { title: 'Active Projects & Engagements', lines: [
-            text('*(No active projects in flight. Click below, use + Project in the top header, or press Ctrl/Cmd+K → "Create Freelance OS project for active client".)*'),
-            { type: 'linkbtn', segments: [{ type: 'text', text: '+ Create project' }] }
-        ] },
-        { title: '📋 Open Tasks & Actions', lines: [
-            text('### Account & Relationship Tasks'),
-            { type: 'task', segments: initialTask ? [{ type: 'text', text: initialTask }] : [{ type: 'text', text: 'Initial client kickoff / follow-up' }] },
-            text('### Active Project Tasks'),
-            text('*(No active project tasks. Tasks added to linked projects will automatically roll up here.)*')
-        ] },
-        { title: '📝 Communication & Decisions Log', lines: [text(`- **${localDate()}**: Client profile created.`)] }
+        {
+            title: 'Relationship & Context',
+            lines: [
+                text(context || 'Record organization background, commercial agreements, and communication preferences.'),
+                text('### 🔗 Key Links & Deliverables'),
+                ulist(`Website: ${website || 'https://...'}`),
+                ulist('Shared Drive / Assets: [Folder link ↗]'),
+                ulist('Design & Mockups: [Figma / Design link ↗]'),
+                text('### 👥 Stakeholders & Roles'),
+                ulist(`Primary Contact: ${contactName || 'Contact name'} (${email || 'email@...'}) — Decision maker`),
+                ulist('Billing Contact: factures@... (Net 30)')
+            ]
+        },
+        {
+            title: 'Active Projects & Engagements',
+            lines: [
+                btn('+ Create project'),
+                text('*(No active projects in flight. Click above, use + Project in the top header, or press Ctrl/Cmd+K → "Create Freelance OS project for active client".)*')
+            ]
+        },
+        {
+            title: '💳 Invoices & Billing',
+            lines: [
+                btn('+ Create invoice'),
+                text('*(No invoices issued yet. Click above, use + Invoice in the top header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*'),
+                ulist('Billing Terms: Monthly (1er du mois) / Net 30'),
+                ulist('Payment Method: Bank Transfer / QR-bill (CHF)')
+            ]
+        },
+        {
+            title: '⏱️ Support & Care Plan',
+            lines: [
+                btn('+ Log support time'),
+                ulist(`Active Plan: ${planLabel}`),
+                ulist(`Monthly Support Allowance: ${includedHours}`),
+                ulist('Support Window: Mon–Fri, 09:00–18:00 CET')
+            ]
+        },
+        {
+            title: '📋 Open Tasks & Actions',
+            lines: [
+                text('### Account & Relationship Tasks'),
+                { type: 'task', segments: initialTask ? [{ type: 'text', text: initialTask }] : [{ type: 'text', text: 'Initial client kickoff / follow-up' }] },
+                text('### Active Project Tasks'),
+                text('*(No active project tasks. Tasks added to linked projects will automatically roll up here.)*')
+            ]
+        },
+        {
+            title: '📝 Communication & Decisions Log',
+            lines: [
+                text(`- **${localDate()}**: Client profile created.`),
+                text('*(Tip: log key meetings, calls, and milestone decisions below)*')
+            ]
+        }
     ];
 }
 
@@ -3030,7 +3078,7 @@ class Plugin extends AppPlugin {
                 } else if (text.includes('Log support time') || text.includes('+ Time')) {
                     e.preventDefault();
                     e.stopPropagation();
-                    this.logSupportSessionForActiveRecord();
+                    this.logSupportSessionForActiveRecord(clientGuid, targetPanel);
                 }
             };
             document.addEventListener('click', this.docActionHandler, true);
@@ -4228,28 +4276,28 @@ class Plugin extends AppPlugin {
         }
     }
 
-    async logSupportSessionForActiveRecord() {
-        const sourcePanel = this.ui.getActivePanel?.();
+    async logSupportSessionForActiveRecord(explicitClientGuid = '', targetPanel = null) {
+        const sourcePanel = targetPanel || this.ui.getActivePanel?.();
         const sourceRecord = sourcePanel?.getActiveRecord?.();
         try {
-            if (!sourceRecord) throw new Error('Open a client or project page before logging support time.');
             const collections = this.workflowCollections = await this.data.getAllCollections();
             const clientsCol = collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections));
             const projectsCol = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
 
-            const isClient = clientsCol && (await clientsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
-            const isProject = projectsCol && (await projectsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
-
-            if (!isClient && !isProject) throw new Error('Open a client or project page before logging support time.');
-
-            let clientGuid = '';
+            let clientGuid = explicitClientGuid || '';
             let projectGuid = '';
-            if (isClient) {
-                clientGuid = sourceRecord.guid;
-            } else if (isProject) {
-                projectGuid = sourceRecord.guid;
-                clientGuid = getClientGuid(sourceRecord) || '';
+
+            if (!clientGuid && sourceRecord) {
+                const isClient = clientsCol && (await clientsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
+                const isProject = projectsCol && (await projectsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
+                if (isClient) clientGuid = sourceRecord.guid;
+                else if (isProject) {
+                    projectGuid = sourceRecord.guid;
+                    clientGuid = getClientGuid(sourceRecord) || '';
+                }
             }
+
+            if (!clientGuid && !sourceRecord) throw new Error('Open a client or project page before logging support time.');
 
             const data = await this.loadData();
             this.showCreateSupportSessionModal(sourcePanel, data, clientGuid, projectGuid);
