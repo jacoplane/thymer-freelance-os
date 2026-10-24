@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.5.0 — 2026-10-24
+
+- Add the Start Here daily triage shortlist with explainable task ranking and one-step Focus pinning.
+- Preserve keyboard focus when adding or removing suggestions and explain when the Focus list is full.
+- Keep suggestions limited to existing actionable tasks; no new task fields or external data collection.
+
 ## 1.4.0 — 2026-10-24
 
 - Add synced waiting explanations, explicit migration of older local notes, and native previous-status resume.

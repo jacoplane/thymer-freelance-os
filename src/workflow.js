@@ -285,6 +285,35 @@ function actionModel(projects, tasks, state, today = localDate(), complete = tru
     return { active, actions, next, focus, waiting, attention, overdue: actions.filter(task => task.date && task.date < today), complete, state };
 }
 
+function startHereSuggestions(actions, projects, state, today = localDate(), limit = 3) {
+    const byProject = new Map((projects || []).map(project => [project.guid, project]));
+    const focused = new Set(state?.focus?.[today] || []);
+    const urgency = task => task.date && task.date < today ? 0 : task.date === today ? 1 : task.date ? 2 : 3;
+    const taskPriority = task => task.status === 'important' ? 0 : 1;
+    const projectPriority = task => byProject.get(task.projectGuid)?.priority === 'high' ? 0 : 1;
+    const candidates = (actions || []).filter(task => !focused.has(task.guid)).slice().sort((a, b) =>
+        urgency(a) - urgency(b)
+        || (a.date || '9999').localeCompare(b.date || '9999')
+        || taskPriority(a) - taskPriority(b)
+        || projectPriority(a) - projectPriority(b)
+        || a.text.localeCompare(b.text)
+    );
+    return candidates.slice(0, Math.max(0, limit)).map(task => {
+        const project = byProject.get(task.projectGuid);
+        const reasons = [];
+        if (task.date && task.date < today) reasons.push('Overdue');
+        else if (task.date === today) reasons.push('Due today');
+        if (task.status === 'important') reasons.push('Important task');
+        if (project?.priority === 'high') reasons.push('High-priority project');
+        if (state?.next?.[task.projectGuid] === task.guid) reasons.push('Project next action');
+        if (dateDay(project?.deadline) !== null && project.deadline < today) reasons.push('Project deadline overdue');
+        else if (dateDay(project?.deadline) !== null && dateDay(project.deadline) <= dateDay(today) + 7) reasons.push(`Project deadline ${project.deadline}`);
+        if (task.date && task.date > today) reasons.push(`Due ${task.date}`);
+        if (!reasons.length) reasons.push(task.date ? 'Open project action' : 'No due date set');
+        return { ...task, suggestionReasons: reasons };
+    });
+}
+
 function attentionSearchText(item) {
     return [
         item.project?.name,
@@ -726,7 +755,7 @@ const Workflow = {
         const collection = collections.find(item => item.getGuid() === this.collectionGuid('Projects', collections));
         if (!collection) return { error: 'Choose your Projects collection in Settings.' };
         const records = await collection.getAllRecords();
-        const byGuid = new Map(records.map(record => [record.guid, { record, guid: record.guid, name: record.getName(), parentGuid: getParentGuid(record), status: String(getProp(record, 'status') || '').toLowerCase(), deadline: getProp(record, 'deadline') }]));
+        const byGuid = new Map(records.map(record => [record.guid, { record, guid: record.guid, name: record.getName(), parentGuid: getParentGuid(record), status: String(getProp(record, 'status') || '').toLowerCase(), priority: String(getProp(record, 'priority') || 'medium').toLowerCase(), deadline: getProp(record, 'deadline') }]));
         const projects = [...byGuid.values()].filter(record => !record.parentGuid && record.name !== 'Kanban - Active Projects' && !isTemplateRecord(record.record));
         const coverage = { complete: true, recordsFailed: 0, searchFailed: false, searchTruncated: false };
         const ownershipIssues = { ambiguous: 0, unresolved: 0, excluded: 0 };
@@ -1573,13 +1602,34 @@ const Workflow = {
         catch (error) { this.workflowMessage = error.message || 'Change could not be saved. Try again.'; await this.render(panel); }
     },
 
+    toggleFocusTask(task, button, panel) {
+        this.pendingWorkflowFocus = {
+            taskGuid: task.guid,
+            className: button?.classList.contains('os-start-here-add') ? 'os-start-here-add' : 'os-focus-action'
+        };
+        return this.workflowAction(button, async () => {
+            const state = this.loadWorkflowState();
+            const day = localDate();
+            const current = this.workflowData.model.focus.map(action => action.guid);
+            if (current.includes(task.guid)) state.focus[day] = current.filter(guid => guid !== task.guid);
+            else {
+                if (current.length >= 3) throw new Error('Your focus list has three actions. Unpin one before adding another.');
+                state.focus[day] = [...current, task.guid];
+            }
+            this.persistWorkflow();
+        }, panel);
+    },
+
     mountWorkflowApp(container, app) {
         const old = container.querySelector('.os-app');
         const scrollTop = old?.scrollTop || 0;
         const focused = document.activeElement;
-        const taskGuid = focused?.closest('[data-task]')?.dataset.task;
+        const pendingFocus = this.pendingWorkflowFocus;
+        const focusedTask = focused?.closest('[data-task]');
+        const taskGuid = focusedTask?.dataset.task || pendingFocus?.taskGuid;
         const focusKey = focused?.dataset.focusKey;
-        const fieldClass = focused?.classList?.[0];
+        const fieldClass = focusedTask ? focused?.classList?.[0] : pendingFocus?.className || focused?.classList?.[0];
+        this.pendingWorkflowFocus = null;
         const start = focused?.selectionStart;
         const end = focused?.selectionEnd;
         const opened = new Set([...container.querySelectorAll('.os-action-edit[open]')].map(node => node.closest('[data-task]').dataset.task));
@@ -1588,7 +1638,10 @@ const Workflow = {
         container.replaceChildren(viewport);
         viewport.scrollTop = scrollTop;
         if (taskGuid && fieldClass) {
-            const replacement = [...app.querySelectorAll('[data-task]')].find(row => row.dataset.task === taskGuid)?.querySelector(`.${fieldClass}`);
+            const taskRow = [...app.querySelectorAll('[data-task]')].find(row => row.dataset.task === taskGuid);
+            const replacement = taskRow?.querySelector(`.${fieldClass}`)
+                || (fieldClass === 'os-start-here-add' ? taskRow?.querySelector('.os-focus-action') : null)
+                || (fieldClass === 'os-focus-action' ? taskRow?.querySelector('.os-start-here-add') : null);
             if (replacement) {
                 replacement.focus({ preventScroll: true });
                 if (typeof start === 'number' && replacement.type !== 'date') replacement.setSelectionRange?.(start, end);
@@ -1602,7 +1655,7 @@ const Workflow = {
         }
     },
 
-    renderActionRow(task, panel, options = {}) {
+    renderActionRow(task, panel) {
         const state = this.loadWorkflowState();
         const row = document.createElement('div');
         row.className = 'os-action-row';
@@ -1620,16 +1673,7 @@ const Workflow = {
         row.querySelector('.os-wait-reason').oninput = row.querySelector('.os-wait-date').oninput = () => this.rememberWaitingEditor(task.guid, waitingValues());
         row.querySelector('.os-action-title').onclick = () => this.openItem(task.guid, task.recordGuid, panel);
         row.querySelector('.os-action-done').onchange = event => this.workflowAction(event.target, () => this.setActionStatus(task, 'done'), panel);
-        row.querySelector('.os-focus-action')?.addEventListener('click', event => this.workflowAction(event.target, async () => {
-            const focus = state.focus[localDate()] || [];
-            if (focused) state.focus[localDate()] = focus.filter(guid => guid !== task.guid);
-            else {
-                const current = this.workflowData.model.focus.map(action => action.guid);
-                if (current.length >= 3) throw new Error('Your focus list has three actions. Unpin one before adding another.');
-                state.focus[localDate()] = [...current, task.guid];
-            }
-            this.persistWorkflow();
-        }, panel));
+        row.querySelector('.os-focus-action')?.addEventListener('click', event => this.toggleFocusTask(task, event.currentTarget, panel));
         row.querySelector('.os-next-action')?.addEventListener('click', event => this.workflowAction(event.target, async () => {
             if (state.next[task.projectGuid] === task.guid) {
                 await this.writeNativeNextAction(this.workflowData.byGuid.get(task.projectGuid)?.record, null);
@@ -1829,6 +1873,43 @@ const Workflow = {
             section.appendChild(footer);
             return section;
         }
+        const suggestions = startHereSuggestions(model.actions, workflow.projects || model.active, this.workflowState, localDate());
+        const startHere = document.createElement('div'); startHere.className = 'os-start-here';
+        startHere.innerHTML = '<div class="os-start-here-heading"><h3>Start here</h3><p class="os-action-meta">Ranked by due date; task importance and project priority break ties.</p></div>';
+        if (!model.complete) {
+            const note = document.createElement('p'); note.className = 'os-action-meta os-start-here-incomplete'; note.textContent = 'Task data is incomplete. These suggestions use only the actions that loaded.'; startHere.appendChild(note);
+        }
+        if (!suggestions.length) {
+            const empty = document.createElement('p'); empty.className = 'os-workflow-empty';
+            empty.textContent = model.focus.length ? 'No additional tasks to suggest. Your Focus list stays as selected.' : 'No actionable tasks are ready to suggest. Check the queues below.';
+            startHere.appendChild(empty);
+        } else {
+            const list = document.createElement('ol'); list.className = 'os-start-here-list';
+            list.setAttribute('aria-label', 'Tasks ranked to start with');
+            suggestions.forEach((task, index) => {
+                const item = document.createElement('li'); item.className = 'os-start-here-item'; item.dataset.task = task.guid;
+                const row = document.createElement('div'); row.className = 'os-start-here-row';
+                const copy = document.createElement('div'); copy.className = 'os-start-here-copy';
+                const title = document.createElement('button'); title.type = 'button'; title.className = 'os-start-here-title';
+                title.setAttribute('aria-label', `Open task: ${task.text}`); title.textContent = task.text;
+                title.onclick = () => this.openItem(task.guid, task.recordGuid, panel);
+                const project = document.createElement('p'); project.className = 'os-start-here-project'; project.textContent = task.projectName;
+                const reasons = document.createElement('ul'); reasons.className = 'os-start-here-reasons'; reasons.setAttribute('aria-label', 'Why this task is suggested');
+                task.suggestionReasons.forEach(text => {
+                    const reason = document.createElement('li'); reason.textContent = text;
+                    if (text.includes('Overdue')) reason.classList.add('os-cash-warning');
+                    reasons.appendChild(reason);
+                });
+                copy.append(title, project, reasons);
+                const add = document.createElement('button'); add.type = 'button'; add.className = 'os-button os-start-here-add'; add.textContent = 'Add to Focus';
+                add.setAttribute('aria-label', `Add ${task.text} to Focus`);
+                if (model.focus.length >= 3) { add.disabled = true; add.title = 'Focus already has three actions'; }
+                add.onclick = event => this.toggleFocusTask(task, event.currentTarget, panel);
+                row.append(copy, add); item.appendChild(row); list.appendChild(item);
+            });
+            startHere.appendChild(list);
+        }
+        section.appendChild(startHere);
         section.insertAdjacentHTML('beforeend', `<div class="os-workflow-heading"><div><h2>Today’s focus</h2><p class="os-action-meta">Choose up to three actions for ${localDate()}.</p></div><span class="os-focus-count">${model.focus.length} / 3</span></div>`);
         const focus = document.createElement('div'); focus.className = 'os-focus-list';
         model.focus.forEach(task => focus.appendChild(this.renderActionRow(task, panel)));

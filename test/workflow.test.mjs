@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 const source = fs.readFileSync(new URL('../src/support-time.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/workflow.js', import.meta.url), 'utf8') + '\n' + fs.readFileSync(new URL('../src/index.js', import.meta.url), 'utf8');
 const runtime = { AppPlugin: class {}, Date, Map, Set, console };
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, weeklyPriorityLines, reviewPriorityKey, reviewPriorityIdKey, reconcileReviewPriorityItems, filterActions, summarizeSupportTime, normalizeWorkflowState, workflowStorageKey, resolveTaskProject, readWaitingDetails, validateWaitingInput, selectQueueItems, queuePresets, presetCompatible, waitingDetailsFor, cloneWorkflowState, isActionableTask, isWaitingTask, isTerminalTask, validDateValue, attentionSearchText, queueEmptyMessage, reviewTitle, weekDates, parseReviewSnapshot, reviewSnapshot, reviewPrioritySnapshot, journalDateTarget, previousReviewWeek, priorityTextSimilarity, reviewPriorityTask });`, runtime);
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, actionModel, startHereSuggestions, reconcileWorkflowPointers, reconcileNativeNextActions, workflowDefaults, projectRoot, taskDateSegments, reviewWeek, weeklyReviewText, weeklyPriorityLines, reviewPriorityKey, reviewPriorityIdKey, reconcileReviewPriorityItems, filterActions, summarizeSupportTime, normalizeWorkflowState, workflowStorageKey, resolveTaskProject, readWaitingDetails, validateWaitingInput, selectQueueItems, queuePresets, presetCompatible, waitingDetailsFor, cloneWorkflowState, isActionableTask, isWaitingTask, isTerminalTask, validDateValue, attentionSearchText, queueEmptyMessage, reviewTitle, weekDates, parseReviewSnapshot, reviewSnapshot, reviewPrioritySnapshot, journalDateTarget, previousReviewWeek, priorityTextSimilarity, reviewPriorityTask });`, runtime);
 const project = { guid: 'project', name: 'Example project', status: 'in_progress', deadline: '' };
 const task = (guid, props = {}) => ({ guid, projectGuid: 'project', projectName: 'Example project', text: guid, status: 'none', date: '', ...props });
 
@@ -118,6 +118,50 @@ test('queue excludes terminal projects, done and blocked tasks from action and f
     assert.equal(result.waiting.length, 1); assert.equal(result.actions.length, 1); assert.equal(result.attention.length, 1);
     assert.ok(result.attention[0].issues.includes('1 waiting task'));
     assert.equal(api.actionModel([project], [task('ready')], state, '2026-10-23').focus.length, 0);
+});
+
+test('Start Here puts immediate urgency before project priority and explains each suggestion', () => {
+    const state = api.workflowDefaults(); state.focus['2026-10-24'] = ['already-focused'];
+    state.next.low = 'overdue'; state.next.high = 'high-future';
+    const projects = [
+        { guid: 'low', priority: 'medium' },
+        { guid: 'high', priority: 'high', deadline: '2026-10-29' }
+    ];
+    const actions = [
+        task('high-future', { projectGuid: 'high', date: '2026-10-27' }),
+        task('today', { projectGuid: 'high', date: '2026-10-24' }),
+        task('overdue', { projectGuid: 'low', date: '2026-10-22' }),
+        task('due-soon', { projectGuid: 'low', date: '2026-10-25' }),
+        task('important', { projectGuid: 'low', status: 'important' }),
+        task('already-focused', { projectGuid: 'high' })
+    ];
+    const suggestions = api.startHereSuggestions(actions, projects, state, '2026-10-24', 4);
+    assert.deepEqual(Array.from(suggestions, item => item.guid), ['overdue', 'today', 'due-soon', 'high-future']);
+    assert.ok(Array.from(suggestions[0].suggestionReasons).includes('Overdue'));
+    assert.ok(Array.from(suggestions[0].suggestionReasons).includes('Project next action'));
+    assert.ok(Array.from(suggestions[1].suggestionReasons).includes('Due today'));
+    assert.ok(Array.from(suggestions[3].suggestionReasons).includes('High-priority project'));
+    assert.ok(Array.from(suggestions[3].suggestionReasons).includes('Project deadline 2026-10-29'));
+    assert.ok(!suggestions.some(item => item.guid === 'already-focused'));
+});
+
+test('Start Here uses Focus pins, removes suggestions from the list, and protects the three-action limit', async () => {
+    const plugin = new api.Plugin();
+    plugin.workflowState = api.workflowDefaults();
+    plugin.workflowData = { model: { focus: [] } };
+    plugin.loadWorkflowState = () => plugin.workflowState;
+    plugin.persistWorkflow = () => true;
+    plugin.workflowAction = async (_button, operation) => operation();
+    await plugin.toggleFocusTask({ guid: 'suggested' }, null, null);
+    const day = Object.keys(plugin.workflowState.focus)[0];
+    assert.deepEqual(Array.from(plugin.workflowState.focus[day]), ['suggested']);
+    plugin.workflowData.model.focus = [{ guid: 'suggested' }];
+    await plugin.toggleFocusTask({ guid: 'suggested' }, null, null);
+    assert.deepEqual(Array.from(plugin.workflowState.focus[day]), []);
+    plugin.workflowData.model.focus = [{ guid: 'one' }, { guid: 'two' }, { guid: 'three' }];
+    plugin.workflowState.focus[day] = ['one', 'two', 'three'];
+    await assert.rejects(plugin.toggleFocusTask({ guid: 'four' }, null, null), /three actions/);
+    assert.deepEqual(Array.from(plugin.workflowState.focus[day]), ['one', 'two', 'three']);
 });
 
 test('client review checkpoints surface overdue, due-soon and missing-date cues', () => {
