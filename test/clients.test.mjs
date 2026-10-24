@@ -153,3 +153,25 @@ test('initializeClient populates client template sections with relationship and 
     assert.equal(reapply.applied, false);
     assert.equal(reapply.reason, 'already-applied');
 });
+
+test('initializeClient creates pipeline lead archetype for prospect stages', async () => {
+    const plugin = new api.Plugin();
+    const state = mockPage();
+    const result = await plugin.initializeClient(state.record, {
+        status: 'discussing',
+        context: 'Potential corporate rebrand and web redesign',
+        estimatedValue: 4500,
+        contactName: 'Marc Dubuis',
+        email: 'marc@example.ch'
+    });
+    assert.equal(result.applied, true);
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Relationship & Context'));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === '🎯 Deal Qualification & Next Steps'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Add task'));
+    assert.ok(state.lines.some(l => l.type === 'task' && l.segments?.[0]?.text?.includes('Discovery call')));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === '📄 Commercial Estimate & Proposals'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Create project'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Create invoice'));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('4500 CHF')));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === '📝 Communication & Meeting Debrief'));
+});

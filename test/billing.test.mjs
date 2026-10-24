@@ -238,6 +238,9 @@ test('initializeInvoice creates structured archetype sections with amounts and d
     assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('Branding Phase 1')));
     assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Delivery & Settlement Log'));
     assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('2026-10-01')));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Add deliverable'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Copy payment details'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Record payment'));
 
     // Idempotent
     const reapply = await plugin.initializeInvoice(state.record);
@@ -258,6 +261,8 @@ test('initializeSupportSession creates log and follow-up checklist', async () =>
     assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('2 h')));
     assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('Troubleshoot database connections')));
     assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Client Follow-Up'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Log time'));
+    assert.ok(state.lines.some(l => l.type === 'linkbtn' && l.segments?.[0]?.text === '+ Add follow-up task'));
     assert.ok(state.lines.some(l => l.type === 'task' && l.segments?.[0]?.text === 'Send session summary or updates to client'));
 
     // Idempotent

@@ -410,10 +410,57 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
     ];
 }
 
-function clientTemplateSections({ context = '', initialTask = '', plan = '', monthlyChf = 0, website = '', contactName = '', email = '' } = {}) {
+function clientTemplateSections({ context = '', initialTask = '', plan = '', monthlyChf = 0, website = '', contactName = '', email = '', isLead = false, status = '', leadStage = '', estimatedValue = 0 } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
     const ulist = value => ({ type: 'ulist', segments: [{ type: 'text', text: value }] });
     const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
+
+    const isLeadClient = isLead || ['prospect', 'contacted', 'discussing', 'proposal_sent'].includes(status);
+
+    if (isLeadClient) {
+        const stageLabel = leadStage || (status ? status.replace(/_/g, ' ') : 'Prospect');
+        const estStr = estimatedValue > 0 ? `${estimatedValue} CHF` : 'TBD';
+        return [
+            {
+                title: 'Relationship & Context',
+                lines: [
+                    text(context || 'Record prospect background, initial inquiry, and commercial context.'),
+                    text('### 🔗 Key Links & References'),
+                    ulist(`Website: ${website || 'https://...'}`),
+                    ulist('Pitch Deck / Scope Brief: [Shared link ↗]'),
+                    text('### 👥 Stakeholders & Roles'),
+                    ulist(`Primary Contact: ${contactName || 'Lead contact'} (${email || 'email@...'}) — Prospect`),
+                    ulist('Decision Maker: Same / Commercial sponsor')
+                ]
+            },
+            {
+                title: '🎯 Deal Qualification & Next Steps',
+                lines: [
+                    btn('+ Add task'),
+                    { type: 'task', segments: [{ type: 'text', text: 'Discovery call: understand project goals and scope' }] },
+                    { type: 'task', segments: [{ type: 'text', text: 'Validate budget range and decision timeline' }] },
+                    { type: 'task', segments: [{ type: 'text', text: 'Prepare and deliver proposal / estimate' }] }
+                ]
+            },
+            {
+                title: '📄 Commercial Estimate & Proposals',
+                lines: [
+                    btn('+ Create project'),
+                    btn('+ Create invoice'),
+                    ulist(`Estimated Pipeline Value: ${estStr}`),
+                    ulist(`Current Stage: ${stageLabel}`),
+                    text('*(Once the proposal is accepted, click "+ Create project" above to launch delivery or "+ Create invoice" to bill deposit)*')
+                ]
+            },
+            {
+                title: '📝 Communication & Meeting Debrief',
+                lines: [
+                    text(`- **${localDate()}**: Lead record created.`),
+                    text('*(Tip: log qualification calls, objection notes, and follow-up emails below)*')
+                ]
+            }
+        ];
+    }
 
     const planLabel = plan || (monthlyChf > 0 ? `${monthlyChf} CHF / month care plan` : 'Ad-hoc / on-demand support');
     const includedHours = monthlyChf >= 100 ? '4h / month included' : monthlyChf > 0 ? '2h / month included' : 'Billed hourly';
@@ -478,17 +525,21 @@ function clientTemplateSections({ context = '', initialTask = '', plan = '', mon
 
 function invoiceTemplateSections(values = {}, { clientName = '', projectName = '', summary = '' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
     const amountStr = values.amount_chf ? `${values.amount_chf} ${values.currency || 'CHF'}` : 'Amount TBD';
     const clientStr = clientName || 'Client';
     const projectStr = projectName || 'General engagement';
     const issuedStr = values.issued || localDate();
     const dueStr = values.due || '30 days net';
     const paymentStatus = values.payment_status || 'unpaid';
+    const isPaid = paymentStatus === 'paid';
+    const isSent = values.status === 'sent';
 
     return [
         {
             title: 'Invoice Summary & Scope',
             lines: [
+                btn('+ Add deliverable'),
                 text(summary || `Scope of work, deliverables, and services covered under this invoice for ${clientStr}.`)
             ]
         },
@@ -499,14 +550,26 @@ function invoiceTemplateSections(values = {}, { clientName = '', projectName = '
                 text(`- **Project:** ${projectStr}`),
                 text(`- **Amount & Currency:** ${amountStr}`),
                 text(`- **Payment Terms:** Net due ${dueStr}`),
-                text('- **Payment Method:** Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)')
+                text('- **Payment Method:** Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)'),
+                text('- **QR-IBAN:** CH44 0076 2011 6238 5295 8'),
+                btn('+ Copy payment details')
             ]
         },
         {
             title: 'Delivery & Settlement Log',
             lines: [
                 text(`- **${issuedStr}**: Invoice record generated (${values.status || 'draft'}).`),
-                ...(values.paid_date ? [text(`- **${values.paid_date}**: Payment confirmed received and settled.`)] : [text(`- **Status**: ${paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'unconfirmed' ? 'Payment sent / pending confirmation' : 'Awaiting payment'} *(Use Dashboard → Invoices or tell agent: "Mark ${values.invoice_id || 'invoice'} paid")*.`)])
+                ...(isPaid
+                    ? [text(`- **${values.paid_date || localDate()}**: ✓ Payment confirmed received and settled in full.`)]
+                    : isSent
+                        ? [
+                            btn('+ Record payment'),
+                            text(`- **Status**: Payment sent / awaiting settlement.`)
+                        ]
+                        : [
+                            btn('+ Mark sent'),
+                            text(`- **Status**: Draft invoice.`)
+                        ])
             ]
         }
     ];
@@ -514,6 +577,7 @@ function invoiceTemplateSections(values = {}, { clientName = '', projectName = '
 
 function supportSessionTemplateSections(values = {}, { clientName = '', projectName = '', summary = '' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
     const hours = values.hours ?? '1';
     const date = values.date || localDate();
     const desc = values.description || summary || 'Delivered support session.';
@@ -524,6 +588,7 @@ function supportSessionTemplateSections(values = {}, { clientName = '', projectN
         {
             title: 'Session Log & Delivered Work',
             lines: [
+                btn('+ Log time'),
                 text(`- **Date & Duration:** ${date} (${hours} h)`),
                 text(`- **Client & Project:** ${clientStr} / ${projectStr}`),
                 text(`- **Summary:** ${desc}`)
@@ -532,6 +597,7 @@ function supportSessionTemplateSections(values = {}, { clientName = '', projectN
         {
             title: 'Client Follow-Up',
             lines: [
+                btn('+ Add follow-up task'),
                 { type: 'task', segments: [{ type: 'text', text: 'Send session summary or updates to client' }] },
                 text('*(Mark complete once communicated. Hours automatically contribute to monthly care plan retainers.)*')
             ]
@@ -576,7 +642,7 @@ export class Plugin extends AppPlugin {
                 const listview = linkbtn.closest('.listview-items');
                 const pageGuid = listview?.getAttribute('data-guid') || targetPanel?.getActiveRecord?.()?.guid;
 
-                const { isClient, isProject, clientGuid, projectGuid } = await this.resolveRecordContext(targetPanel, pageGuid);
+                const { isClient, isProject, isInvoice, isSupportSession, clientGuid, projectGuid, invoiceGuid, supportSessionGuid } = await this.resolveRecordContext(targetPanel, pageGuid);
 
                 if (text.includes('Create project') || text.includes('+ Project')) {
                     e.preventDefault();
@@ -602,6 +668,45 @@ export class Plugin extends AppPlugin {
                     e.preventDefault();
                     e.stopPropagation();
                     this.addReviewCheckpointForActiveProject(projectGuid, targetPanel);
+                } else if (text.includes('Record payment') || text.includes('+ Record payment')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    const inv = data.invoices.find(i => i.guid === (invoiceGuid || pageGuid));
+                    if (inv) {
+                        this.showBillingStateModal(inv, 'paid', targetPanel);
+                    } else {
+                        this.ui.addToaster({ title: 'Invoice record not found', dismissible: true });
+                    }
+                } else if (text.includes('Mark sent') || text.includes('+ Mark sent')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    const inv = data.invoices.find(i => i.guid === (invoiceGuid || pageGuid));
+                    if (inv) {
+                        this.showBillingStateModal(inv, 'sent', targetPanel);
+                    } else {
+                        this.ui.addToaster({ title: 'Invoice record not found', dismissible: true });
+                    }
+                } else if (text.includes('Copy payment') || text.includes('copy payment') || text.includes('QR-bill')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    const inv = data.invoices.find(i => i.guid === (invoiceGuid || pageGuid)) || {
+                        guid: invoiceGuid || pageGuid,
+                        invoiceId: 'Invoice',
+                        amount: 0,
+                        currency: 'CHF'
+                    };
+                    await this.copyInvoiceDetails(inv);
+                } else if (text.includes('Add deliverable') || text.includes('deliverable')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.addDeliverableForActiveInvoice(invoiceGuid || pageGuid, targetPanel);
+                } else if (text.includes('follow-up task') || text.includes('Follow-up task')) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    await this.addFollowUpTaskForActiveSession(supportSessionGuid || pageGuid, targetPanel);
                 }
             };
             document.addEventListener('click', this.docActionHandler, true);
@@ -1450,10 +1555,15 @@ export class Plugin extends AppPlugin {
         if (hasTemplate) return { applied: false, reason: 'already-applied' };
         const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
         if (content.length > 0) return { applied: false, reason: 'has-content' };
+        const status = options.status || getProp(record, 'status') || '';
+        const leadStage = options.leadStage || getProp(record, 'lead_stage') || '';
+        const estimatedValue = options.estimatedValue ?? (Number(getProp(record, 'estimated_value_chf')) || 0);
+        const isLead = options.isLead ?? isLeadClient({ status });
+        const opts = { ...options, status, leadStage, estimatedValue, isLead };
         const created = [];
         try {
             let previous = null;
-            for (const section of clientTemplateSections(options)) {
+            for (const section of clientTemplateSections(opts)) {
                 const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'client-v1' });
                 if (!heading) throw new Error('The client template could not be saved');
                 created.push(heading); previous = heading;
@@ -1703,13 +1813,19 @@ export class Plugin extends AppPlugin {
         }
         const clientsCol = collections ? collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections)) : null;
         const projectsCol = collections ? collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections)) : null;
+        const invoicesCol = collections ? collections.find(c => c.getGuid() === this.collectionGuid('Invoices', collections)) : null;
+        const supportSessionsCol = collections ? collections.find(c => c.getGuid() === this.collectionGuid('Support Sessions', collections)) : null;
         const activeRecord = targetPanel?.getActiveRecord?.();
         const guid = explicitGuid || activeRecord?.guid || '';
 
         let isClient = false;
         let isProject = false;
+        let isInvoice = false;
+        let isSupportSession = false;
         let clientGuid = '';
         let projectGuid = '';
+        let invoiceGuid = '';
+        let supportSessionGuid = '';
 
         if (guid) {
             if (clientsCol) {
@@ -1727,8 +1843,26 @@ export class Plugin extends AppPlugin {
                     clientGuid = getClientGuid(projectRec) || '';
                 }
             }
+            if (!isClient && !isProject && invoicesCol) {
+                const invRec = (await invoicesCol.getAllRecords()).find(r => r.guid === guid && !isTemplateRecord(r));
+                if (invRec) {
+                    isInvoice = true;
+                    invoiceGuid = guid;
+                    clientGuid = getClientGuid(invRec) || '';
+                    projectGuid = getProjectGuid(invRec) || '';
+                }
+            }
+            if (!isClient && !isProject && !isInvoice && supportSessionsCol) {
+                const ssRec = (await supportSessionsCol.getAllRecords()).find(r => r.guid === guid && !isTemplateRecord(r));
+                if (ssRec) {
+                    isSupportSession = true;
+                    supportSessionGuid = guid;
+                    clientGuid = getClientGuid(ssRec) || '';
+                    projectGuid = getProjectGuid(ssRec) || '';
+                }
+            }
         }
-        return { isClient, isProject, clientGuid, projectGuid };
+        return { isClient, isProject, isInvoice, isSupportSession, clientGuid, projectGuid, invoiceGuid, supportSessionGuid };
     }
 
     showAddTaskModal(panel, data, defaultProjectGuid = '') {
@@ -1828,6 +1962,91 @@ export class Plugin extends AppPlugin {
         }
     }
 
+    async copyInvoiceDetails(invoice) {
+        const text = [
+            `Invoice: ${invoice.invoiceId || invoice.name}`,
+            invoice.clientName ? `Client: ${invoice.clientName}` : '',
+            `Amount: ${invoice.amount} ${invoice.currency || 'CHF'}`,
+            invoice.dueDate ? `Due: ${invoice.dueDate}` : '',
+            `Status: ${invoice.status === 'paid' ? 'Paid' : invoice.stage === 'sent' ? 'Sent (Unpaid)' : 'Draft'}`,
+            '',
+            'Payment Details:',
+            'Creditor: Vermeulen Solutions · Chemin des Vignes 12, 1299 Crans (VD)',
+            'QR-IBAN: CH44 0076 2011 6238 5295 8',
+            `Reference: ${invoice.invoiceId || invoice.name}`
+        ].filter(Boolean).join('\n');
+
+        let copied = false;
+        try {
+            if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
+                await navigator.clipboard.writeText(text);
+                copied = true;
+            }
+        } catch {}
+
+        if (!copied && typeof document !== 'undefined') {
+            try {
+                const ta = document.createElement('textarea');
+                ta.value = text;
+                ta.style.position = 'fixed';
+                ta.style.opacity = '0';
+                document.body.appendChild(ta);
+                ta.focus();
+                ta.select();
+                copied = document.execCommand('copy');
+                ta.remove();
+            } catch {}
+        }
+
+        if (copied) {
+            this.ui?.addToaster?.({ title: 'Invoice & QR-bill details copied to clipboard', autoDestroyTime: 2500, dismissible: true });
+        } else {
+            this.ui?.addToaster?.({ title: 'Unable to copy to clipboard', dismissible: true });
+        }
+    }
+
+    async addDeliverableForActiveInvoice(invoiceGuid, targetPanel = null) {
+        try {
+            const collections = this.workflowCollections || await this.data.getAllCollections();
+            const invoices = collections.find(c => c.getGuid() === this.collectionGuid('Invoices', collections));
+            if (!invoices) throw new Error('Invoices collection not found.');
+            const record = (await invoices.getAllRecords()).find(r => r.guid === invoiceGuid);
+            if (!record) throw new Error('Invoice record not found.');
+
+            const lines = await record.getLineItems(false);
+            const heading = lines.find(l => l.type === 'heading' && (l.text?.toLowerCase().includes('summary') || l.text?.toLowerCase().includes('scope') || l.text?.toLowerCase().includes('deliverable')));
+            const lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
+
+            const line = await record.createLineItem(heading || null, lastChild || null, 'task', [{ type: 'text', text: 'Deliverable item' }]);
+            if (!line) throw new Error('Could not add deliverable item.');
+            this.ui?.addToaster?.({ title: 'Deliverable item added to invoice', autoDestroyTime: 2500, dismissible: true });
+            this.scheduleRefresh();
+        } catch (err) {
+            this.ui?.addToaster?.({ title: err.message || 'Could not add deliverable item', dismissible: true });
+        }
+    }
+
+    async addFollowUpTaskForActiveSession(sessionGuid, targetPanel = null) {
+        try {
+            const collections = this.workflowCollections || await this.data.getAllCollections();
+            const sessions = collections.find(c => c.getGuid() === this.collectionGuid('Support Sessions', collections));
+            if (!sessions) throw new Error('Support Sessions collection not found.');
+            const record = (await sessions.getAllRecords()).find(r => r.guid === sessionGuid);
+            if (!record) throw new Error('Support session record not found.');
+
+            const lines = await record.getLineItems(false);
+            const heading = lines.find(l => l.type === 'heading' && (l.text?.toLowerCase().includes('follow-up') || l.text?.toLowerCase().includes('action')));
+            const lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
+
+            const line = await record.createLineItem(heading || null, lastChild || null, 'task', [{ type: 'text', text: 'Client follow-up action' }]);
+            if (!line) throw new Error('Could not create follow-up task.');
+            this.ui?.addToaster?.({ title: 'Follow-up task added to session', autoDestroyTime: 2500, dismissible: true });
+            this.scheduleRefresh();
+        } catch (err) {
+            this.ui?.addToaster?.({ title: err.message || 'Could not add follow-up task', dismissible: true });
+        }
+    }
+
     async updatePanelHeaderActions() {
         if (!this.ui?.getPanels || typeof document === 'undefined') return;
         const panels = this.ui.getPanels();
@@ -1837,7 +2056,9 @@ export class Plugin extends AppPlugin {
         }
         const clientsColGuid = this.collectionGuid('Clients', collections);
         const projectsColGuid = this.collectionGuid('Projects', collections);
-        if (!clientsColGuid && !projectsColGuid) return;
+        const invoicesColGuid = this.collectionGuid('Invoices', collections);
+        const supportSessionsColGuid = this.collectionGuid('Support Sessions', collections);
+        if (!clientsColGuid && !projectsColGuid && !invoicesColGuid && !supportSessionsColGuid) return;
 
         for (const panel of panels) {
             const panelEl = panel.getElement?.();
@@ -1847,6 +2068,8 @@ export class Plugin extends AppPlugin {
             const rec = panel.getActiveRecord?.();
             const isClientPanel = col && col.getGuid() === clientsColGuid && rec && !isTemplateRecord(rec);
             const isProjectPanel = col && col.getGuid() === projectsColGuid && rec && !isTemplateRecord(rec);
+            const isInvoicePanel = col && col.getGuid() === invoicesColGuid && rec && !isTemplateRecord(rec);
+            const isSupportPanel = col && col.getGuid() === supportSessionsColGuid && rec && !isTemplateRecord(rec);
 
             const outerPanel = panelEl.closest?.('.panel') || panelEl;
             const menubar = outerPanel.querySelector('.panel-menubar-buttons');
@@ -1854,7 +2077,7 @@ export class Plugin extends AppPlugin {
 
             let container = menubar.querySelector('.os-client-header-actions');
 
-            if (!isClientPanel && !isProjectPanel) {
+            if (!isClientPanel && !isProjectPanel && !isInvoicePanel && !isSupportPanel) {
                 if (container) container.remove();
                 continue;
             }
@@ -1936,6 +2159,137 @@ export class Plugin extends AppPlugin {
                     e.stopPropagation();
                     const data = await this.loadData();
                     this.showCreateSupportSessionModal(panel, data, clientGuid, rec.guid);
+                };
+            } else if (isInvoicePanel) {
+                const stage = (getProp(rec, 'status') || 'draft').toLowerCase();
+                const paymentStatus = (getProp(rec, 'payment_status') || 'unpaid').toLowerCase();
+                const isPaid = paymentStatus === 'paid';
+                const isSent = stage === 'sent';
+                const invoiceId = getProp(rec, 'invoice_id') || rec.name || 'Invoice';
+
+                if (isPaid) {
+                    container.innerHTML = `
+                        <div class="os-header-badge-paid" title="Payment confirmed and settled">
+                            <span class="ti ti-check"></span>
+                            <span>Settled</span>
+                        </div>
+                        <button type="button" class="os-header-action-btn os-header-btn-copy" title="Copy payment details to clipboard">
+                            <span class="ti ti-copy"></span>
+                            <span>Copy details</span>
+                        </button>
+                    `;
+                } else if (isSent) {
+                    container.innerHTML = `
+                        <button type="button" class="os-header-action-btn os-header-btn-paid" title="Record payment for ${escapeHtml(invoiceId)}">
+                            <span class="ti ti-check"></span>
+                            <span>+ Record payment</span>
+                        </button>
+                        <button type="button" class="os-header-action-btn os-header-btn-copy" title="Copy payment details to clipboard">
+                            <span class="ti ti-copy"></span>
+                            <span>Copy details</span>
+                        </button>
+                    `;
+                } else {
+                    container.innerHTML = `
+                        <button type="button" class="os-header-action-btn os-header-btn-sent" title="Mark ${escapeHtml(invoiceId)} as sent">
+                            <span class="ti ti-send"></span>
+                            <span>+ Mark sent</span>
+                        </button>
+                        <button type="button" class="os-header-action-btn os-header-btn-paid" title="Record direct payment for ${escapeHtml(invoiceId)}">
+                            <span class="ti ti-check"></span>
+                            <span>+ Record payment</span>
+                        </button>
+                        <button type="button" class="os-header-action-btn os-header-btn-copy" title="Copy payment details to clipboard">
+                            <span class="ti ti-copy"></span>
+                            <span>Copy details</span>
+                        </button>
+                    `;
+                }
+
+                container.querySelector('.os-header-btn-paid')?.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    const inv = data.invoices.find(i => i.guid === rec.guid) || {
+                        guid: rec.guid,
+                        name: rec.name || invoiceId,
+                        invoiceId,
+                        amount: Number(getProp(rec, 'amount_chf')) || 0,
+                        currency: String(getProp(rec, 'currency') || 'CHF').toUpperCase(),
+                        status: paymentStatus,
+                        stage,
+                        issuedDate: getProp(rec, 'issued') || '',
+                        paidDate: getProp(rec, 'paid_date') || ''
+                    };
+                    this.showBillingStateModal(inv, 'paid', panel);
+                });
+
+                container.querySelector('.os-header-btn-sent')?.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    const inv = data.invoices.find(i => i.guid === rec.guid) || {
+                        guid: rec.guid,
+                        name: rec.name || invoiceId,
+                        invoiceId,
+                        amount: Number(getProp(rec, 'amount_chf')) || 0,
+                        currency: String(getProp(rec, 'currency') || 'CHF').toUpperCase(),
+                        status: paymentStatus,
+                        stage,
+                        issuedDate: getProp(rec, 'issued') || '',
+                        paidDate: getProp(rec, 'paid_date') || ''
+                    };
+                    this.showBillingStateModal(inv, 'sent', panel);
+                });
+
+                container.querySelector('.os-header-btn-copy')?.addEventListener('click', async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    const inv = data.invoices.find(i => i.guid === rec.guid) || {
+                        guid: rec.guid,
+                        name: rec.name || invoiceId,
+                        invoiceId,
+                        amount: Number(getProp(rec, 'amount_chf')) || 0,
+                        currency: String(getProp(rec, 'currency') || 'CHF').toUpperCase(),
+                        dueDate: getProp(rec, 'due') || '',
+                        status: paymentStatus,
+                        stage,
+                        clientName: ''
+                    };
+                    await this.copyInvoiceDetails(inv);
+                });
+            } else if (isSupportPanel) {
+                const clientGuid = getClientGuid(rec) || '';
+                const projectGuid = getProjectGuid(rec) || '';
+                container.innerHTML = `
+                    <button type="button" class="os-header-action-btn os-header-btn-time" title="Log support time">
+                        <span class="ti ti-clock"></span>
+                        <span>+ Time</span>
+                    </button>
+                    <button type="button" class="os-header-action-btn os-header-btn-task" title="Add a task">
+                        <span class="ti ti-checkbox"></span>
+                        <span>+ Task</span>
+                    </button>
+                    <button type="button" class="os-header-action-btn os-header-btn-invoice" title="Create an invoice">
+                        <span class="ti ti-receipt"></span>
+                        <span>+ Invoice</span>
+                    </button>
+                `;
+
+                container.querySelector('.os-header-btn-time').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateSupportSessionModal(panel, data, clientGuid, projectGuid);
+                };
+
+                container.querySelector('.os-header-btn-task').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showAddTaskModal(panel, data, projectGuid);
+                };
+
+                container.querySelector('.os-header-btn-invoice').onclick = async (e) => {
+                    e.stopPropagation();
+                    const data = await this.loadData();
+                    this.showCreateInvoiceModal(panel, data, clientGuid, projectGuid);
                 };
             }
         }
