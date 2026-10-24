@@ -208,3 +208,60 @@ test('invoice creation validates linked project belongs to the client', async ()
     await f.plugin.createConfiguredRecord('Invoices', 'INV-VALID', { ...paidEntry(), project: projectGuid });
     assert.equal(f.stored.project, projectGuid);
 });
+
+function mockPage(initial = [], failAt = Infinity) {
+    const lines = [...initial]; let writes = 0;
+    const record = { guid: 'rec', getLineItems: async () => lines, createLineItem: async (parent, after, type, segments, props) => {
+        if (++writes === failAt) return null;
+        const line = { guid: `line-${writes}`, parent_guid: parent?.guid || record.guid, type, segments, props, delete: async () => { lines.splice(lines.indexOf(line), 1); return true; } };
+        lines.push(line); return line;
+    }};
+    return { record, lines, writes: () => writes };
+}
+
+test('initializeInvoice creates structured archetype sections with amounts and dates', async () => {
+    const plugin = new api.Plugin();
+    const state = mockPage();
+    const result = await plugin.initializeInvoice(state.record, {
+        amount_chf: 1250,
+        currency: 'CHF',
+        status: 'sent',
+        payment_status: 'unpaid',
+        issued: '2026-10-01',
+        due: '2026-10-31'
+    }, { clientName: 'Acme Corp', projectName: 'Branding Phase 1' });
+    assert.equal(result.applied, true);
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Invoice Summary & Scope'));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Commercial & Payment Details'));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('1250 CHF')));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('Acme Corp')));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('Branding Phase 1')));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Delivery & Settlement Log'));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('2026-10-01')));
+
+    // Idempotent
+    const reapply = await plugin.initializeInvoice(state.record);
+    assert.equal(reapply.applied, false);
+    assert.equal(reapply.reason, 'already-applied');
+});
+
+test('initializeSupportSession creates log and follow-up checklist', async () => {
+    const plugin = new api.Plugin();
+    const state = mockPage();
+    const result = await plugin.initializeSupportSession(state.record, {
+        hours: 2,
+        date: '2026-10-24',
+        description: 'Troubleshoot database connections'
+    }, { clientName: 'Beta LLC' });
+    assert.equal(result.applied, true);
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Session Log & Delivered Work'));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('2 h')));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text?.includes('Troubleshoot database connections')));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Client Follow-Up'));
+    assert.ok(state.lines.some(l => l.type === 'task' && l.segments?.[0]?.text === 'Send session summary or updates to client'));
+
+    // Idempotent
+    const reapply = await plugin.initializeSupportSession(state.record);
+    assert.equal(reapply.applied, false);
+    assert.equal(reapply.reason, 'already-applied');
+});

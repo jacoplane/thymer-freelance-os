@@ -122,3 +122,29 @@ test('duplicate client creation stops before creating or writing another record'
     await assert.rejects(plugin.createConfiguredRecord('Clients', ' example studio ', { status: 'contacted' }), /already exists/);
     assert.equal(created, 0);
 });
+
+function mockPage(initial = [], failAt = Infinity) {
+    const lines = [...initial]; let writes = 0;
+    const record = { guid: 'client-rec', getLineItems: async () => lines, createLineItem: async (parent, after, type, segments, props) => {
+        if (++writes === failAt) return null;
+        const line = { guid: `line-${writes}`, parent_guid: parent?.guid || record.guid, type, segments, props, delete: async () => { lines.splice(lines.indexOf(line), 1); return true; } };
+        lines.push(line); return line;
+    }};
+    return { record, lines, writes: () => writes };
+}
+
+test('initializeClient populates client template sections with relationship and actions', async () => {
+    const plugin = new api.Plugin();
+    const state = mockPage();
+    const result = await plugin.initializeClient(state.record, { context: 'Fintech startup based in Geneva' });
+    assert.equal(result.applied, true);
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === 'Relationship & Context'));
+    assert.ok(state.lines.some(l => l.segments?.[0]?.text === 'Fintech startup based in Geneva'));
+    assert.ok(state.lines.some(l => l.type === 'heading' && l.segments?.[0]?.text === '📋 Open Tasks & Actions'));
+    assert.ok(state.lines.some(l => l.type === 'task' && l.segments?.[0]?.text === 'Initial client kickoff / follow-up'));
+
+    // Idempotent
+    const reapply = await plugin.initializeClient(state.record);
+    assert.equal(reapply.applied, false);
+    assert.equal(reapply.reason, 'already-applied');
+});

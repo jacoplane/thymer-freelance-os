@@ -116,6 +116,34 @@ When creating or modifying page content, maintain the following clean, consisten
 - **YYYY-MM-DD**: Brief log of important conversations, proposals, or status changes.
 ```
 
+### Invoice Page Archetype
+```markdown
+## Invoice Summary & Scope
+[Concise summary of deliverables, work sessions, or retainer coverage billed by this invoice.]
+
+## Commercial & Payment Details
+- **Client:** [Client Name](ref)
+- **Project:** [Project Name](ref)
+- **Amount & Currency:** [Amount] [Currency]
+- **Payment Terms:** Net due [YYYY-MM-DD]
+- **Payment Method:** Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)
+
+## Delivery & Settlement Log
+- **YYYY-MM-DD**: Invoice generated ([draft/ready/sent]).
+- **YYYY-MM-DD**: Payment confirmed received and settled.
+```
+
+### Support Session Page Archetype
+```markdown
+## Session Log & Delivered Work
+- **Date & Duration:** YYYY-MM-DD (X.X h)
+- **Client & Project:** [Client Name](ref) / [Project Name](ref)
+- **Summary:** [Detailed summary of support delivered, bugs diagnosed, or features shipped.]
+
+## Client Follow-Up
+- [ ] Send session summary or updates to client
+```
+
 ---
 
 ## 5. Agent Workflows

@@ -2912,6 +2912,68 @@ function clientTemplateSections({ context = '', initialTask = '' } = {}) {
     ];
 }
 
+function invoiceTemplateSections(values = {}, { clientName = '', projectName = '', summary = '' } = {}) {
+    const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const amountStr = values.amount_chf ? `${values.amount_chf} ${values.currency || 'CHF'}` : 'Amount TBD';
+    const clientStr = clientName || 'Client';
+    const projectStr = projectName || 'General engagement';
+    const issuedStr = values.issued || localDate();
+    const dueStr = values.due || '30 days net';
+    const paymentStatus = values.payment_status || 'unpaid';
+
+    return [
+        {
+            title: 'Invoice Summary & Scope',
+            lines: [
+                text(summary || `Scope of work, deliverables, and services covered under this invoice for ${clientStr}.`)
+            ]
+        },
+        {
+            title: 'Commercial & Payment Details',
+            lines: [
+                text(`- **Client:** ${clientStr}`),
+                text(`- **Project:** ${projectStr}`),
+                text(`- **Amount & Currency:** ${amountStr}`),
+                text(`- **Payment Terms:** Net due ${dueStr}`),
+                text('- **Payment Method:** Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)')
+            ]
+        },
+        {
+            title: 'Delivery & Settlement Log',
+            lines: [
+                text(`- **${issuedStr}**: Invoice record generated (${values.status || 'draft'}).`),
+                ...(values.paid_date ? [text(`- **${values.paid_date}**: Payment confirmed received and settled.`)] : [text(`- **Status**: ${paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'unconfirmed' ? 'Payment sent / pending confirmation' : 'Awaiting payment'}.`)])
+            ]
+        }
+    ];
+}
+
+function supportSessionTemplateSections(values = {}, { clientName = '', projectName = '', summary = '' } = {}) {
+    const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const hours = values.hours ?? '1';
+    const date = values.date || localDate();
+    const desc = values.description || summary || 'Delivered support session.';
+    const clientStr = clientName || 'Client';
+    const projectStr = projectName || 'General retainer / maintenance';
+
+    return [
+        {
+            title: 'Session Log & Delivered Work',
+            lines: [
+                text(`- **Date & Duration:** ${date} (${hours} h)`),
+                text(`- **Client & Project:** ${clientStr} / ${projectStr}`),
+                text(`- **Summary:** ${desc}`)
+            ]
+        },
+        {
+            title: 'Client Follow-Up',
+            lines: [
+                { type: 'task', segments: [{ type: 'text', text: 'Send session summary or updates to client' }] }
+            ]
+        }
+    ];
+}
+
 class Plugin extends AppPlugin {
     onUnload() {
         clearTimeout(this.refreshTimer);
@@ -2999,6 +3061,16 @@ class Plugin extends AppPlugin {
             label: 'Apply Freelance OS project template',
             icon: 'ti-template',
             onSelected: () => this.applyProjectTemplateToActiveRecord()
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Apply Freelance OS client template',
+            icon: 'ti-template',
+            onSelected: () => this.applyClientTemplateToActiveRecord()
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Apply Freelance OS invoice template',
+            icon: 'ti-template',
+            onSelected: () => this.applyInvoiceTemplateToActiveRecord()
         });
         this.ui.addCommandPaletteCommand({
             label: 'Capture Freelance OS task for this project',
@@ -3754,6 +3826,166 @@ class Plugin extends AppPlugin {
         }
     }
 
+    async initializeInvoice(record, values = {}, options = {}) {
+        if (typeof record?.getLineItems !== 'function' || typeof record?.createLineItem !== 'function') {
+            return { applied: false, reason: 'unsupported' };
+        }
+        const lines = await record.getLineItems(false);
+        const hasTemplate = lines.some(line => line.props?.freelance_os_template === 'invoice-v1');
+        if (hasTemplate) return { applied: false, reason: 'already-applied' };
+        const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
+        if (content.length > 0) return { applied: false, reason: 'has-content' };
+
+        let clientName = options.clientName || '';
+        let projectName = options.projectName || '';
+        try {
+            const collections = this.workflowCollections || (typeof this.data?.getAllCollections === 'function' ? await this.data.getAllCollections() : null);
+            if (collections) {
+                if (!clientName) {
+                    const clientGuid = values.client || getLinkedRecordGuid(record, 'client');
+                    if (clientGuid) {
+                        const clients = collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections));
+                        if (clients) {
+                            const clientRec = (await clients.getAllRecords()).find(r => r.guid === clientGuid);
+                            if (clientRec) clientName = clientRec.getName?.() || clientRec.name || '';
+                        }
+                    }
+                }
+                if (!projectName) {
+                    const projectGuid = values.project || getLinkedRecordGuid(record, 'project');
+                    if (projectGuid) {
+                        const projects = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
+                        if (projects) {
+                            const projRec = (await projects.getAllRecords()).find(r => r.guid === projectGuid);
+                            if (projRec) projectName = projRec.getName?.() || projRec.name || '';
+                        }
+                    }
+                }
+            }
+        } catch { /* ignore name lookup errors */ }
+
+        const invoiceValues = {
+            amount_chf: values.amount_chf ?? getProp(record, 'amount_chf'),
+            currency: values.currency || getProp(record, 'currency') || 'CHF',
+            status: values.status || getProp(record, 'status') || 'draft',
+            payment_status: values.payment_status || getProp(record, 'payment_status') || 'unpaid',
+            issued: values.issued || (getProp(record, 'issued') ? String(getProp(record, 'issued')) : ''),
+            due: values.due || (getProp(record, 'due') ? String(getProp(record, 'due')) : ''),
+            paid_date: values.paid_date || (getProp(record, 'paid_date') ? String(getProp(record, 'paid_date')) : '')
+        };
+
+        const created = [];
+        try {
+            let previous = null;
+            for (const section of invoiceTemplateSections(invoiceValues, { ...options, clientName, projectName })) {
+                const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'invoice-v1' });
+                if (!heading) throw new Error('The invoice template could not be saved');
+                created.push(heading); previous = heading;
+                let priorLine = null;
+                for (const item of section.lines) {
+                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, item.props || null);
+                    if (!line) throw new Error('The invoice template could not be saved');
+                    created.push(line); priorLine = line;
+                }
+            }
+            return { applied: true };
+        } catch (error) {
+            for (const line of created.reverse()) await line.delete();
+            throw error;
+        }
+    }
+
+    async initializeSupportSession(record, values = {}, options = {}) {
+        if (typeof record?.getLineItems !== 'function' || typeof record?.createLineItem !== 'function') {
+            return { applied: false, reason: 'unsupported' };
+        }
+        const lines = await record.getLineItems(false);
+        const hasTemplate = lines.some(line => line.props?.freelance_os_template === 'support-session-v1');
+        if (hasTemplate) return { applied: false, reason: 'already-applied' };
+        const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
+        if (content.length > 0) return { applied: false, reason: 'has-content' };
+
+        let clientName = options.clientName || '';
+        let projectName = options.projectName || '';
+        try {
+            const collections = this.workflowCollections || (typeof this.data?.getAllCollections === 'function' ? await this.data.getAllCollections() : null);
+            if (collections) {
+                if (!clientName) {
+                    const clientGuid = values.client || getLinkedRecordGuid(record, 'client');
+                    if (clientGuid) {
+                        const clients = collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections));
+                        if (clients) {
+                            const clientRec = (await clients.getAllRecords()).find(r => r.guid === clientGuid);
+                            if (clientRec) clientName = clientRec.getName?.() || clientRec.name || '';
+                        }
+                    }
+                }
+                if (!projectName) {
+                    const projectGuid = values.project || getLinkedRecordGuid(record, 'project');
+                    if (projectGuid) {
+                        const projects = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
+                        if (projects) {
+                            const projRec = (await projects.getAllRecords()).find(r => r.guid === projectGuid);
+                            if (projRec) projectName = projRec.getName?.() || projRec.name || '';
+                        }
+                    }
+                }
+            }
+        } catch { /* ignore name lookup errors */ }
+
+        const sessionValues = {
+            hours: values.hours ?? getProp(record, 'hours'),
+            date: values.date || (getProp(record, 'date') ? String(getProp(record, 'date')) : ''),
+            description: values.description || getProp(record, 'description') || ''
+        };
+
+        const created = [];
+        try {
+            let previous = null;
+            for (const section of supportSessionTemplateSections(sessionValues, { ...options, clientName, projectName })) {
+                const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'support-session-v1' });
+                if (!heading) throw new Error('The support session template could not be saved');
+                created.push(heading); previous = heading;
+                let priorLine = null;
+                for (const item of section.lines) {
+                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, item.props || null);
+                    if (!line) throw new Error('The support session template could not be saved');
+                    created.push(line); priorLine = line;
+                }
+            }
+            return { applied: true };
+        } catch (error) {
+            for (const line of created.reverse()) await line.delete();
+            throw error;
+        }
+    }
+
+    async applyClientTemplateToActiveRecord() {
+        try {
+            const panel = this.ui.getActivePanel();
+            const record = panel?.getActiveRecord?.();
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const clients = collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections));
+            const records = clients ? await clients.getAllRecords() : [];
+            if (!record || !records.some(item => item.guid === record.guid)) throw new Error('Open a client page before applying the template');
+            const result = await this.initializeClient(record);
+            this.ui.addToaster({ title: result.applied ? 'Client template added' : result.reason === 'already-applied' ? 'This client already has the template' : 'This client already has content. Its notes were kept.', dismissible: true });
+        } catch (error) { this.ui.addToaster({ title: error.message || 'Client template could not be added', dismissible: true }); }
+    }
+
+    async applyInvoiceTemplateToActiveRecord() {
+        try {
+            const panel = this.ui.getActivePanel();
+            const record = panel?.getActiveRecord?.();
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const invoices = collections.find(c => c.getGuid() === this.collectionGuid('Invoices', collections));
+            const records = invoices ? await invoices.getAllRecords() : [];
+            if (!record || !records.some(item => item.guid === record.guid)) throw new Error('Open an invoice page before applying the template');
+            const result = await this.initializeInvoice(record);
+            this.ui.addToaster({ title: result.applied ? 'Invoice template added' : result.reason === 'already-applied' ? 'This invoice already has the template' : 'This invoice already has content. Its notes were kept.', dismissible: true });
+        } catch (error) { this.ui.addToaster({ title: error.message || 'Invoice template could not be added', dismissible: true }); }
+    }
+
     async applyProjectTemplateToActiveRecord() {
         try {
             const panel = this.ui.getActivePanel();
@@ -3900,6 +4132,7 @@ class Plugin extends AppPlugin {
             if (role === 'Projects') await this.initializeProject(record, options);
             if (role === 'Clients') await this.initializeClient(record, options);
             if (role === 'Invoices') {
+                await this.initializeInvoice(record, values, options);
                 const verified = (await collection.getAllRecords()).find(item => item.guid === guid);
                 for (const [label, value] of writes) {
                     if (value === '' || value === null || value === undefined) continue;
@@ -3907,6 +4140,9 @@ class Plugin extends AppPlugin {
                     if (!verified || String(actual) !== String(value)) throw new Error(`The new invoice's ${label} could not be verified.`);
                 }
                 record = verified;
+            }
+            if (role === 'Support Sessions') {
+                await this.initializeSupportSession(record, values, options);
             }
         } catch (error) {
             try { if (await record.trash() === false) throw new Error('Removal failed'); }
