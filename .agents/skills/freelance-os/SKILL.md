@@ -86,12 +86,14 @@ When creating or modifying page content, maintain the following clean, consisten
 ## Deliverables & Tasks
 - [ ] Core milestone deliverable
 - [ ] Sub-task with deadline [date]
+*(Link briefs, deliverables and working files with `[[Title]]`, or create child sub-pages.)*
 
 ## Waiting On Client
 - [ ] Waiting on assets / API credentials from [Contact Name]
 
 ## Activity & Time Log
 - **YYYY-MM-DD** (X.Xh): Description of work delivered.
+*(Log work sessions with Command Palette → "Log Freelance OS support time", dashboard, or tell your agent: "Logged 1.5h on this project".)*
 
 ## Notes & Decisions
 - Key decisions, architectural choices, or meeting minutes.
@@ -103,13 +105,15 @@ When creating or modifying page content, maintain the following clean, consisten
 [Background on company, organizational structure, preferences, communication channels, billing terms.]
 
 ## Active Projects & Engagements
-- Linked projects and ongoing retainer scope.
+*(No active projects in flight. Press `Ctrl/Cmd+K` → "Create Freelance OS project for active client", click "+ Project" in the dashboard, or tell your AI agent: "Start project [Name] for [Client]".)*
+- [Project Name](ref) · Active retainer or project scope
 
 ## 📋 Open Tasks & Actions
 ### Account & Relationship Tasks
 - [ ] Direct client action item (e.g. monthly billing, contract review, stakeholder follow-up)
 
 ### Active Project Tasks
+*(No active project tasks. Tasks created inside linked projects will automatically roll up here.)*
 - [Project Name](ref) Active deliverable or linked next action
 
 ## Communication & Decisions Log

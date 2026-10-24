@@ -348,9 +348,9 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
     return [
         { title: 'Project brief', lines: [text(brief || 'Describe the outcome this project should achieve.'), text('Scope and success criteria: add what is included and how you will know it is done.')] },
         { title: 'Next actions', lines: [{ type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] }] },
-        { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('Link briefs, deliverables and working files here.')] },
+        { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('*(Link briefs, deliverables and working files with [[Title]], or create child sub-pages.)*')] },
         { title: 'Client review checkpoints', lines: [text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'), { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }] },
-        { title: 'Activity & time log', lines: [text('Log time and completed work sessions here.')] },
+        { title: 'Activity & time log', lines: [text('*(Log work sessions with Command Palette → "Log Freelance OS support time", dashboard, or tell your agent: "Logged 1.5h on this project".)*')] },
         { title: 'Decisions & updates', lines: [text('Record decisions, client feedback and scope changes here.')] }
     ];
 }
@@ -359,12 +359,12 @@ function clientTemplateSections({ context = '', initialTask = '' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
     return [
         { title: 'Relationship & Context', lines: [text(context || 'Record organization background, communication preferences, and key commercial terms.')] },
-        { title: 'Active Projects & Engagements', lines: [text('Active projects linked to this client will appear here.')] },
+        { title: 'Active Projects & Engagements', lines: [text('*(No active projects in flight. Press Ctrl/Cmd+K → "Create Freelance OS project for active client", click + Project in the dashboard, or tell your agent: "Start project [Name] for this client".)*')] },
         { title: '📋 Open Tasks & Actions', lines: [
             text('### Account & Relationship Tasks'),
             { type: 'task', segments: initialTask ? [{ type: 'text', text: initialTask }] : [{ type: 'text', text: 'Initial client kickoff / follow-up' }] },
             text('### Active Project Tasks'),
-            text('*(No active project tasks)*')
+            text('*(No active project tasks. Tasks added to linked projects will automatically roll up here.)*')
         ] },
         { title: '📝 Communication & Decisions Log', lines: [text(`- **${localDate()}**: Client profile created.`)] }
     ];
@@ -400,7 +400,7 @@ function invoiceTemplateSections(values = {}, { clientName = '', projectName = '
             title: 'Delivery & Settlement Log',
             lines: [
                 text(`- **${issuedStr}**: Invoice record generated (${values.status || 'draft'}).`),
-                ...(values.paid_date ? [text(`- **${values.paid_date}**: Payment confirmed received and settled.`)] : [text(`- **Status**: ${paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'unconfirmed' ? 'Payment sent / pending confirmation' : 'Awaiting payment'}.`)])
+                ...(values.paid_date ? [text(`- **${values.paid_date}**: Payment confirmed received and settled.`)] : [text(`- **Status**: ${paymentStatus === 'paid' ? 'Paid' : paymentStatus === 'unconfirmed' ? 'Payment sent / pending confirmation' : 'Awaiting payment'} *(Use Dashboard → Invoices or tell agent: "Mark ${values.invoice_id || 'invoice'} paid")*.`)])
             ]
         }
     ];
@@ -426,7 +426,8 @@ function supportSessionTemplateSections(values = {}, { clientName = '', projectN
         {
             title: 'Client Follow-Up',
             lines: [
-                { type: 'task', segments: [{ type: 'text', text: 'Send session summary or updates to client' }] }
+                { type: 'task', segments: [{ type: 'text', text: 'Send session summary or updates to client' }] },
+                text('*(Mark complete once communicated. Hours automatically contribute to monthly care plan retainers.)*')
             ]
         }
     ];
@@ -516,6 +517,26 @@ export class Plugin extends AppPlugin {
             onSelected: () => this.openDashboard()
         });
         this.ui.addCommandPaletteCommand({
+            label: 'Create Freelance OS project for active client',
+            icon: 'ti-folder-plus',
+            onSelected: () => this.createProjectForActiveClient()
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Create Freelance OS invoice for active client / project',
+            icon: 'ti-receipt',
+            onSelected: () => this.createInvoiceForActiveRecord()
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Log Freelance OS support time for active client / project',
+            icon: 'ti-clock',
+            onSelected: () => this.logSupportSessionForActiveRecord()
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Capture Freelance OS task for this project',
+            icon: 'ti-checklist',
+            onSelected: () => this.captureTaskForActiveProject()
+        });
+        this.ui.addCommandPaletteCommand({
             label: 'Apply Freelance OS project template',
             icon: 'ti-template',
             onSelected: () => this.applyProjectTemplateToActiveRecord()
@@ -529,11 +550,6 @@ export class Plugin extends AppPlugin {
             label: 'Apply Freelance OS invoice template',
             icon: 'ti-template',
             onSelected: () => this.applyInvoiceTemplateToActiveRecord()
-        });
-        this.ui.addCommandPaletteCommand({
-            label: 'Capture Freelance OS task for this project',
-            icon: 'ti-checklist',
-            onSelected: () => this.captureTaskForActiveProject()
         });
 
         // 5. Reactive Workspace Listeners
@@ -1509,6 +1525,84 @@ export class Plugin extends AppPlugin {
         }
     }
 
+    async createProjectForActiveClient() {
+        const sourcePanel = this.ui.getActivePanel?.();
+        const sourceRecord = sourcePanel?.getActiveRecord?.();
+        try {
+            if (!sourceRecord) throw new Error('Open a client page before creating a project.');
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const clients = collections.find(collection => collection.getGuid() === this.collectionGuid('Clients', collections));
+            if (!clients) throw new Error('Choose your Clients collection in Settings.');
+            const records = await clients.getAllRecords();
+            const client = records.find(record => record.guid === sourceRecord.guid);
+            if (!client || isTemplateRecord(client)) throw new Error('This page is not a valid client in the configured Clients collection.');
+            const data = await this.loadData();
+            this.showCreateProjectModal(sourcePanel, data, client.guid);
+        } catch (error) {
+            this.ui.addToaster({ title: error.message || 'Could not create project for active client.', dismissible: true });
+        }
+    }
+
+    async createInvoiceForActiveRecord() {
+        const sourcePanel = this.ui.getActivePanel?.();
+        const sourceRecord = sourcePanel?.getActiveRecord?.();
+        try {
+            if (!sourceRecord) throw new Error('Open a client or project page before creating an invoice.');
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const clientsCol = collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections));
+            const projectsCol = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
+
+            const isClient = clientsCol && (await clientsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
+            const isProject = projectsCol && (await projectsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
+
+            if (!isClient && !isProject) throw new Error('Open a client or project page before creating an invoice.');
+
+            let clientGuid = '';
+            let projectGuid = '';
+            if (isClient) {
+                clientGuid = sourceRecord.guid;
+            } else if (isProject) {
+                projectGuid = sourceRecord.guid;
+                clientGuid = getClientGuid(sourceRecord) || '';
+            }
+
+            const data = await this.loadData();
+            this.showCreateInvoiceModal(sourcePanel, data, clientGuid, projectGuid);
+        } catch (error) {
+            this.ui.addToaster({ title: error.message || 'Could not create invoice for active page.', dismissible: true });
+        }
+    }
+
+    async logSupportSessionForActiveRecord() {
+        const sourcePanel = this.ui.getActivePanel?.();
+        const sourceRecord = sourcePanel?.getActiveRecord?.();
+        try {
+            if (!sourceRecord) throw new Error('Open a client or project page before logging support time.');
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const clientsCol = collections.find(c => c.getGuid() === this.collectionGuid('Clients', collections));
+            const projectsCol = collections.find(c => c.getGuid() === this.collectionGuid('Projects', collections));
+
+            const isClient = clientsCol && (await clientsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
+            const isProject = projectsCol && (await projectsCol.getAllRecords()).some(r => r.guid === sourceRecord.guid && !isTemplateRecord(r));
+
+            if (!isClient && !isProject) throw new Error('Open a client or project page before logging support time.');
+
+            let clientGuid = '';
+            let projectGuid = '';
+            if (isClient) {
+                clientGuid = sourceRecord.guid;
+            } else if (isProject) {
+                projectGuid = sourceRecord.guid;
+                clientGuid = getClientGuid(sourceRecord) || '';
+            }
+
+            const data = await this.loadData();
+            this.showCreateSupportSessionModal(sourcePanel, data, clientGuid, projectGuid);
+        } catch (error) {
+            this.ui.addToaster({ title: error.message || 'Could not log support time for active page.', dismissible: true });
+        }
+    }
+
     async createConfiguredRecord(role, title, values, options = {}) {
         const collections = this.workflowCollections = await this.data.getAllCollections();
         const collection = collections.find(item => item.getGuid() === this.collectionGuid(role, collections));
@@ -1610,18 +1704,20 @@ export class Plugin extends AppPlugin {
         return record;
     }
 
-    showCreateSupportSessionModal(panel, data) {
+    showCreateSupportSessionModal(panel, data, defaultClientGuid = '', defaultProjectGuid = '') {
         if (!this.collectionGuid('Support Sessions')) {
             this.ui.addToaster({ title: 'Add the Support Sessions collection with the starter setup to enable time tracking', dismissible: true });
             return;
         }
         const clients = data.clients.filter(client => client.status !== 'archived' && client.status !== 'cancelled');
+        const initialClient = defaultClientGuid || '';
+        const initialProject = defaultProjectGuid || '';
         const modal = document.createElement('div'); modal.className = 'os-modal-backdrop';
         modal.innerHTML = `
             <div class="os-modal-card" role="dialog" aria-modal="true" aria-labelledby="os-support-dialog-title">
                 <div class="os-modal-header"><h3 id="os-support-dialog-title">Log support time</h3><button class="os-modal-close" type="button" aria-label="Close support time form">✕</button></div>
                 <div class="os-modal-body">
-                    <div class="os-form-group"><label for="os-support-client">Client *</label><select id="os-support-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}">${escapeHtml(client.name)}</option>`).join('')}</select></div>
+                    <div class="os-form-group"><label for="os-support-client">Client *</label><select id="os-support-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}" ${client.guid === initialClient ? 'selected' : ''}>${escapeHtml(client.name)}</option>`).join('')}</select></div>
                     <div class="os-form-group"><label for="os-support-project">Project (optional)</label><select id="os-support-project" class="os-select input-project"><option value="">No project linked</option></select></div>
                     <div class="os-form-pair">
                         <div class="os-form-group"><label for="os-support-date">Date *</label><input id="os-support-date" type="date" class="os-input input-date" value="${localDate()}" required /></div>
@@ -1647,9 +1743,10 @@ export class Plugin extends AppPlugin {
         const clientSelect = modal.querySelector('.input-client'); const projectSelect = modal.querySelector('.input-project');
         const refreshProjects = () => {
             const selectedClient = clientSelect.value;
-            projectSelect.innerHTML = '<option value="">No project linked</option>' + data.projects.filter(project => !project.clientGuid || project.clientGuid === selectedClient).map(project => `<option value="${project.guid}">${escapeHtml(project.name)}</option>`).join('');
+            projectSelect.innerHTML = '<option value="">No project linked</option>' + (data.projects || []).filter(project => !project.clientGuid || project.clientGuid === selectedClient).map(project => `<option value="${project.guid}" ${project.guid === initialProject ? 'selected' : ''}>${escapeHtml(project.name)}</option>`).join('');
         };
         clientSelect.onchange = refreshProjects;
+        refreshProjects();
         modal.querySelector('.btn-submit').onclick = async () => {
             const client = clientSelect.value, project = projectSelect.value, date = modal.querySelector('.input-date').value;
             const hours = Number(modal.querySelector('.input-hours').value), description = modal.querySelector('.input-description').value.trim();
@@ -1666,11 +1763,12 @@ export class Plugin extends AppPlugin {
         document.body.appendChild(modal); refreshProjects(); clientSelect.focus();
     }
 
-    showCreateProjectModal(panel, data) {
+    showCreateProjectModal(panel, data, defaultClientGuid = '') {
         const modal = document.createElement('div');
         modal.className = 'os-modal-backdrop';
 
-        const clientOptions = data.clients.map(c => `<option value="${c.guid}">${escapeHtml(c.name)}</option>`).join('');
+        const initialClient = defaultClientGuid || this.clientProjectGuid || '';
+        const clientOptions = data.clients.map(c => `<option value="${c.guid}" ${c.guid === initialClient ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
 
         modal.innerHTML = `
             <div class="os-modal-card" role="dialog" aria-modal="true" aria-labelledby="os-project-dialog-title">
@@ -1785,7 +1883,7 @@ export class Plugin extends AppPlugin {
         });
 
         document.body.appendChild(modal);
-        if (this.clientProjectGuid) modal.querySelector('.input-client').value = this.clientProjectGuid;
+        if (initialClient) modal.querySelector('.input-client').value = initialClient;
         modal.querySelector('.input-title').focus();
     }
 
@@ -1909,8 +2007,8 @@ export class Plugin extends AppPlugin {
         modal.querySelector(editing ? '.input-contact' : '.input-title').focus();
     }
 
-    showCreateInvoiceModal(panel, data) {
-        return this.showBillingInvoiceModal(panel, data);
+    showCreateInvoiceModal(panel, data, defaultClientGuid = '', defaultProjectGuid = '') {
+        return this.showBillingInvoiceModal(panel, data, defaultClientGuid, defaultProjectGuid);
     }
 
     async render(panel) {
@@ -2571,7 +2669,11 @@ export class Plugin extends AppPlugin {
 
                     <div class="os-card-bottom">
                         <span>📅 ${(!proj.deadline || typeof proj.deadline === 'object' || String(proj.deadline).includes('Object')) ? 'No deadline' : escapeHtml(proj.deadline)}</span>
-                        <button type="button" class="os-card-open">Open project ↗</button>
+                        <div class="os-card-actions">
+                            <button type="button" class="os-card-action-btn os-project-invoice" title="Create an invoice for this project">+ Invoice</button>
+                            <button type="button" class="os-card-action-btn os-project-support" title="Log support time for this project">+ Time</button>
+                            <button type="button" class="os-card-open os-open-project">Open project ↗</button>
+                        </div>
                     </div>
                 `;
 
@@ -2622,7 +2724,15 @@ export class Plugin extends AppPlugin {
                     this.actionProject = proj.guid; this.actionSearch = ''; this.queueLimit = 20;
                     this.render(panel);
                 });
-                card.querySelector('.os-card-open').addEventListener('click', (e) => {
+                card.querySelector('.os-project-invoice')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showCreateInvoiceModal(panel, data, proj.clientGuid, proj.guid);
+                });
+                card.querySelector('.os-project-support')?.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.showCreateSupportSessionModal(panel, data, proj.clientGuid, proj.guid);
+                });
+                card.querySelector('.os-open-project')?.addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openRecord(proj.guid, panel);
                 });
@@ -2677,8 +2787,12 @@ export class Plugin extends AppPlugin {
                         <div><dt>Outstanding</dt><dd>${money(cli.summary.outstanding)} CHF${cli.summary.overdueCount ? ` · ${cli.summary.overdueCount} overdue` : ''}</dd></div>
                     </dl>`}
                     <div class="os-card-bottom">
-                        <button type="button" class="os-card-open os-edit-client">Edit details</button>
-                        <button type="button" class="os-card-open">Open profile ↗</button>
+                        <div class="os-card-actions">
+                            <button type="button" class="os-card-action-btn os-add-project" title="Create a new project for ${escapeHtml(cli.name)}">+ Project</button>
+                            <button type="button" class="os-card-action-btn os-add-invoice" title="Create a new invoice for ${escapeHtml(cli.name)}">+ Invoice</button>
+                            <button type="button" class="os-card-open os-edit-client">Edit</button>
+                        </div>
+                        <button type="button" class="os-card-open os-open-profile">Open profile ↗</button>
                     </div>
                 `;
 
@@ -2686,6 +2800,14 @@ export class Plugin extends AppPlugin {
                 card.querySelector('.os-client-projects').addEventListener('click', () => {
                     this.clientProjectGuid = cli.guid; this.currentTab = 'projects'; this.projectFilter = 'all'; this.searchQuery = ''; this.render(panel);
                 });
+                card.querySelector('.os-add-project').onclick = (e) => {
+                    e.stopPropagation();
+                    this.showCreateProjectModal(panel, data, cli.guid);
+                };
+                card.querySelector('.os-add-invoice').onclick = (e) => {
+                    e.stopPropagation();
+                    this.showCreateInvoiceModal(panel, data, cli.guid);
+                };
                 card.querySelector('.os-edit-client').onclick = () => this.showCreateClientModal(panel, cli);
                 card.querySelector('.os-client-status')?.addEventListener('change', async event => {
                     const select = event.target; select.disabled = true;
@@ -2693,7 +2815,7 @@ export class Plugin extends AppPlugin {
                     catch (error) { select.value = currentStatus; this.ui.addToaster({ title: error.message || 'The status could not be saved.', dismissible: true }); }
                     finally { select.disabled = false; }
                 });
-                card.querySelector('.os-card-bottom .os-card-open:not(.os-edit-client)').addEventListener('click', (e) => {
+                card.querySelector('.os-open-profile').addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openRecord(cli.guid, panel);
                 });

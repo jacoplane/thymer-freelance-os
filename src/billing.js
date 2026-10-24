@@ -120,14 +120,16 @@ const Billing = {
         });
     },
 
-    showBillingInvoiceModal(panel, data) {
+    showBillingInvoiceModal(panel, data, defaultClientGuid = '', defaultProjectGuid = '') {
         const clients = data.clients;
         const currencies = data.invoiceCurrencies || ['CHF', 'EUR', 'USD'];
+        const initialClient = defaultClientGuid || '';
+        const initialProject = defaultProjectGuid || '';
         const form = this.openBillingDialog(panel, {
             title: 'Add invoice', submitLabel: 'Add invoice',
             body: `<div class="os-billing-form-grid">
                 <div class="os-form-group"><label for="os-invoice-ref">Invoice reference *</label><input id="os-invoice-ref" class="os-input input-title" placeholder="e.g. INV-2026-014" required /></div>
-                <div class="os-form-group"><label for="os-invoice-client">Client *</label><select id="os-invoice-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}">${escapeHtml(client.name)}</option>`).join('')}</select></div>
+                <div class="os-form-group"><label for="os-invoice-client">Client *</label><select id="os-invoice-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}" ${client.guid === initialClient ? 'selected' : ''}>${escapeHtml(client.name)}</option>`).join('')}</select></div>
                 <div class="os-form-group"><label for="os-invoice-project">Project (optional)</label><select id="os-invoice-project" class="os-select input-project"><option value="">No project linked</option></select></div>
                 <div class="os-form-group"><label for="os-invoice-amount">Amount *</label><input id="os-invoice-amount" class="os-input input-amount" type="number" min="0.01" step="0.01" required /></div>
                 <div class="os-form-group"><label for="os-invoice-currency">Currency</label><select id="os-invoice-currency" class="os-select input-currency" required>${currencies.map(currency => `<option ${currency === 'CHF' ? 'selected' : ''}>${escapeHtml(currency)}</option>`).join('')}</select></div>
@@ -155,7 +157,7 @@ const Billing = {
             const selectedClient = clientSelect?.value;
             const clientProjects = (data.projects || []).filter(p => p.clientGuid === selectedClient);
             if (projectSelect) {
-                projectSelect.innerHTML = `<option value="">No project linked</option>${clientProjects.map(p => `<option value="${p.guid}">${escapeHtml(p.name)}</option>`).join('')}`;
+                projectSelect.innerHTML = `<option value="">No project linked</option>${clientProjects.map(p => `<option value="${p.guid}" ${p.guid === initialProject ? 'selected' : ''}>${escapeHtml(p.name)}</option>`).join('')}`;
             }
         };
         if (clientSelect) clientSelect.onchange = updateProjects;
