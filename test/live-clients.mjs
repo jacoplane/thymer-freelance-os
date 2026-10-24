@@ -74,6 +74,19 @@ try {
     const body = await native('get_record', { record: lead, format: 'markdown' });
     assert.match(JSON.stringify(body), /Interested in a website refresh/);
     report.conversionPreservesIdentityAndNotes = true;
+    await show('active');
+    await page.select('.os-cards .os-lead-stage', 'proposal_sent');
+    await page.waitForFunction(() => !document.querySelector('.os-lead-stage')?.disabled);
+    assert.equal((await read(lead)).status, 'active');
+    assert.equal((await read(lead)).lead_stage, 'proposal_sent');
+    await page.locator('.os-edit-client').click();
+    assert.equal(await page.$eval('.input-stage', e => !!e.getClientRects().length), true);
+    await page.select('.input-stage', 'contacted');
+    await page.locator('.os-client-form .btn-submit').click();
+    await page.waitForSelector('.os-client-form', { hidden: true });
+    assert.equal((await read(lead)).status, 'active');
+    assert.equal((await read(lead)).lead_stage, 'contacted');
+    report.existingClientStageFromCardAndForm = true;
 
     await page.locator('.btn-new-lead').click();
     await page.type('.input-title', `${token} Design`);

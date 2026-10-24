@@ -24,7 +24,7 @@ Both are native records in **Clients**. Reuse the same record as the relationshi
 | `status` | `prospect` for a lead; `active` for a client; `archived` for a closed relationship or a lead that did not proceed |
 | `contact` | Primary contact name or existing freeform contact details |
 | `email`, `phone`, `website` | Optional details supplied by the user |
-| `lead_stage` | `new`, `contacted`, `discussing`, or `proposal_sent`; relevant while status is `prospect` |
+| `lead_stage` | Optional progress for new work: `new`, `contacted`, `discussing`, or `proposal_sent`. Editable for leads and existing clients independently of relationship status. |
 
 The native **Leads** view filters `status = prospect`. The dashboard reads these same properties; there is no second register to synchronize. Missing lead stage means unset, not evidence of an interaction. Existing `contact` text may include an email address: preserve it unless asked to change it.
 
@@ -36,8 +36,8 @@ For “I emailed a new prospect; add them to lead tracking”:
 
 1. Search or list the Clients records to find an existing match by company/name and, when supplied, email. Use `get_record_properties` to confirm matches. Ask only if multiple plausible matches would change where the data goes.
 2. Reuse a match; otherwise call `create_record` in Clients with the supplied name and properties. Use `status: prospect`, `lead_stage: contacted` for an email already sent. Use `new` when the user merely identifies a prospect. Do not invent contact details or a date.
-3. Set or change fields with `update_record_property`. Preserve all unrelated data. An existing active client stays active when the user mentions more potential work; keep a brief opportunity note on that profile unless they ask for another structure.
-4. When the user reports an accepted engagement, change the existing record to `active`. If they say it did not proceed, use `archived`. Keep the last lead stage as historical context. Neither action creates a project or tasks automatically.
+3. Set or change fields with `update_record_property`. Preserve all unrelated data. An existing active client stays active when tracking more potential work; update its `lead_stage` when requested and keep a brief context note when useful. Changing stage does not change relationship status.
+4. When the user reports an accepted engagement, change a prospect to `active`. If a prospect does not proceed, use `archived`. Losing new work from an existing active client does not archive that client. Keep the last stage as historical context. Neither action creates a project or tasks automatically.
 5. Read back the affected properties and return a short confirmation naming the client and actual stage.
 
 If a write fails or its result is unclear, read the target before retrying. Reuse any created record GUID and repair only the incomplete fields rather than creating another record.

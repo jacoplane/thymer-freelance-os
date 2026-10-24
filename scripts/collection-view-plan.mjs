@@ -3,7 +3,7 @@ const sentOutstanding = '@Invoices.status = "sent" @Invoices.payment_status != "
 const topLevel = '@Projects.parent_page = ""';
 const openProjects = '@Projects.status != "completed" @Projects.status != "archived" @Projects.status != "cancelled"';
 const projectColumns = ['title', 'status', 'priority', 'deadline', 'client'];
-const clientColumns = ['title', 'status', 'contact', 'email', 'phone', 'website', 'plan', 'monthly_chf', 'billing_cycle'];
+const clientColumns = ['title', 'status', 'lead_stage', 'contact', 'email', 'phone', 'website', 'plan', 'monthly_chf', 'billing_cycle'];
 export const VIEW_PLANS = {
     Invoices: [
         { key: 'register', label: 'Register', aliases: ['Register'], columns: invoiceColumns, query: '', sort: 'issued', direction: 'desc', icon: 'ti-table' },

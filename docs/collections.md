@@ -17,7 +17,7 @@ The starter command creates these fields and views. A collection name mapping do
 | `email` | Text | Optional primary contact email |
 | `phone` | Text | Optional phone number |
 | `website` | URL | Client website |
-| `lead_stage` | Choice | `new`, `contacted`, `discussing`, `proposal_sent`; used while status is `prospect` |
+| `lead_stage` | Choice | Optional stage: `new`, `contacted`, `discussing`, `proposal_sent`; independent of relationship status and editable on clients and leads |
 
 Clients and leads share the same collection. Set `status` to `active` when a lead becomes a client, or `archived` when it does not proceed. Keep the original record so its notes and linked work remain intact. The native Leads view filters `status = prospect`. See [client and lead tracking](client-tracking.md) for the lightweight workflow and Thymer MCP skill.
 

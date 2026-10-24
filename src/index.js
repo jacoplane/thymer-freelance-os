@@ -1445,8 +1445,8 @@ export class Plugin extends AppPlugin {
                                 <option value="active">Client</option><option value="prospect">Lead</option><option value="archived">Archived</option>
                             </select>
                         </div>
-                        <div class="os-form-group os-lead-stage-field" ${status === 'prospect' ? '' : 'hidden'}>
-                            <label for="os-client-stage">Lead stage</label>
+                        <div class="os-form-group os-lead-stage-field">
+                            <label for="os-client-stage">Stage</label>
                             <select id="os-client-stage" class="os-select input-stage"><option value="" disabled>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select>
                         </div>
                         <div class="os-form-group"><label for="os-client-contact">Contact</label><input id="os-client-contact" class="os-input input-contact" value="${escapeHtml(client?.contact || '')}" autocomplete="name" placeholder="e.g. Alex Martin" /></div>
@@ -1469,9 +1469,8 @@ export class Plugin extends AppPlugin {
         `;
         const form = modal.querySelector('form');
         const statusInput = modal.querySelector('.input-status'); statusInput.value = status;
-        modal.querySelector('.input-stage').value = LEAD_STAGES[client?.leadStage] ? client.leadStage : editing ? '' : 'new';
+        modal.querySelector('.input-stage').value = LEAD_STAGES[client?.leadStage] ? client.leadStage : !editing && status === 'prospect' ? 'new' : '';
         statusInput.onchange = () => {
-            modal.querySelector('.os-lead-stage-field').hidden = statusInput.value !== 'prospect';
             if (!editing) modal.querySelector('.btn-submit').textContent = statusInput.value === 'prospect' ? 'Add lead' : 'Add client';
         };
         const close = () => { if (saving) return; modal.remove(); if (launchControl?.isConnected) launchControl.focus(); this.flushRefresh(); };
@@ -1495,7 +1494,7 @@ export class Plugin extends AppPlugin {
             const values = { monthly_chf: Number(modal.querySelector('.input-mrr').value) || 0, status: statusInput.value,
                 plan: modal.querySelector('.input-plan').value.trim(), website: modal.querySelector('.input-website').value.trim(),
                 contact: modal.querySelector('.input-contact').value.trim(), email: modal.querySelector('.input-email').value.trim(), phone: modal.querySelector('.input-phone').value.trim() };
-            if (values.status === 'prospect' && modal.querySelector('.input-stage').value) values.lead_stage = modal.querySelector('.input-stage').value;
+            if (modal.querySelector('.input-stage').value) values.lead_stage = modal.querySelector('.input-stage').value;
             const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             saving = true; form.setAttribute('aria-busy', 'true'); submit.textContent = 'Saving…';
             try {
@@ -2327,7 +2326,7 @@ export class Plugin extends AppPlugin {
                         ${cli.phone ? `<span>${escapeHtml(cli.phone)}</span>` : ''}
                         ${!cli.contact && !cli.email && !cli.phone ? '<span class="os-client-contact-empty">No contact details yet</span>' : ''}
                     </div>
-                    ${lead ? `<label class="os-client-stage"><span>Stage</span><select class="os-select os-lead-stage" aria-label="Lead stage for ${escapeHtml(cli.name)}"><option value="" disabled ${!LEAD_STAGES[cli.leadStage] ? 'selected' : ''}>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}" ${cli.leadStage === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>` : ''}
+                    <label class="os-client-stage"><span>Stage</span><select class="os-select os-lead-stage" aria-label="Stage for ${escapeHtml(cli.name)}"><option value="" disabled ${!LEAD_STAGES[cli.leadStage] ? 'selected' : ''}>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}" ${cli.leadStage === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
                     <div class="os-client-meta">
                         <button type="button" class="os-meta-tag os-client-projects" aria-label="View ${cli.projectCount} projects for ${escapeHtml(cli.name)}">${cli.projectCount} projects · ${cli.summary.activeProjects} active</button>
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>

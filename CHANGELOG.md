@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.6.1 — 2026-10-24
+
+- Make stage editable on existing clients as well as leads, from cards, Edit details, and native client tables.
+- Keep relationship status and linked work intact when a stage changes; a new client starts with no stage unless one is chosen.
+- Update the native MCP operations skill to track new work for active clients without downgrading or archiving their client relationship.
+
 ## 1.6.0 — 2026-10-24
 
 - Manage clients and leads in the existing Clients collection, with primary contact, email, phone, and simple lead stages.

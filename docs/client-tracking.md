@@ -6,9 +6,9 @@ Freelance OS keeps a small relationship register in the existing Clients collect
 
 In Overview, open **Clients & leads**. Use the **Clients**, **Leads**, and **Archived** filters, or search by company, contact, email, phone, or lead stage. **View collection** opens the matching native table alongside the dashboard.
 
-Use **New lead** to add a company or individual and optional contact details. Stages are **New**, **Contacted**, **Discussing**, and **Proposal sent**. Change a stage directly on the lead card or use **Edit details**. A missing stage remains visibly unset until you choose one.
+Use **New lead** to add a company or individual and optional contact details. Stages are **New**, **Contacted**, **Discussing**, and **Proposal sent**. Change a stage directly on any client or lead card or use **Edit details**. A missing stage remains visibly unset until you choose one. Existing clients can track the stage of new work while keeping their **Client** relationship and linked projects.
 
-When a lead becomes a client, change **Relationship** to **Client** in Edit details. When it does not proceed, select **Archived**. Both actions keep the original record and any linked projects, notes, or invoices. An active client can have new work discussed in its profile notes; the basic register does not introduce a separate deal model.
+When a lead becomes a client, change **Relationship** to **Client** in Edit details. When it does not proceed, select **Archived**. Both actions keep the original record and any linked projects, notes, or invoices. Stage and relationship are independent: updating a client's stage does not make it a lead, and the Leads filter still shows records whose relationship is Lead. Use profile notes for additional context; the basic register does not introduce a separate deal model.
 
 Open the native profile for notes, renaming, or additional contacts. The primary `contact` field remains freeform for compatibility with existing information. There are no automated reminders, correspondence imports, sales forecasts, or outbound messages.
 
