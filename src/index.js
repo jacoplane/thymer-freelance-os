@@ -334,6 +334,12 @@ export class Plugin extends AppPlugin {
         clearTimeout(this.refreshTimer);
         clearTimeout(this.workflowSearchTimer);
         clearInterval(this.workflowDayTimer);
+        if (this.workflowEventHandlers?.length && typeof this.events?.off === 'function') {
+            for (const handlerId of this.workflowEventHandlers) this.events.off(handlerId);
+        }
+        this.workflowEventHandlers = [];
+        this.workflowRefreshPending = false;
+        if (typeof window !== 'undefined' && window.__freelanceOs === this) delete window.__freelanceOs;
     }
 
     onLoad() {
@@ -341,7 +347,19 @@ export class Plugin extends AppPlugin {
             window.__freelanceOs = this;
         }
         this.activePanel = null;
+        clearInterval(this.workflowDayTimer);
+        clearTimeout(this.refreshTimer);
+        if (this.workflowEventHandlers?.length && typeof this.events?.off === 'function') {
+            for (const handlerId of this.workflowEventHandlers) this.events.off(handlerId);
+        }
         this.refreshTimer = null;
+        this.workflowRefreshPending = false;
+        this.workflowEventHandlers = [];
+        this.workflowMutationVersion = 0;
+        this.weeklyReviewDiscovery = null;
+        this.reviewDiscovery = null;
+        this.selectedReviewHeadingGuid = '';
+        this.selectedReviewWeek = '';
         this.currentTab = 'projects';
         this.projectFilter = 'all'; // 'all', 'in_progress', 'backlog', 'completed'
         this.clientProjectGuid = '';
@@ -349,10 +367,16 @@ export class Plugin extends AppPlugin {
         this.searchQuery = '';
         this.agendaTab = null;
         this.agendaTabSetByUser = false;
+        this.agendaLimit = 25;
+        this.actionPreset = 'any';
         this.expandedProjects = new Set();
         this.captureDraft = '';
         this.captureProjectGuid = '';
+        this.captureDestinationSource = 'default';
+        this.captureContext = null;
         this.captureImportant = false;
+        this.waitingEditorDrafts = {};
+        this.dismissedProjectSuggestions = new Set();
         this.loadWorkflowState();
         this.workflowMode = 'overview';
         this.workflowDay = localDate();
@@ -391,15 +415,27 @@ export class Plugin extends AppPlugin {
             icon: 'ti-template',
             onSelected: () => this.applyProjectTemplateToActiveRecord()
         });
+        this.ui.addCommandPaletteCommand({
+            label: 'Capture Freelance OS task for this project',
+            icon: 'ti-checklist',
+            onSelected: () => this.captureTaskForActiveProject()
+        });
 
         // 5. Reactive Workspace Listeners
         if (this.events) {
             const schedule = () => this.scheduleRefresh();
-            this.events.on('lineitem.updated', schedule);
-            this.events.on('lineitem.created', schedule);
-            this.events.on('lineitem.deleted', schedule);
-            this.events.on('record.updated', schedule);
-            this.events.on('record.created', schedule);
+            const subscriptions = [
+                ['lineitem.updated', schedule],
+                ['lineitem.created', schedule],
+                ['lineitem.deleted', schedule],
+                ['lineitem.moved', schedule],
+                ['lineitem.undeleted', schedule],
+                ['record.updated', schedule],
+                ['record.created', schedule],
+                ['record.moved', schedule],
+                ['collection.updated', schedule]
+            ];
+            this.workflowEventHandlers = subscriptions.map(([event, handler]) => this.events.on(event, handler)).filter(id => typeof id === 'string' && id);
         }
         // Desktop hot reload can retain a custom panel without invoking its new registration callback.
         const existing = this.ui.getPanels?.().find(panel => panel.getNavigation()?.type === 'custom' && String(panel.getNavigation().subId || '').endsWith(`${this.getGuid()}-${DASHBOARD_PANEL_ID}`));
@@ -417,12 +453,23 @@ export class Plugin extends AppPlugin {
     }
 
     scheduleRefresh() {
-        if (this.refreshTimer) clearTimeout(this.refreshTimer);
+        clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
-            // Preserve focus and selection while composing a task. Blur refreshes the data.
-            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields')) return;
+            // Preserve focus and selection while composing. Blur flushes the deferred refresh.
+            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields')) {
+                this.workflowRefreshPending = true;
+                return;
+            }
+            this.workflowRefreshPending = false;
             if (this.activePanel) this.render(this.activePanel);
         }, 200);
+    }
+
+    flushRefresh() {
+        if (!this.workflowRefreshPending) return;
+        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields')) return;
+        this.workflowRefreshPending = false;
+        this.scheduleRefresh();
     }
 
     async openRecord(guid, sourcePanel) {
@@ -491,21 +538,30 @@ export class Plugin extends AppPlugin {
 
     async openJournal(sourcePanel) {
         const wsGuid = this.getWorkspaceGuid();
+        let journal = null;
+        let user = null;
         try {
-            const users = typeof this.data.getActiveUsers === 'function' ? this.data.getActiveUsers() : [];
+            const collections = await this.data.getAllCollections();
+            journal = collections.find(collection => collection.getGuid() === this.collectionGuid('Journal', collections));
+            user = this.resolveJournalOwner(journal, collections);
+        } catch (error) {
+            this.ui?.addToaster?.({ title: error.message, autoDestroyTime: 5000, dismissible: true });
+        }
+        const openCollection = panel => panel.navigateTo({
+            type: 'overview',
+            rootId: journal?.getGuid?.() || this.collectionGuid('Journal'),
+            subId: null,
+            workspaceGuid: wsGuid
+        });
+        try {
             if (this.ui && typeof this.ui.createPanel === 'function') {
                 const sidePanel = await this.ui.createPanel({ afterPanel: sourcePanel });
                 if (sidePanel) {
-                    if (users.length > 0 && typeof sidePanel.navigateToJournal === 'function') {
-                        const ok = sidePanel.navigateToJournal(users[0]);
+                    if (user && typeof sidePanel.navigateToJournal === 'function') {
+                        const ok = sidePanel.navigateToJournal(user);
                         if (ok) return;
                     }
-                    sidePanel.navigateTo({
-                        type: 'overview',
-                        rootId: this.collectionGuid('Journal'),
-                        subId: null,
-                        workspaceGuid: wsGuid
-                    });
+                    openCollection(sidePanel);
                     return;
                 }
             }
@@ -514,17 +570,11 @@ export class Plugin extends AppPlugin {
         }
 
         if (sourcePanel) {
-            const users = typeof this.data.getActiveUsers === 'function' ? this.data.getActiveUsers() : [];
-            if (users.length > 0 && typeof sourcePanel.navigateToJournal === 'function') {
-                const ok = sourcePanel.navigateToJournal(users[0]);
+            if (user && typeof sourcePanel.navigateToJournal === 'function') {
+                const ok = sourcePanel.navigateToJournal(user);
                 if (ok) return;
             }
-            sourcePanel.navigateTo({
-                type: 'overview',
-                rootId: this.collectionGuid('Journal'),
-                subId: null,
-                workspaceGuid: wsGuid
-            });
+            openCollection(sourcePanel);
         }
     }
 
@@ -553,6 +603,121 @@ export class Plugin extends AppPlugin {
         }
     }
 
+    showProjectSuggestions(task, item, panel) {
+        const existing = item.parentElement?.querySelector(`[data-suggestions="${task.guid}"]`);
+        const trigger = item.querySelector('.os-suggest-project');
+        if (existing) {
+            existing.remove();
+            trigger?.setAttribute('aria-expanded', 'false');
+            return;
+        }
+        const suggestion = document.createElement('div');
+        suggestion.className = 'os-project-suggestions';
+        suggestion.dataset.suggestions = task.guid;
+        const evidence = task.clientEvidence === 'client-page'
+            ? `This task is on ${task.clientName}’s page.`
+            : `This task references ${task.clientName}.`;
+        const head = document.createElement('div'); head.className = 'os-project-suggestions-head';
+        head.innerHTML = `<strong>Link this task to a project</strong><span class="os-action-meta">${escapeHtml(evidence)}</span>`;
+        suggestion.appendChild(head);
+        const list = document.createElement('div'); list.className = 'os-project-suggestion-list';
+        for (const candidate of task.projectCandidates) {
+            const row = document.createElement('div'); row.className = 'os-project-suggestion';
+            const copy = document.createElement('div'); copy.className = 'os-project-suggestion-copy';
+            const name = document.createElement('span'); name.className = 'os-project-suggestion-name'; name.textContent = candidate.name;
+            const meta = document.createElement('span'); meta.className = 'os-action-meta';
+            meta.textContent = `${projectStatusLabel(candidate.status)} · ${task.clientEvidence === 'client-page' ? 'on this client’s page' : 'linked to the client referenced in this task'}`;
+            copy.append(name, meta);
+            const open = document.createElement('button'); open.type = 'button'; open.className = 'os-button'; open.textContent = 'Open project';
+            open.onclick = event => { event.stopPropagation(); this.openRecord(candidate.guid, panel); };
+            const link = document.createElement('button'); link.type = 'button'; link.className = 'os-button os-link-suggested-project'; link.textContent = 'Link project';
+            link.onclick = async event => {
+                event.stopPropagation();
+                link.disabled = true;
+                try {
+                    const linked = await this.linkTaskToSuggestedProject(task, candidate.guid);
+                    suggestion.remove();
+                    this.ui.addToaster({ title: `Linked to ${linked.name}`, autoDestroyTime: 3000, dismissible: true });
+                    this.scheduleRefresh();
+                } catch (error) {
+                    link.disabled = false;
+                    this.ui.addToaster({ title: error.message || 'Project link could not be saved.', dismissible: true });
+                    if (error.code === 'ambiguous' || error.code === 'unresolved') this.openItem(task.guid, task.recordGuid, panel);
+                    if (error.code === 'already-linked') this.scheduleRefresh();
+                }
+            };
+            row.append(copy, open, link);
+            list.appendChild(row);
+        }
+        suggestion.appendChild(list);
+        const dismiss = document.createElement('button'); dismiss.type = 'button'; dismiss.className = 'os-button os-dismiss-project-suggestions'; dismiss.textContent = 'Not now';
+        dismiss.onclick = event => {
+            event.stopPropagation();
+            this.dismissedProjectSuggestions.add(task.guid);
+            suggestion.remove();
+            trigger?.remove();
+        };
+        suggestion.appendChild(dismiss);
+        trigger?.setAttribute('aria-expanded', 'true');
+        item.after(suggestion);
+    }
+
+    async linkTaskToSuggestedProject(task, projectGuid) {
+        const collections = await this.data.getAllCollections();
+        const projects = collections.find(collection => collection.getGuid() === this.collectionGuid('Projects', collections));
+        const clients = collections.find(collection => collection.getGuid() === this.collectionGuid('Clients', collections));
+        if (!projects || !clients) throw new Error('Choose your Projects and Clients collections in Settings.');
+        const projectRecords = await projects.getAllRecords();
+        const clientRecords = await clients.getAllRecords();
+        const clientByGuid = new Map(clientRecords.map(record => [record.guid, record]));
+        const projectIndex = new Map(projectRecords.map(record => [record.guid, { guid: record.guid, name: record.getName?.() || '', parentGuid: getParentGuid(record), status: String(getProp(record, 'status') || '').toLowerCase() }]));
+        const sourceRecord = this.data.getRecord?.(task.recordGuid);
+        if (!sourceRecord) throw new Error('The task source page is no longer available.');
+        const lines = await sourceRecord.getLineItems(false);
+        const line = lines.find(item => item.guid === task.guid);
+        if (!line) throw new Error('That task is no longer available.');
+        const ownership = resolveTaskProject(line, sourceRecord, projectIndex);
+        if (ownership.kind === 'owned' || ownership.kind === 'referenced') {
+            const linkedProject = projectIndex.get(ownership.projectGuid);
+            const error = new Error(`This task is already linked to ${linkedProject?.name || 'a project'}. No project reference was added.`);
+            error.code = 'already-linked';
+            throw error;
+        }
+        if (ownership.kind === 'ambiguous') {
+            const error = new Error('This task references several projects. Open the task and keep one project reference.');
+            error.code = 'ambiguous';
+            throw error;
+        }
+        if (ownership.kind === 'unresolved' || ownership.kind === 'excluded') {
+            const error = new Error('This task’s project context is unresolved. Open the task to correct it.');
+            error.code = 'unresolved';
+            throw error;
+        }
+        const sourceClientGuid = clientByGuid.has(sourceRecord.guid) ? sourceRecord.guid : '';
+        const clientRefs = new Set();
+        if (!sourceClientGuid) for (const segment of line.segments || []) {
+            if (segment.type !== 'ref') continue;
+            const guid = typeof segment.text === 'object' ? segment.text?.guid : segment.text;
+            if (guid && clientByGuid.has(guid)) clientRefs.add(guid);
+        }
+        if (clientRefs.size > 1) {
+            const error = new Error('This task references several clients. Open the task and keep one client reference.');
+            error.code = 'ambiguous';
+            throw error;
+        }
+        const clientGuid = sourceClientGuid || [...clientRefs][0] || '';
+        if (!clientGuid) throw new Error('This task no longer references a client, so there are no project suggestions.');
+        const projectRecord = projectRecords.find(record => record.guid === projectGuid);
+        if (!projectRecord || isTemplateRecord(projectRecord)) throw new Error('That project is no longer available.');
+        const status = String(getProp(projectRecord, 'status') || '').toLowerCase();
+        if (!isActiveProject({ status })) throw new Error('That project is no longer active.');
+        if (getClientGuid(projectRecord) !== clientGuid) throw new Error('That project no longer belongs to this client.');
+        const title = projectRecord.getName?.() || '';
+        const segments = [...(line.segments || []), { type: 'ref', text: { guid: projectGuid, title } }];
+        if (await line.setSegments(segments) === false) throw new Error('The project reference could not be saved.');
+        return { guid: projectGuid, name: title };
+    }
+
     async loadData() {
         const data = {
             mrr: 0,
@@ -563,6 +728,7 @@ export class Plugin extends AppPlugin {
             clients: [],
             invoices: [],
             agendaTasks: [],
+            taskCoverage: { complete: true, failed: false, truncated: false, loaded: 0 },
             supportTime: null
         };
 
@@ -687,7 +853,7 @@ export class Plugin extends AppPlugin {
                 if (!name || name === 'New Project' || name === 'Kanban - Active Projects' || isTemplateRecord(pr)) continue;
 
                 const parentGuid = getParentGuid(pr);
-                const status = (getProp(pr, 'status') || 'in_progress').toLowerCase();
+                const status = (getProp(pr, 'status') || 'unknown').toLowerCase();
                 const priority = (getProp(pr, 'priority') || 'medium').toLowerCase();
                 
                 const linkedClient = getClientGuid(pr);
@@ -748,6 +914,8 @@ export class Plugin extends AppPlugin {
             });
 
             data.projects = parentList;
+            const projectIndex = new Map(projRecords.map(record => [record.guid, { guid: record.guid, name: record.getName?.() || '', parentGuid: getParentGuid(record), status: String(getProp(record, 'status') || '').toLowerCase() }]));
+            const clientByGuid = new Map(clientList.map(client => [client.guid, client]));
 
             const supportGuid = this.collectionGuid('Support Sessions', collections);
             if (supportGuid) {
@@ -760,8 +928,21 @@ export class Plugin extends AppPlugin {
             }
 
             // 4. Fetch Tasks
-            const taskRes = await this.data.searchByQuery('@task @todo', 150);
-            const taskLines = taskRes?.lines || [];
+            let taskLines = [];
+            try {
+                const taskRes = await this.data.searchByQuery('@task @todo', 150);
+                if (taskRes?.error) throw new Error(taskRes.error);
+                if (!taskRes || !Array.isArray(taskRes.lines)) throw new Error('Task search returned an invalid result');
+                taskLines = taskRes.lines;
+                if (taskLines.length >= 150) {
+                    data.taskCoverage.truncated = true;
+                    data.taskCoverage.complete = false;
+                }
+            } catch (error) {
+                data.taskCoverage.failed = true;
+                data.taskCoverage.complete = false;
+                console.warn('[FreelanceOS] Task search failed:', error);
+            }
             const taskList = [];
             const now = new Date();
             const todayIso = localDate(now);
@@ -777,8 +958,10 @@ export class Plugin extends AppPlugin {
                 if (isTemplateRecord(rec)) continue;
                 const text = extractLineText(line);
                 if (!text) continue;
+                const status = typeof line.getTaskStatus === 'function' ? line.getTaskStatus() : 'none';
+                if (status === null || status === undefined) continue;
 
-                const dt = extractLineDate(line);
+                const dt = validDateValue(extractLineDate(line));
                 let category = 'inbox'; // default for undated tasks
                 if (dt) {
                     if (dt < todayIso) category = 'overdue';
@@ -788,6 +971,19 @@ export class Plugin extends AppPlugin {
                 }
 
                 const recordGuid = rec ? (rec.guid || (rec.getGuid ? rec.getGuid() : null)) : null;
+                const ownership = resolveTaskProject(line, rec, projectIndex);
+                const sourceClientGuid = rec && clientByGuid.has(rec.guid) ? rec.guid : '';
+                const clientRefs = new Set();
+                if (!sourceClientGuid) for (const segment of line.segments || []) {
+                    if (segment.type !== 'ref') continue;
+                    const guid = typeof segment.text === 'object' ? segment.text?.guid : segment.text;
+                    if (guid && clientByGuid.has(guid)) clientRefs.add(guid);
+                }
+                const clientGuid = sourceClientGuid || (clientRefs.size === 1 ? [...clientRefs][0] : '');
+                const clientAmbiguous = !sourceClientGuid && clientRefs.size > 1;
+                const projectCandidates = ownership.kind === 'none' && clientGuid && !clientAmbiguous
+                    ? parentList.filter(project => project.clientGuid === clientGuid && isActiveProject(project)).map(project => ({ guid: project.guid, name: project.name, status: project.status, clientGuid: project.clientGuid }))
+                    : [];
 
                 taskList.push({
                     guid: line.guid,
@@ -795,11 +991,23 @@ export class Plugin extends AppPlugin {
                     text,
                     date: dt,
                     category,
-                    recordGuid
+                    status,
+                    waiting: isWaitingTask(status),
+                    important: status === 'important',
+                    recordGuid,
+                    ownershipKind: ownership.kind,
+                    projectGuid: ownership.projectGuid || '',
+                    projectName: ownership.projectGuid ? (projectIndex.get(ownership.projectGuid)?.name || '') : '',
+                    clientGuid,
+                    clientName: clientGuid ? (clientByGuid.get(clientGuid)?.name || '') : '',
+                    clientAmbiguous,
+                    clientEvidence: sourceClientGuid ? 'client-page' : clientGuid ? 'client-reference' : '',
+                    projectCandidates
                 });
             }
 
             data.agendaTasks = taskList;
+            data.taskCoverage.loaded = taskList.length;
 
         } catch (e) {
             data.loadError = true;
@@ -811,13 +1019,20 @@ export class Plugin extends AppPlugin {
 
     async captureTask(text, projectGuid, important) {
         let record;
+        const collections = await this.data.getAllCollections();
         if (projectGuid) {
-            record = this.data.getRecord(projectGuid);
+            const projects = collections.find(collection => collection.getGuid() === this.collectionGuid('Projects', collections));
+            if (!projects) throw new Error('Choose your Projects collection in Settings.');
+            const destination = (await projects.getAllRecords()).find(item => item.guid === projectGuid);
+            if (!destination || isTemplateRecord(destination)) throw new Error('That project is no longer available as a capture destination.');
+            const status = String(getProp(destination, 'status') || '').toLowerCase();
+            if (['completed', 'archived', 'cancelled', 'canceled'].includes(status)) throw new Error('That project is closed. Choose another destination.');
+            record = destination;
         } else {
-            const collections = await this.data.getAllCollections();
-            const journal = collections.find(c => c.getGuid() === this.collectionGuid('Journal'));
-            const user = this.data.getActiveUsers?.()[0];
+            const journal = collections.find(c => c.getGuid() === this.collectionGuid('Journal', collections));
+            const user = journal ? this.resolveJournalOwner(journal, collections) : null;
             if (journal && user) record = await journal.getJournalRecord(user);
+            if (!journal) throw new Error('Choose your Journal collection in Settings, or select a project.');
         }
         if (!record) throw new Error('Capture destination unavailable');
         const line = await record.createLineItem(null, null, 'task');
@@ -825,7 +1040,7 @@ export class Plugin extends AppPlugin {
         try {
             if (await line.setSegments([{ type: 'text', text }]) === false) throw new Error('Task content was not saved');
         } catch (error) {
-            await line.delete?.().catch(() => {});
+            try { await line.delete?.(); } catch { /* keep the original failure */ }
             throw error;
         }
         let prioritySaved = true;
@@ -897,6 +1112,57 @@ export class Plugin extends AppPlugin {
             const result = await this.initializeProject(record, { deliverables });
             this.ui.addToaster({ title: result.applied ? result.reason === 'checkpoint-added' ? 'Client review checkpoints added' : 'Project template added' : result.reason === 'already-applied' ? 'This project already has the template' : 'This project already has content. Its notes were kept.', dismissible: true });
         } catch (error) { this.ui.addToaster({ title: error.message || 'Project template could not be added', dismissible: true }); }
+    }
+
+    async captureTaskForActiveProject() {
+        const sourcePanel = this.ui.getActivePanel?.();
+        const sourceNavigation = sourcePanel?.getNavigation?.();
+        const sourceRecord = sourcePanel?.getActiveRecord?.();
+        try {
+            if (!sourcePanel || sourceNavigation?.type !== 'edit_panel' || !sourceRecord) throw new Error('Open a native project page before capturing a project task.');
+            const collections = this.workflowCollections = await this.data.getAllCollections();
+            const projects = collections.find(collection => collection.getGuid() === this.collectionGuid('Projects', collections));
+            if (!projects) throw new Error('Choose your Projects collection in Settings.');
+            const records = await projects.getAllRecords();
+            const source = records.find(record => record.guid === sourceRecord.guid);
+            if (!source || isTemplateRecord(source)) throw new Error('This page is not a native project in the configured Projects collection.');
+            const byGuid = new Map(records.map(record => [record.guid, { record, guid: record.guid, name: record.getName?.() || '', parentGuid: getParentGuid(record), status: String(getProp(record, 'status')).toLowerCase() }]));
+            const rootGuid = projectRoot(source.guid, byGuid);
+            const root = rootGuid ? byGuid.get(rootGuid) : null;
+            if (!root) throw new Error('This project page has an unresolved or cyclic parent. Open the root project page instead.');
+            if (!isActiveProject({ status: root.status })) throw new Error('Only in-progress or in-review projects can provide capture context.');
+            let clientName = '';
+            const clientGuid = getClientGuid(root.record);
+            if (clientGuid) {
+                const clients = collections.find(collection => collection.getGuid() === this.collectionGuid('Clients', collections));
+                const client = clients && (await clients.getAllRecords()).find(record => record.guid === clientGuid);
+                clientName = client?.getName?.() || '';
+            }
+            let notice = '';
+            if (this.captureDestinationSource === 'user') {
+                notice = `Kept your existing destination (${this.captureProjectGuid ? 'selected project' : 'Journal inbox'}).`;
+            } else {
+                this.captureProjectGuid = root.guid;
+                this.captureDestinationSource = 'context';
+                this.captureContext = { projectGuid: root.guid, projectName: root.name, clientName };
+                if (this.captureDraft.trim()) notice = `Existing draft kept; destination set to ${root.name}.`;
+            }
+            await this.openDashboard();
+            if (typeof setTimeout === 'function') await new Promise(resolve => setTimeout(resolve, 50));
+            else await Promise.resolve();
+            const dashboard = this.ui.getActivePanel?.();
+            if (!dashboard) throw new Error('Freelance OS could not be opened.');
+            this.activePanel = dashboard;
+            await this.render(dashboard);
+            const element = dashboard.getElement?.();
+            const input = element?.querySelector('.os-capture-input');
+            input?.focus({ preventScroll: true });
+            const feedback = element?.querySelector('.os-capture-feedback');
+            if (feedback) feedback.textContent = notice || `Capturing for ${root.name}${clientName ? ` · ${clientName}` : ''}.`;
+            this.ui.addToaster({ title: notice || `Capture destination: ${root.name}${clientName ? ` · ${clientName}` : ''}`, autoDestroyTime: 3500, dismissible: true });
+        } catch (error) {
+            this.ui.addToaster({ title: error.message || 'Project capture context is unavailable.', dismissible: true });
+        }
     }
 
     async createConfiguredRecord(role, title, values, options = {}) {
@@ -1293,12 +1559,26 @@ export class Plugin extends AppPlugin {
         const mode = this.workflowMode || 'overview';
         let workflow;
         if (mode !== 'overview') {
-            try { workflow = await this.loadWorkflowData(); }
+            try { workflow = await this.loadWorkflowData({ expectedVersion: renderVersion, deferApply: true }); }
             catch { workflow = { error: 'Project tasks could not be loaded. Check collection mappings in Settings, then retry.' }; }
             this.workflowData = workflow;
         }
         const data = mode === 'overview' ? await this.loadData() : { projects: workflow?.projects || [] };
         if (renderVersion !== this.renderVersion) return;
+        if (mode !== 'overview' && !workflow?.error) {
+            const applied = await this.applyWorkflowSnapshot(workflow, { expectedVersion: renderVersion });
+            if (!applied && workflow.stale) return;
+            if (renderVersion !== this.renderVersion) return;
+        }
+        if (mode === 'review' && !workflow?.error) {
+            const week = reviewWeek();
+            if (this.workflowState.drafts[week]?.step === 2) {
+                this.weeklyReviewDiscovery = await this.loadWeeklyReviewContext();
+                try { this.previousReviewContext = await this.loadPreviousReviewContext({ week, workflow }); }
+                catch (error) { this.previousReviewContext = { kind: 'incomplete', week: previousReviewWeek(week), items: [], warning: error.message }; }
+                if (renderVersion !== this.renderVersion) return;
+            }
+        }
         const cash = data.cashflow || summarizeInvoices([]);
         const wsGuid = this.getWorkspaceGuid();
         const dateStr = new Date().toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
@@ -1327,8 +1607,9 @@ export class Plugin extends AppPlugin {
                     <button class="os-capture-btn" aria-label="Add task" title="Add task (Enter)">↵</button>
                 </div>
                 <div class="os-capture-options">
-                    <select class="os-capture-project" aria-label="Task destination"><option value="">Journal inbox</option>${data.projects.filter(p => !['completed', 'archived', 'cancelled'].includes(p.status)).map(p => `<option value="${escapeHtml(p.guid)}">${escapeHtml(p.name)}</option>`).join('')}</select>
+                    <select class="os-capture-project" aria-label="Task destination"><option value="">Journal inbox</option>${data.projects.filter(p => !['completed', 'archived', 'cancelled', 'canceled'].includes(p.status)).map(p => `<option value="${escapeHtml(p.guid)}">${escapeHtml(p.name)}</option>`).join('')}</select>
                     <label class="os-capture-priority"><input type="checkbox" /> Important</label>
+                    <span class="os-capture-context" role="status">${this.captureDestinationSource === 'context' && this.captureContext ? `For ${escapeHtml(this.captureContext.projectName)}${this.captureContext.clientName ? ` · ${escapeHtml(this.captureContext.clientName)}` : ''}` : ''}</span>
                     <span class="os-capture-hint">/ to focus · Enter to save</span>
                 </div>
                 <div class="os-capture-feedback" role="status" aria-live="polite"></div>
@@ -1347,10 +1628,19 @@ export class Plugin extends AppPlugin {
         const captureButton = header.querySelector('.os-capture-btn');
         const captureFeedback = header.querySelector('.os-capture-feedback');
         captureInput.value = this.captureDraft || '';
+        if (this.captureProjectGuid && ![...captureProject.options].some(option => option.value === this.captureProjectGuid)) {
+            const unavailable = document.createElement('option');
+            unavailable.value = this.captureProjectGuid;
+            unavailable.textContent = 'Project unavailable — choose another destination';
+            unavailable.disabled = true;
+            captureProject.appendChild(unavailable);
+            captureProject.setAttribute('aria-invalid', 'true');
+            captureFeedback.textContent = 'Your selected project is unavailable. Choose another destination; your task text is kept.';
+        }
         captureProject.value = this.captureProjectGuid || '';
         capturePriority.checked = this.captureImportant || false;
         captureInput.oninput = () => { this.captureDraft = captureInput.value; };
-        captureProject.onchange = () => { this.captureProjectGuid = captureProject.value; };
+        captureProject.onchange = () => { this.captureProjectGuid = captureProject.value; this.captureDestinationSource = 'user'; this.captureContext = null; captureProject.removeAttribute('aria-invalid'); captureFeedback.textContent = ''; };
         capturePriority.onchange = () => { this.captureImportant = capturePriority.checked; };
         app.addEventListener('keydown', e => {
             if (e.key === '/' && !e.ctrlKey && !e.metaKey && !e.altKey && !e.target.closest('input, select, textarea, [contenteditable="true"]')) {
@@ -1358,6 +1648,7 @@ export class Plugin extends AppPlugin {
                 captureInput.focus({ preventScroll: true });
             }
         });
+        app.addEventListener('focusout', () => this.flushRefresh());
         header.querySelector('.os-capture').addEventListener('focusout', () => this.scheduleRefresh());
         const handleCapture = async () => {
             const txt = (captureInput.value || '').trim();
@@ -1369,14 +1660,16 @@ export class Plugin extends AppPlugin {
             capturePriority.disabled = true;
             captureFeedback.textContent = 'Saving task…';
             try {
-                const result = await this.captureTask(txt, captureProject.value, capturePriority.checked);
+                const destination = this.captureProjectGuid || '';
+                if (![...captureProject.options].some(option => option.value === destination && !option.disabled)) throw new Error('Your selected project is unavailable. Choose another destination.');
+                const result = await this.captureTask(txt, destination, capturePriority.checked);
                 this.captureDraft = '';
                 captureInput.value = '';
-                const title = result.prioritySaved ? `Task saved to ${captureProject.value ? 'project' : 'Journal'}` : 'Task saved; priority could not be set. Open the task to mark it important.';
+                const title = result.prioritySaved ? `Task saved to ${destination ? 'project' : 'Journal'}` : 'Task saved; priority could not be set. Open the task to mark it important.';
                 captureFeedback.textContent = title;
                 this.ui.addToaster({ title, autoDestroyTime: 3500, dismissible: true });
             } catch (err) {
-                captureFeedback.textContent = 'Task could not be saved. Your text is kept; try again.';
+                captureFeedback.textContent = `${err.message || 'Task could not be saved.'} Your text is kept; try again.`;
                 console.error('[FreelanceOS] Capture failed:', err);
             } finally {
                 this.captureBusy = false;
@@ -1403,6 +1696,13 @@ export class Plugin extends AppPlugin {
         modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['review', 'Weekly review'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
         app.appendChild(modes);
+        if (this.workflowStorageError) {
+            const storageWarning = document.createElement('p');
+            storageWarning.className = 'os-workflow-message';
+            storageWarning.setAttribute('role', 'alert');
+            storageWarning.textContent = this.workflowStorageError;
+            app.appendChild(storageWarning);
+        }
         if (mode === 'overview' && data.missingCollections?.length) {
             const setup = document.createElement('section'); setup.className = 'os-workflow os-workflow-settings';
             setup.innerHTML = `<h2>Set up your workspace</h2><p>Freelance OS needs Clients, Projects and Invoices collections with its starter fields.</p><p>Missing collections: ${data.missingCollections.map(escapeHtml).join(', ')}. Create them using the setup guide, or map your existing collections in Settings.</p><button class="os-button os-primary">Choose collections</button>`;
@@ -1669,6 +1969,9 @@ export class Plugin extends AppPlugin {
         const overdueTasks = data.agendaTasks.filter(t => t.category === 'overdue');
         const upcomingTasks = data.agendaTasks.filter(t => t.category === 'upcoming');
         const inboxTasks = data.agendaTasks.filter(t => t.category === 'inbox');
+        const taskCoverage = data.taskCoverage || { complete: true };
+        const agendaIncomplete = !taskCoverage.complete;
+        const agendaCount = count => agendaIncomplete ? `${count} loaded` : String(count);
 
         if (!this.agendaTabSetByUser) {
             if (todayTasks.length > 0) this.agendaTab = 'today';
@@ -1682,6 +1985,7 @@ export class Plugin extends AppPlugin {
         else if (this.agendaTab === 'overdue') shownTasks = overdueTasks;
         else if (this.agendaTab === 'upcoming') shownTasks = upcomingTasks;
         else shownTasks = inboxTasks;
+        const agendaLimit = this.agendaLimit || 25;
 
         agenda.innerHTML = `
             <div class="os-agenda-header">
@@ -1689,11 +1993,12 @@ export class Plugin extends AppPlugin {
                 <a class="os-view-all">All tasks ↗</a>
             </div>
             <div class="os-agenda-tabs">
-                <span class="os-agenda-tab ${this.agendaTab === 'today' ? 'active' : ''} tab-today">Today (${todayTasks.length})</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'overdue' ? 'active' : ''} tab-overdue">Overdue (${overdueTasks.length})</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'upcoming' ? 'active' : ''} tab-upcoming">Next 7d (${upcomingTasks.length})</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'inbox' ? 'active' : ''} tab-inbox">Inbox (${inboxTasks.length})</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'today' ? 'active' : ''} tab-today">Today (${agendaCount(todayTasks.length)})</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'overdue' ? 'active' : ''} tab-overdue">Overdue (${agendaCount(overdueTasks.length)})</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'upcoming' ? 'active' : ''} tab-upcoming">Next 7d (${agendaCount(upcomingTasks.length)})</span>
+                <span class="os-agenda-tab ${this.agendaTab === 'inbox' ? 'active' : ''} tab-inbox">Inbox (${agendaCount(inboxTasks.length)})</span>
             </div>
+            ${agendaIncomplete ? '<p class="os-agenda-note" role="status">Task counts show loaded results only; more may exist.</p>' : ''}
             <div class="os-agenda-content"></div>
             <div class="os-agenda-footer">
                 <a class="link-capture">+ Capture Task</a>
@@ -1707,7 +2012,13 @@ export class Plugin extends AppPlugin {
 
         const agendaContent = agenda.querySelector('.os-agenda-content');
         if (shownTasks.length === 0) {
-            agendaContent.innerHTML = `
+            agendaContent.innerHTML = agendaIncomplete ? `
+                <div class="os-empty-state">
+                    <div class="os-empty-icon">…</div>
+                    <div class="os-empty-title">No loaded tasks in this section</div>
+                    <div class="os-empty-desc">Task data is incomplete; more tasks may exist. Refresh to retry.</div>
+                </div>
+            ` : `
                 <div class="os-empty-state">
                     <div class="os-empty-icon">✓</div>
                     <div class="os-empty-title">No tasks in this section</div>
@@ -1715,28 +2026,37 @@ export class Plugin extends AppPlugin {
                 </div>
             `;
         } else {
-            for (const t of shownTasks.slice(0, 25)) {
+            for (const t of shownTasks.slice(0, agendaLimit)) {
                 const item = document.createElement('div');
-                item.className = 'os-task-item';
+                item.className = `os-task-item${t.waiting ? ' os-task-waiting' : ''}`;
+                const canSuggest = t.category === 'inbox' && t.projectCandidates?.length && !this.dismissedProjectSuggestions.has(t.guid);
                 item.innerHTML = `
                     <input type="checkbox" class="os-task-checkbox" />
                     <span class="os-task-label" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</span>
+                    ${t.projectName ? `<span class="os-task-project" title="Linked project">${escapeHtml(t.projectName)}</span>` : ''}
+                    ${t.waiting ? '<span class="os-task-state">Waiting</span>' : ''}
+                    ${t.important ? '<span class="os-task-state">Important</span>' : ''}
                     ${t.date ? `<span class="os-task-date">${t.date}</span>` : ''}
+                    ${canSuggest ? '<button type="button" class="os-suggest-project" aria-expanded="false">Link project</button>' : ''}
                 `;
 
                 const chk = item.querySelector('.os-task-checkbox');
                 chk.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     chk.disabled = true;
-                    item.style.opacity = '0.35';
-                    item.querySelector('.os-task-label').style.textDecoration = 'line-through';
-                    if (t.lineItem && typeof t.lineItem.setTaskStatus === 'function') {
-                        try {
-                            await t.lineItem.setTaskStatus('done');
-                            this.ui.addToaster({ title: 'Task completed', autoDestroyTime: 2000, dismissible: true });
-                        } catch (err) {
-                            console.error('Task done error:', err);
-                        }
+                    try {
+                        if (typeof t.lineItem?.setTaskStatus !== 'function') throw new Error('Task state cannot be changed here');
+                        const saved = await t.lineItem.setTaskStatus('done');
+                        if (saved === false) throw new Error('Task state was not saved');
+                        item.style.opacity = '0.35';
+                        item.querySelector('.os-task-label').style.textDecoration = 'line-through';
+                        this.ui.addToaster({ title: 'Task completed', autoDestroyTime: 2000, dismissible: true });
+                    } catch (err) {
+                        // The row was not changed optimistically, so it recovers by re-enabling the checkbox.
+                        chk.checked = false;
+                        chk.disabled = false;
+                        this.ui.addToaster({ title: 'Task could not be completed. Try again.', autoDestroyTime: 3000, dismissible: true });
+                        console.error('Task done error:', err);
                     }
                     this.scheduleRefresh();
                 });
@@ -1745,14 +2065,26 @@ export class Plugin extends AppPlugin {
                     this.openItem(t.guid, t.recordGuid, panel);
                 });
 
+                item.querySelector('.os-suggest-project')?.addEventListener('click', event => {
+                    event.stopPropagation();
+                    this.showProjectSuggestions(t, item, panel);
+                });
+
                 agendaContent.appendChild(item);
+            }
+            if (shownTasks.length > agendaLimit) {
+                const more = document.createElement('button');
+                more.className = 'os-button os-agenda-more';
+                more.textContent = `Show more (${shownTasks.length - agendaLimit} loaded remaining)`;
+                more.onclick = () => { this.agendaLimit = agendaLimit + 25; this.render(panel); };
+                agendaContent.appendChild(more);
             }
         }
 
-        agenda.querySelector('.tab-today').addEventListener('click', () => { this.agendaTab = 'today'; this.agendaTabSetByUser = true; this.render(panel); });
-        agenda.querySelector('.tab-overdue').addEventListener('click', () => { this.agendaTab = 'overdue'; this.agendaTabSetByUser = true; this.render(panel); });
-        agenda.querySelector('.tab-upcoming').addEventListener('click', () => { this.agendaTab = 'upcoming'; this.agendaTabSetByUser = true; this.render(panel); });
-        agenda.querySelector('.tab-inbox').addEventListener('click', () => { this.agendaTab = 'inbox'; this.agendaTabSetByUser = true; this.render(panel); });
+        agenda.querySelector('.tab-today').addEventListener('click', () => { this.agendaTab = 'today'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
+        agenda.querySelector('.tab-overdue').addEventListener('click', () => { this.agendaTab = 'overdue'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
+        agenda.querySelector('.tab-upcoming').addEventListener('click', () => { this.agendaTab = 'upcoming'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
+        agenda.querySelector('.tab-inbox').addEventListener('click', () => { this.agendaTab = 'inbox'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
         agenda.querySelector('.link-capture').addEventListener('click', () => captureInput.focus());
         agenda.querySelector('.link-notes').addEventListener('click', () => this.openJournal(panel));
 
@@ -1794,7 +2126,7 @@ export class Plugin extends AppPlugin {
                 const workflowState = this.loadWorkflowState();
                 const nextGuid = workflowState.next[proj.guid];
                 const nextLabel = workflowState.nextLabels[proj.guid];
-                const activeProject = ['in_progress', 'in_review'].includes(proj.status);
+                const activeProject = isActiveProject(proj);
 
                 card.innerHTML = `
                     <div class="os-card-top">

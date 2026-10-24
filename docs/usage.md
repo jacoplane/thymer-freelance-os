@@ -14,6 +14,16 @@ Use the capture field at the top of any tab. Choose **Journal inbox** or an acti
 
 The Overview agenda’s **Inbox** skips unfinished tasks on records whose `type` is **template**. Keep reusable checklists marked as templates in Library; after copying their tasks into a real client or project page, those tasks appear as normal work.
 
+### Capture into the project in front of you
+
+With a native project page focused, run **Capture Freelance OS task for this project** from the command palette. Freelance OS reads the project before navigating, accepts only a real project page in the configured Projects collection, resolves nested pages to their root, and preselects only an explicitly active (`in_progress` or `in_review`) project. The capture bar shows the project and linked client as context. A nonempty draft is kept. If you previously chose a destination yourself—including Journal inbox—that choice is kept and the project context is not applied. The preselection applies once for that command invocation; changing panels later does not keep changing it.
+
+The destination is checked again when you save. A project that was moved out of the configured collection, marked as a template, deleted, or closed produces an error and keeps your text. Backlog projects remain available as an explicit destination from the capture selector, but they are never preselected automatically.
+
+### Link an unassociated inbox task
+
+An inbox task on a client page, or one that references a client record, can show **Link project** when it has no project relationship yet. Freelance OS lists that client’s active projects with the evidence for each suggestion. Nothing changes until you choose **Link project**; **Open project** only navigates. Before writing, the task is re-read and reclassified. If it now belongs to a project, references several projects or clients, or its project context is unresolved, Freelance OS explains that instead of appending another reference. A successful link appends a native project reference and preserves the task’s text, date and other references. The project’s Client property is never changed. Suggestions dismissed with **Not now** stay dismissed for this session.
+
 Create a new client, project or invoice using the Overview action rail. The invoice action records an issued invoice with separate sent stage and payment state; draft or ready invoices can be maintained in the native Invoices collection. This is an invoice register, not a PDF generator or email sender.
 
 ## Start and connect projects
@@ -39,13 +49,15 @@ Today only includes tasks associated with explicitly active projects (`in_progre
 1. Open **Needs attention**. Missing next actions, near deadlines, overdue project tasks and due follow-ups appear here.
 2. Choose an existing task and click **Set next**. Choose one next action for each active project, or use **Add task** to capture one into that project. The selected task is also linked under the project page’s **Next actions** section, so the choice syncs with the workspace and stays visible outside Freelance OS.
 3. Use **Focus** to pin up to three tasks for today. **Unpin** removes a task from that daily shortlist. Pins belong to the selected calendar day.
-4. Use the next-action, all-action and waiting tabs to work through the queue. Search and project filters combine.
+4. Use the next-action, all-action and waiting tabs to work through the queue. Search and project filters combine. All actions can be narrowed to **Due/overdue**, **Important** or **No date**; Waiting can be narrowed to **Follow-up due** or **No follow-up**. Counts reflect the current search and project scope, and the result summary says when only loaded results are available.
 
 A checkbox completes the native task. Clicking the task title opens its source page. **Edit** exposes its due date and waiting controls. Changing a due date preserves the task’s other text, links and formatting.
 
 ## Track waiting dependencies
 
-In a task’s editor, enter a waiting reason and follow-up date, then save the waiting state. The native task becomes waiting, while the reason and follow-up stay in Freelance OS on this device. Waiting tasks leave the actionable queue and daily shortlist and appear under **Waiting**.
+In a task’s editor, enter a waiting reason and optional follow-up date, then save the waiting state. The native task becomes waiting, and the reason and follow-up sync with the workspace in the task’s Freelance OS metadata. Waiting tasks leave the actionable queue and daily shortlist and appear under **Waiting**, where the reason and follow-up stay visible without opening Edit.
+
+Waiting without a reason is shown as **Waiting - add a reason**. If your Thymer build cannot save task metadata, the note remains on this device and the row says **Only on this device**. Notes created by an older Freelance OS version are not uploaded automatically; saving that waiting entry explicitly moves the note into native metadata. **Ready to work** restores the previous native status, such as Important, instead of always clearing to none. The stored note remains on the task but is inactive once the task is no longer waiting.
 
 When the follow-up date arrives, the project gains a **Follow-up due** attention signal. Resume the task when the dependency is resolved. These are dashboard reminders; nothing is sent to a client automatically.
 
@@ -57,7 +69,11 @@ The review is grouped by the week starting Monday. Its draft is saved on this de
 2. **Check projects.** Review every active project, confirm its current next action, and check deadlines and waiting follow-ups. The selected actions carry into **Today → Next actions** and the saved Journal review.
 3. **Plan next week.** Write wins and observations, then add one priority per line. For each priority that belongs to active project work, choose its project and either select an existing open task and click **Link task**, or click **Create task**. The task appears in the action queue without changing that project's chosen next action; the priority stays in your review, and the Journal entry links it to the task. Unconverted priorities remain plain text. Inspect the Journal preview and click **Save review to Journal** when ready.
 
-The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. Converted priorities link directly to their native project tasks. Next-action links on project pages are native workspace content; focus pins, waiting notes, and unsaved review drafts remain local to this device. Saving again during the same week updates the same Journal section, including if you return on another day. After saving, the button becomes **Update Journal review**.
+The saved native Journal section includes project next actions, waiting work, overdue counts, recent done tasks, notes and priorities. Converted priorities link directly to their native project tasks. Next-action links on project pages are native workspace content; waiting details are native task metadata; focus pins and unsaved review drafts remain local to this device.
+
+**Previous priorities** appear above the planning form. The source is, in order, last week’s saved Journal review, then last week’s unsaved local draft, then a calm empty state. Each row shows whether its linked task is open, waiting, completed, canceled or unavailable. Carrying forward keeps the same native task; waiting tasks stay waiting. Completed and canceled tasks are shown without a carry action. An unavailable task can be carried as text only. Carrying does not create a task, reschedule, resume waiting, choose a next action or pin focus. Carrying the same priority twice is prevented by its source-week/id identity, and two priorities in one week cannot link the same task.
+
+Freelance OS checks the week’s seven Journal pages for an existing review before saving. A saved review is found even when this device has no local review cache, and saving from another day updates that same section rather than creating a second one. If several matching sections exist, the dashboard shows their dates and requires an explicit **Use this review** choice; it never merges or deletes them automatically. An interrupted save leaves a discoverable section for retry. Older review sections without saved metadata are read from their generated body and upgraded only when you save. In a workspace with several active users, choose the Journal owner in Settings first. After saving, the button becomes **Update Journal review**.
 
 ![Planning next week and updating a saved Journal review with fictional notes](images/plan-next-week.png)
 
@@ -79,8 +95,9 @@ Records and views remain native Thymer data. Opening the dashboard does not rewr
 
 | Syncs through Thymer | Local to this device and workspace |
 | --- | --- |
-| Clients, projects, invoices and linked properties | Collection mappings |
-| Native task text, dates, importance and completion/waiting state | Daily focus pins and project next-action selections |
-| Saved Journal reviews | Waiting reasons/follow-up dates and unsaved review drafts |
+| Clients, projects, invoices and linked properties | Collection mappings and Journal owner preference |
+| Native task text, dates, importance and completion/waiting state | Daily focus pins |
+| Project next-action references, waiting reasons/follow-up dates and saved review snapshots | Unsaved review drafts |
+| Saved Journal reviews | Legacy waiting notes until their waiting entry is saved again |
 
 Freelance OS works independently of Daily Focus. Removing Daily Focus does not affect this plugin’s task capture, action queue or weekly review.

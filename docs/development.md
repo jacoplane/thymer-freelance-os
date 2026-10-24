@@ -5,7 +5,7 @@
 ```sh
 npm ci
 node build.mjs
-node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/starter.test.mjs
+node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/projects.test.mjs test/starter.test.mjs test/live-safety.test.mjs
 node deploy.mjs --workspace YOUR_WORKSPACE_GUID
 ```
 
@@ -28,6 +28,8 @@ node test/live-create.mjs
 ```
 
 Run these with the intended dashboard workspace active. Set `THYMER_WORKSPACE` to that explicit workspace GUID before the creation check. Set `OS_SKIP_RELOAD=1` if you have just reloaded the saved bundle yourself. `OS_ARTIFACT_DIR` selects a local screenshot directory. The workflow check creates temporary tasks and a dated review, verifies behavior, removes its fixtures and restores local workflow state. The creation check creates temporary client, project and invoice records, verifies their properties and a project status change, then moves only its own fixtures to Trash.
+
+`live-workflow.mjs` only accepts the dedicated test workspace `W8JXPTMKY8DEDMGB3JZ6ARRHJ2` and plugin `1Y01APTHH8RZN3BRYVHQT0YXQP`. It rejects production before reload or mutation, creates its own project, reserves empty future Journal dates, registers pending review headings immediately, and restores raw local storage. Cleanup checks that existing project/Journal content is unchanged. A failed run with cleanup failures retains its browser fixture ledger for diagnosis; do not start another run over an unresolved ledger. Other live scripts have their own target checks; do not run mutation tests on production.
 
 ## Reproduce the fictional demo
 

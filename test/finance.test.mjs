@@ -33,15 +33,24 @@ test('client value uses linked CHF payments and active projects only', () => {
     assert.equal(result.overdueCount, 1);
 });
 
+function captureProject(createLineItem) {
+    const record = {
+        guid: 'project-a', getName: () => 'Project A',
+        prop: key => key === 'status' ? { choiceLabel: () => 'in_progress' } : null,
+        createLineItem
+    };
+    return { record, collection: { getGuid: () => 'projects', getName: () => 'Projects', getAllRecords: async () => [record] } };
+}
+
 test('capture assigns the chosen project and important priority', async () => {
     const plugin = new api.Plugin();
-    let text, priority, destination;
-    plugin.data = { getRecord: guid => { destination = guid; return { createLineItem: async () => ({
+    let text, priority;
+    const { collection } = captureProject(async () => ({
         setSegments: async segments => { text = segments[0].text; return true; },
         setTaskStatus: async status => { priority = status; return true; }
-    }) }; } };
+    }));
+    plugin.data = { getAllCollections: async () => [collection] };
     const result = await plugin.captureTask('Review proposal', 'project-a', true);
-    assert.equal(destination, 'project-a');
     assert.equal(text, 'Review proposal');
     assert.equal(priority, 'important');
     assert.equal(result.prioritySaved, true);
@@ -50,20 +59,22 @@ test('capture assigns the chosen project and important priority', async () => {
 test('failed capture removes the empty task and reports failure', async () => {
     const plugin = new api.Plugin();
     let deleted = false;
-    plugin.data = { getRecord: () => ({ createLineItem: async () => ({
+    const { collection } = captureProject(async () => ({
         setSegments: async () => false,
         delete: async () => { deleted = true; return true; }
-    }) }) };
+    }));
+    plugin.data = { getAllCollections: async () => [collection] };
     await assert.rejects(plugin.captureTask('Keep my draft', 'project-a', false));
     assert.equal(deleted, true);
 });
 
 test('priority failure reports an already saved task without retrying creation', async () => {
     const plugin = new api.Plugin();
-    plugin.data = { getRecord: () => ({ createLineItem: async () => ({
+    const { collection } = captureProject(async () => ({
         setSegments: async () => true,
         setTaskStatus: async () => false
-    }) }) };
+    }));
+    plugin.data = { getAllCollections: async () => [collection] };
     assert.equal((await plugin.captureTask('Saved task', 'project-a', true)).prioritySaved, false);
 });
 

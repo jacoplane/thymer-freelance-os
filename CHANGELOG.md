@@ -1,0 +1,15 @@
+# Changelog
+
+## 1.4.0 — 2026-10-24
+
+- Add synced waiting explanations, explicit migration of older local notes, and native previous-status resume.
+- Add simple action/waiting presets with scoped counts and honest partial-data states.
+- Discover saved weekly reviews across Journal dates; compare prior priorities and explicitly carry existing tasks forward.
+- Add contextual capture from native project pages and evidence-backed, explicitly accepted project suggestions.
+- Harden persistence, task ownership, template exclusion and event-driven refresh behavior.
+- Protect newer next-action choices from stale asynchronous reconciliation.
+- Keep unavailable capture destinations explicit and preserve waiting-editor text after failed saves.
+- Preserve carry-forward provenance through reloads.
+- Isolate live regression fixtures, reject production test targets, and clean up interrupted review saves.
+
+No new collections or third-party runtime plugins are required. Structured prerequisite-task dependencies remain deferred.

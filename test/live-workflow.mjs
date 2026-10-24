@@ -3,370 +3,266 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import os from 'node:os';
+import { guardedEvaluate, assertTestIdentity } from './live-safety.mjs';
 
-const output = process.env.OS_ARTIFACT_DIR || path.join(os.tmpdir(), 'freelance-os-verification');
-await fs.mkdir(output, { recursive: true });
+// This runner owns every record/heading it mutates. Existing reviews are never disposable fixtures.
 const browser = await puppeteer.connect({ browserURL: 'http://127.0.0.1:9444', defaultViewport: null });
-const page = (await browser.pages()).find(page => page.url().includes('thymer.com'));
-const cdp = await page.createCDPSession();
-await cdp.send('Emulation.clearDeviceMetricsOverride');
-await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
-const errors = [];
-page.on('pageerror', error => errors.push(error.message));
-let savedState, savedUi, fixtures = [], reviews = [], review, originalPanels = [];
+let page, cdp, initialized = false;
+const report = {};
+const sessionToken = `workflow-${Date.now()}`;
 try {
-    if (!process.env.OS_SKIP_RELOAD) await page.reload({ waitUntil: 'domcontentloaded' });
-    await page.waitForSelector('.os-workflow-modes');
-    savedUi = await page.evaluate(() => {
-        const plugin = window.__freelanceOs;
-        return {
-            panels: plugin.ui.getPanels().map(panel => panel.getId()),
-            workflowMode: plugin.workflowMode, currentTab: plugin.currentTab, actionQueueTab: plugin.actionQueueTab,
-            queueLimit: plugin.queueLimit, actionSearch: plugin.actionSearch, actionProject: plugin.actionProject,
-            clientProjectGuid: plugin.clientProjectGuid, projectFilter: plugin.projectFilter, invoiceFilter: plugin.invoiceFilter,
-            searchQuery: plugin.searchQuery, expandedProjects: [...plugin.expandedProjects]
+    page = (await browser.pages()).find(page => page.url().includes('thymer.com'));
+    if (!page) throw new Error('Thymer Desktop renderer is unavailable');
+    cdp = await page.createCDPSession();
+    await cdp.send('Emulation.clearDeviceMetricsOverride');
+    assertTestIdentity(await page.evaluate(() => ({ workspace: window.__freelanceOs?.getWorkspaceGuid(), plugin: window.__freelanceOs?.getGuid() })));
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await cdp.send('Page.setWebLifecycleState', { state: 'active' });
+    if (!process.env.OS_SKIP_RELOAD) {
+        await page.evaluate(() => { window.__freelanceOsReloadPending = true; });
+        await cdp.send('Page.reload', { ignoreCache: true });
+        await page.waitForFunction(() => !window.__freelanceOsReloadPending && !!window.__freelanceOs, { polling: 100, timeout: 15000 });
+    }
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true });
+    await cdp.send('Page.setWebLifecycleState', { state: 'active' });
+    const output = process.env.OS_ARTIFACT_DIR || path.join(os.tmpdir(), 'freelance-os-verification');
+    await fs.mkdir(output, { recursive: true });
+    const run = guardedEvaluate.bind(null, page);
+    initialized = true;
+    await run(async token => {
+        const p = window.__freelanceOs;
+        if (window.__freelanceOsTestSession) throw new Error('A prior live-test session requires cleanup before another run.');
+        const uiKeys = ['workflowMode', 'currentTab', 'projectFilter', 'invoiceFilter', 'clientProjectGuid', 'searchQuery', 'actionQueueTab', 'actionPreset', 'actionSearch', 'actionProject', 'queueLimit', 'agendaTab', 'agendaTabSetByUser', 'agendaLimit', 'captureDraft', 'captureProjectGuid', 'captureDestinationSource', 'captureContext', 'captureImportant', 'workflowMessage', 'workflowSyncError', 'weeklyReviewDiscovery', 'reviewDiscovery', 'previousReviewContext', 'selectedReviewWeek', 'selectedReviewHeadingGuid', 'waitingEditorDrafts'];
+        const s = window.__freelanceOsTestSession = {
+            token, records: [], headings: [],
+            state: JSON.stringify(p.loadWorkflowState()), raw: p.workflowStorageAdapter().read(),
+            ui: Object.fromEntries(uiKeys.map(key => [key, p[key]])),
+            panels: p.ui.getPanels().map(panel => panel.getId()), panel: p.activePanel,
+            methods: { applyNativeReconciliation: p.applyNativeReconciliation, saveReviewSnapshot: p.saveReviewSnapshot, writeReviewBody: p.writeReviewBody }, baseline: []
         };
-    });
-    originalPanels = savedUi.panels;
-    savedState = await page.evaluate(() => JSON.stringify(window.__freelanceOs.loadWorkflowState()));
-    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'today'; await plugin.render(plugin.activePanel); });
-    await page.waitForSelector('.os-workflow');
-    const report = {};
-    const setup = await page.evaluate(async () => {
-        const plugin = window.__freelanceOs;
-        const project = plugin.workflowData.model.active[0];
-        const record = plugin.data.getRecord(project.guid);
-        const created = [];
-        for (let index = 0; index < 4; index++) {
-            const props = index === 3 ? { freelance_os_review_checkpoint: 'checkpoint-v1' } : null;
-            const line = await record.createLineItem(null, null, 'task', [{ type: 'text', text: `Workflow verification ${index} ${Date.now()}` }], props);
+        const collections = await p.data.getAllCollections();
+        s.collections = collections;
+        for (const role of ['Projects', 'Journal']) {
+            const collection = collections.find(c => c.getGuid() === p.collectionGuid(role, collections));
+            if (!collection) throw new Error(`Missing ${role} test collection`);
+            for (const record of await collection.getAllRecords()) s.baseline.push({ record, recordGuid: record.guid, lines: JSON.stringify((await record.getLineItems(false)).map(l => ({ guid: l.guid, parent_guid: l.parent_guid, segments: l.segments, props: l.props })).sort((a, b) => a.guid.localeCompare(b.guid))) });
+        }
+        // Limit background native reconciliation to test-owned projects while leaving real UI scopes visible.
+        p.applyNativeReconciliation = function(snapshot) {
+            snapshot.nativeReconciliation = {
+                remove: snapshot.nativeReconciliation.remove.filter(m => s.records.includes(m.recordGuid)),
+                write: snapshot.nativeReconciliation.write.filter(w => s.records.includes(w.project.guid))
+            };
+            return s.methods.applyNativeReconciliation.call(this, snapshot);
+        };
+        // Register the heading immediately after creation, before metadata/body operations can fail.
+        p.saveReviewSnapshot = async function(heading, snapshot, options) {
+            if (!s.reviewWeeks?.includes(snapshot.week)) throw new Error('Test review write outside reserved fixture weeks');
+            const recordGuid = heading.getRecord().guid;
+            if (!s.headings.some(h => h.headingGuid === heading.guid)) s.headings.push({ headingGuid: heading.guid, recordGuid, record: heading.getRecord() });
+            return s.methods.saveReviewSnapshot.call(this, heading, snapshot, options);
+        };
+        p.workflowState = { ...p.workflowState, next: {}, nextLabels: {}, nextRecovery: {}, focus: {}, drafts: {}, reviews: {} };
+        p.waitingEditorDrafts = {};
+    }, sessionToken);
+    const setup = await run(async () => {
+        const p = window.__freelanceOs, s = window.__freelanceOsTestSession;
+        const projects = s.collections.find(c => c.getGuid() === p.collectionGuid('Projects', s.collections));
+        const guid = projects.createRecord(`${s.token} project`);
+        if (!guid) throw new Error('Fixture project creation failed');
+        s.records.push(guid); // Registered before any further await/property write.
+        let record;
+        for (let i = 0; i < 20 && !record; i++) { record = (await projects.getAllRecords()).find(r => r.guid === guid); if (!record) await new Promise(r => setTimeout(r, 50)); }
+        if (!record || record.prop('status').setChoice('in_progress') === false) throw new Error('Fixture project initialization failed');
+        await p.initializeProject(record, { firstAction: `${s.token} template action` });
+        s.tasks = [];
+        for (let i = 0; i < 4; i++) {
+            const line = await record.createLineItem(null, null, 'task', [{ type: 'text', text: `${s.token} task ${i}` }], i === 3 ? { freelance_os_review_checkpoint: 'checkpoint-v1' } : null);
             if (!line) throw new Error('Fixture task creation failed');
-            created.push({ guid: line.guid, recordGuid: record.guid });
+            s.tasks.push({ guid: line.guid, recordGuid: guid });
         }
-        plugin.actionQueueTab = 'all'; plugin.queueLimit = 1000;
-        await plugin.render(plugin.activePanel);
-        return { created, project: project.guid };
-    });
-    fixtures = setup.created;
-    report.clientReviewCheckpointCue = await page.evaluate(async () => {
-        const plugin = window.__freelanceOs;
-        const workflow = await plugin.loadWorkflowData();
-        const marked = workflow.tasks.find(task => task.clientReview && task.text.startsWith('Workflow verification 3 '));
-        const attention = workflow.model.attention.find(item => item.project.guid === marked?.projectGuid);
-        return !!marked && attention?.issues.includes('1 client review missing a date') === true;
-    });
-    assert.equal(report.clientReviewCheckpointCue, true, 'a marked native task appears as a review checkpoint in project attention');
-    await page.evaluate(async ({ fixtures, project }) => {
-        const plugin = window.__freelanceOs;
-        const today = new Date().toLocaleDateString('en-CA');
-        plugin.workflowState.focus[today] = [];
-        plugin.actionQueueTab = 'all';
-        plugin.persistWorkflow();
-        await plugin.render(plugin.activePanel);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        document.querySelector(`.os-action-list [data-task="${fixtures[0].guid}"] .os-next-action`).click();
-    }, { fixtures, project: setup.project });
-    await page.waitForFunction(async ({ project, task }) => {
-        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
-        const label = plugin.workflowData.tasks.find(item => item.guid === task)?.text;
-        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === label));
-    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[0].guid });
-    report.nativeNextReferenceCreated = true;
-    await page.evaluate(async ({ project }) => {
-        const plugin = window.__freelanceOs;
-        delete plugin.workflowState.next[project]; delete plugin.workflowState.nextLabels[project]; plugin.persistWorkflow();
-        plugin.workflowState = null; plugin.loadWorkflowState(); await plugin.loadWorkflowData();
-    }, { project: setup.project });
-    assert.equal(await page.evaluate(project => window.__freelanceOs.workflowState.next[project], setup.project), fixtures[0].guid);
-    report.nativeNextReferenceRehydratesWithoutLocalPointer = true;
-    await page.evaluate(async guid => {
-        const plugin = window.__freelanceOs; const task = plugin.workflowData.tasks.find(item => item.guid === guid);
-        await task.lineItem.setSegments([{ type: 'text', text: 'Workflow renamed action' }]);
-        await plugin.loadWorkflowData();
-    }, fixtures[0].guid);
-    await page.waitForFunction(async ({ project, task }) => {
-        const plugin = window.__freelanceOs; const lines = await plugin.data.getRecord(project).getLineItems(false);
-        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === 'Workflow renamed action'));
-    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[0].guid });
-    report.taskRenameRefreshesNativeReferenceTitle = true;
-    for (const fixture of fixtures.slice(0, 3)) {
-        await page.evaluate(guid => document.querySelector(`.os-action-list [data-task="${guid}"] .os-focus-action`).click(), fixture.guid);
-        await page.waitForFunction(() => window.__freelanceOs.workflowData.model.focus.length === Number(document.querySelector('.os-focus-count').textContent.split('/')[0]), { polling: 100 });
-        await page.waitForFunction(guid => document.querySelector(`.os-action-list [data-task="${guid}"] .os-focus-action`)?.textContent === 'Unpin', { polling: 100 }, fixture.guid);
-    }
-    await page.evaluate(guid => document.querySelector(`.os-action-list [data-task="${guid}"] .os-focus-action`).click(), fixtures[3].guid);
-    await page.waitForFunction(() => document.querySelector('.os-workflow-message')?.textContent.includes('three actions'), { polling: 100 });
-    assert.equal(await page.evaluate(() => window.__freelanceOs.workflowData.model.focus.length), 3);
-    report.focusLimit = true;
-    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowState = null; plugin.loadWorkflowState(); await plugin.render(plugin.activePanel); });
-    assert.equal(await page.evaluate(() => window.__freelanceOs.workflowData.model.focus.length), 3);
-    report.focusSurvivesStateReload = true;
-    await page.evaluate(async guid => {
-        const plugin = window.__freelanceOs;
-        const task = plugin.workflowData.tasks.find(task => task.guid === guid);
-        await plugin.rescheduleAction(task, '2030-06-15');
-        await plugin.setActionStatus(task, 'blocked');
-        plugin.workflowState.waiting[guid] = { reason: 'Awaiting approval', followup: '2030-06-12' };
-        plugin.persistWorkflow(); plugin.actionQueueTab = 'waiting';
-        await plugin.render(plugin.activePanel);
-    }, fixtures[0].guid);
-    const waitingTask = await page.evaluate(guid => { const task = window.__freelanceOs.workflowData.tasks.find(task => task.guid === guid); return { date: task?.date, status: task?.status, segments: task?.lineItem.segments }; }, fixtures[0].guid);
-    assert.equal(waitingTask.status, 'waiting');
-    assert.equal(waitingTask.date, '2030-06-15');
-    assert.equal(await page.evaluate(guid => window.__freelanceOs.workflowData.model.focus.some(task => task.guid === guid), fixtures[0].guid), false);
-    await page.waitForFunction(async project => {
-        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
-        return !lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1');
-    }, { polling: 100, timeout: 10000 }, setup.project);
-    assert.equal(await page.evaluate(project => window.__freelanceOs.workflowState.next[project], setup.project), undefined);
-    report.waitingClearsNativeNextReference = true;
-    report.waitingAndReschedule = true;
-    await page.evaluate(async () => {
-        const plugin = window.__freelanceOs;
-        plugin.workflowMode = 'review';
-        const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7);
-        const week = date.toLocaleDateString('en-CA');
-        plugin.workflowState.drafts[week] ||= { notes: '', priorities: '', step: 0 };
-        plugin.workflowState.drafts[week].step = 1;
-        await plugin.render(plugin.activePanel);
-    });
-    await page.waitForFunction(() => document.querySelector('.os-workflow h3')?.textContent === 'Active projects' && document.querySelectorAll('.os-project-attention').length === window.__freelanceOs.workflowData.model.active.length, { polling: 100, timeout: 10000 });
-    await page.evaluate(({ project, next }) => {
-        const plugin = window.__freelanceOs;
-        const name = plugin.workflowData.model.active.find(item => item.guid === project)?.name;
-        const row = [...document.querySelectorAll('.os-project-attention')].find(item => item.querySelector('.os-action-title')?.textContent === name);
-        row.querySelector('select').value = next; row.querySelector('.os-pick-next').click();
-    }, { project: setup.project, next: fixtures[1].guid });
-    await page.waitForFunction(async ({ project, task }) => {
-        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
-        const label = plugin.workflowData.tasks.find(item => item.guid === task)?.text;
-        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === label));
-    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[1].guid });
-    report.weeklyReviewUpdatesNativeReference = true;
-    await page.waitForFunction(() => window.__freelanceOs.workflowData.model.next.some(task => task.guid === document.querySelector('.os-project-attention select')?.value), { polling: 100, timeout: 10000 });
-    await page.evaluate(async project => { const plugin = window.__freelanceOs; await plugin.openRecord(project, plugin.activePanel); }, setup.project);
-    await page.waitForFunction(count => window.__freelanceOs.ui.getPanels().length > count, { polling: 100, timeout: 10000 }, originalPanels.length);
-    await page.waitForFunction(async ({ project, task }) => {
-        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
-        const label = plugin.workflowData.tasks.find(item => item.guid === task)?.text;
-        return lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1' && line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task && segment.text?.title === label));
-    }, { polling: 100, timeout: 10000 }, { project: setup.project, task: fixtures[1].guid });
-    await page.screenshot({ path: path.join(output, 'workflow-project-native-next.png') });
-    report.projectPageShowsLinkedNextAction = true;
-    await page.evaluate(async ids => {
-        const plugin = window.__freelanceOs;
-        for (const panel of plugin.ui.getPanels()) if (!ids.includes(panel.getId())) plugin.ui.closePanel(panel);
-        await plugin.render(plugin.activePanel);
-    }, originalPanels);
-    const projectCheckin = await page.evaluate(project => {
-        const plugin = window.__freelanceOs;
-        const rows = [...document.querySelectorAll('.os-project-attention')];
-        const projectRow = rows.find(row => row.querySelector('.os-action-title')?.textContent === plugin.workflowData.model.active.find(item => item.guid === project)?.name);
-        return {
-            active: plugin.workflowData.model.active.length, rows: rows.length,
-            maxRowHeight: Math.max(0, ...rows.map(row => row.getBoundingClientRect().height)),
-            rowHeights: rows.map(row => ({ height: Math.round(row.getBoundingClientRect().height), width: Math.round(row.getBoundingClientRect().width), text: row.innerText.replace(/\s+/g, ' ').slice(0, 140) })),
-            nextSelected: projectRow?.querySelector('select')?.value || '',
-            summary: projectRow?.querySelector('.os-action-meta')?.textContent || ''
-        };
-    }, setup.project);
-    assert.equal(projectCheckin.rows, projectCheckin.active, 'weekly review lists every active project');
-    assert.equal(projectCheckin.nextSelected, fixtures[1].guid, 'weekly review keeps the selected next action visible');
-    assert.ok(projectCheckin.summary.includes('Workflow verification 1'));
-    assert.ok(projectCheckin.summary.includes('waiting task'), `waiting tasks are visible in the project cue: ${projectCheckin.summary}`);
-    assert.equal(projectCheckin.summary.includes('Choose a next action · Choose a next action'), false);
-    report.projectCheckin = projectCheckin;
-    await page.screenshot({ path: path.join(output, 'workflow-project-checkin.png') });
-    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'overview'; plugin.currentTab = 'projects'; await plugin.render(plugin.activePanel); });
-    await page.waitForSelector('.os-project-next-link');
-    const projectQueueHandoff = await page.evaluate(async ({ project, task }) => {
-        const plugin = window.__freelanceOs;
-        const name = plugin.data.getRecord(project).getName();
-        const card = [...document.querySelectorAll('.os-project-card')].find(item => item.querySelector('.os-card-title')?.textContent === name);
-        const summary = card?.querySelector('.os-project-next-link')?.textContent || '';
-        card?.querySelector('.os-project-next-link')?.click();
-        await plugin.render(plugin.activePanel);
-        return { summary, mode: plugin.workflowMode, projectFilter: plugin.actionProject, queueTab: plugin.actionQueueTab };
-    }, { project: setup.project, task: fixtures[1].guid });
-    await page.waitForFunction(guid => !!document.querySelector(`.os-action-list [data-task="${guid}"]`), { polling: 100, timeout: 10000 }, fixtures[1].guid);
-    projectQueueHandoff.taskVisible = true;
-    assert.match(projectQueueHandoff.summary, /Next action.*Workflow verification 1/);
-    assert.equal(projectQueueHandoff.mode, 'today'); assert.equal(projectQueueHandoff.projectFilter, setup.project);
-    assert.equal(projectQueueHandoff.queueTab, 'next'); assert.equal(projectQueueHandoff.taskVisible, true);
-    report.projectQueueHandoff = projectQueueHandoff;
-    await page.evaluate(async guid => {
-        const plugin = window.__freelanceOs; const task = plugin.workflowData.tasks.find(item => item.guid === guid);
-        await plugin.setActionStatus(task, 'done'); await plugin.render(plugin.activePanel);
-    }, fixtures[1].guid);
-    await page.waitForFunction(async project => {
-        const plugin = window.__freelanceOs; const record = plugin.data.getRecord(project); const lines = await record.getLineItems(false);
-        return !lines.some(line => line.props?.freelance_os_next_action === 'project-next-v1') && !plugin.workflowState.next[project];
-    }, { polling: 100, timeout: 10000 }, setup.project);
-    report.completingSelectedNextClearsNativeReference = true;
-    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowMode = 'review'; const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7); const week = date.toLocaleDateString('en-CA'); plugin.workflowState.drafts[week].step = 1; await plugin.render(plugin.activePanel); });
-    await page.waitForFunction(() => document.querySelector('.os-project-attention .os-project-recovery')?.textContent.includes('was completed'), { polling: 100, timeout: 10000 });
-    report.completedNextActionRecoveryCue = await page.$eval('.os-project-attention .os-project-recovery', element => element.textContent);
-    await page.evaluate(async () => {
-        const plugin = window.__freelanceOs; plugin.workflowMode = 'review'; plugin.workflowMessage = '';
-        const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7);
-        const week = date.toLocaleDateString('en-CA'); plugin.workflowState.drafts[week].step = 1;
-        await plugin.render(plugin.activePanel);
-        await new Promise(resolve => setTimeout(resolve, 100));
-        document.querySelector('[data-step="2"]').click();
-    });
-    await page.waitForSelector('.os-review-notes');
-    await page.evaluate(() => {
-        for (const [selector, value] of [['.os-review-notes', 'A useful milestone'], ['.os-review-priorities', 'Finish the proposal\nCreate a checklist']]) {
-            const field = document.querySelector(selector); field.value = value; field.dispatchEvent(new Event('input', { bubbles: true }));
-        }
-    });
-    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowState = null; plugin.loadWorkflowState(); plugin.workflowMode = 'review'; await plugin.render(plugin.activePanel); });
-    await page.waitForSelector('.os-review-notes');
-    assert.equal(await page.$eval('.os-review-priorities', field => field.value), 'Finish the proposal\nCreate a checklist');
-    report.reviewDraftSurvivesStateReload = true;
-    await page.waitForFunction(() => document.querySelectorAll('.os-review-priority-row').length === 2, { polling: 100, timeout: 10000 });
-    const priorityBridgeBeforeLink = await page.evaluate(() => {
-        const app = document.querySelector('.os-app'); const rect = app.getBoundingClientRect();
-        const rows = [...document.querySelectorAll('.os-review-priority-row')];
-        return { rows: rows.length, disabledBeforeProject: rows.every(row => row.querySelector('.os-review-priority-task').disabled && row.querySelector('.os-review-priority-link').disabled && row.querySelector('.os-review-priority-add').disabled), overflow: [...app.querySelectorAll('.os-review-priority-row *')].some(element => { const box = element.getBoundingClientRect(); return box.width > 0 && (box.right > rect.right + 1 || box.left < rect.left - 1); }) };
-    });
-    assert.equal(priorityBridgeBeforeLink.rows, 2); assert.equal(priorityBridgeBeforeLink.disabledBeforeProject, true); assert.equal(priorityBridgeBeforeLink.overflow, false);
-    report.priorityBridgeBeforeLink = priorityBridgeBeforeLink;
-    await page.screenshot({ path: path.join(output, 'workflow-priority-bridge-before-link.png') });
-    await page.evaluate(({ project, task }) => {
-        const row = document.querySelectorAll('.os-review-priority-row')[0];
-        const projectSelect = row.querySelector('.os-review-priority-project'); projectSelect.value = project; projectSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        const taskSelect = row.querySelector('.os-review-priority-task'); taskSelect.value = task; taskSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        row.querySelector('.os-review-priority-link').click();
-    }, { project: setup.project, task: fixtures[2].guid });
-    await page.waitForFunction(task => document.querySelector('.os-review-priority-linked')?.textContent.includes('Workflow verification 2'), { polling: 100, timeout: 10000 }, fixtures[2].guid);
-    await page.evaluate(project => {
-        const row = [...document.querySelectorAll('.os-review-priority-row')].find(item => item.querySelector('.os-review-priority-copy')?.textContent === 'Create a checklist');
-        const projectSelect = row.querySelector('.os-review-priority-project'); projectSelect.value = project; projectSelect.dispatchEvent(new Event('change', { bubbles: true }));
-        row.querySelector('.os-review-priority-add').click();
-    }, setup.project);
-    await page.waitForFunction(() => [...document.querySelectorAll('.os-review-priority-linked')].some(item => item.textContent.includes('Create a checklist')), { polling: 100, timeout: 10000 });
-    const createdPriorityFixture = await page.evaluate(() => { const task = window.__freelanceOs.workflowData.tasks.find(item => item.text === 'Create a checklist'); return task ? { guid: task.guid, recordGuid: task.recordGuid } : null; });
-    assert.ok(createdPriorityFixture, 'Create task adds one native project task'); fixtures.push(createdPriorityFixture);
-    let priorityLink = await page.evaluate(({ project, task }) => {
-        const plugin = window.__freelanceOs;
-        const linked = plugin.workflowData.tasks.find(item => item.guid === task);
-        const entry = Object.values(plugin.workflowState.drafts).flatMap(draft => draft.priorityItems || []).find(item => item.taskGuid === task);
-        const week = Object.keys(plugin.workflowState.drafts).find(key => plugin.workflowState.drafts[key].priorityItems?.includes(entry));
-        return { marker: linked?.lineItem?.props?.freelance_os_review_priority, expected: entry ? `${week}|id:${entry.id}` : '', id: entry?.id, week, project: linked?.projectGuid };
-    }, { project: setup.project, task: fixtures[2].guid });
-    assert.equal(priorityLink.marker, priorityLink.expected); assert.equal(priorityLink.project, setup.project);
-    await page.evaluate(() => {
-        const field = document.querySelector('.os-review-priorities'); field.value = 'Deliver the first proposal\nCreate a checklist'; field.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-    await page.waitForFunction(() => document.querySelector('.os-review-priority-linked')?.textContent.includes('Workflow verification 2'));
-    const currentWeek = await page.evaluate(() => { const date = new Date(); date.setHours(12, 0, 0, 0); date.setDate(date.getDate() - (date.getDay() + 6) % 7); return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`; });
-    const savedAtBeforeFirstSave = await page.evaluate(week => window.__freelanceOs.workflowState.reviews[week]?.savedAt || '', currentWeek);
-    await page.evaluate(() => document.querySelector('.os-save-review').click());
-    await page.waitForFunction(({ week, before }) => !window.__freelanceOs.reviewSaving && !!window.__freelanceOs.workflowState.reviews[week]?.savedAt && window.__freelanceOs.workflowState.reviews[week].savedAt !== before, { polling: 100, timeout: 10000 }, { week: currentWeek, before: savedAtBeforeFirstSave });
-    let currentReview = await page.evaluate(() => {
-        const plugin = window.__freelanceOs; const date = new Date(); date.setHours(12, 0, 0, 0); date.setDate(date.getDate() - (date.getDay() + 6) % 7); const week = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
-        return plugin.workflowState.reviews[week];
-    });
-    assert.ok(currentReview, 'the current week review has a saved Journal reference');
-    reviews.push(currentReview);
-    await page.evaluate(async () => { const plugin = window.__freelanceOs; plugin.workflowState = null; plugin.loadWorkflowState(); plugin.workflowMode = 'review'; await plugin.render(plugin.activePanel); });
-    await page.waitForFunction(() => document.querySelector('.os-review-priorities')?.value === 'Deliver the first proposal\nCreate a checklist' && [...document.querySelectorAll('.os-review-priority-linked')].some(item => item.textContent.includes('Workflow verification 2')), { polling: 100, timeout: 10000 });
-    const savedAtBeforeUpdate = await page.evaluate(week => window.__freelanceOs.workflowState.reviews[week]?.savedAt || '', currentWeek);
-    await page.evaluate(() => document.querySelector('.os-save-review').click());
-    await page.waitForFunction(({ week, before }) => !window.__freelanceOs.reviewSaving && window.__freelanceOs.workflowState.reviews[week]?.savedAt !== before, { polling: 100, timeout: 10000 }, { week: currentWeek, before: savedAtBeforeUpdate });
-    priorityLink = await page.evaluate(({ task, id, week }) => {
-        const plugin = window.__freelanceOs; const linkedTask = plugin.workflowData.tasks.find(item => item.guid === task);
-        return { marker: linkedTask?.lineItem?.props?.freelance_os_review_priority, id, week };
-    }, { task: fixtures[2].guid, id: priorityLink.id, week: priorityLink.week });
-    assert.equal(priorityLink.marker, `${priorityLink.week}|id:${priorityLink.id}`);
-    report.existingTaskPriorityLinkSurvivesEditAndReviewReload = true;
-    const currentJournalReview = await page.evaluate(async ({ review, task }) => {
-        const plugin = window.__freelanceOs; const record = await plugin.getReviewRecord(review); const lines = await record.getLineItems();
-        const linked = lines.find(line => line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task));
-        return { found: !!linked, title: linked?.segments?.find(segment => segment.type === 'ref')?.text?.title };
-    }, { review: currentReview, task: fixtures[2].guid });
-    assert.equal(currentJournalReview.found, true); assert.equal(currentJournalReview.title, 'Deliver the first proposal');
-    const journalCreatedPriority = await page.evaluate(async ({ review, task }) => {
-        const record = await window.__freelanceOs.getReviewRecord(review); const lines = await record.getLineItems();
-        const linked = lines.find(line => line.segments?.some(segment => segment.type === 'ref' && segment.text?.guid === task));
-        return linked?.segments?.find(segment => segment.type === 'ref')?.text?.title || '';
-    }, { review: currentReview, task: createdPriorityFixture.guid });
-    assert.equal(journalCreatedPriority, 'Create a checklist');
-    report.savedPriorityIsNativeJournalReference = true;
-    review = await page.evaluate(async () => {
-        const plugin = window.__freelanceOs;
-        const first = await plugin.saveReviewToJournal(plugin.workflowData, { notes: 'Verification draft', priorities: 'First plan' }, '2098-10-20');
-        const second = await plugin.saveReviewToJournal(plugin.workflowData, { notes: 'Verification draft', priorities: 'Updated plan' }, '2098-10-21');
-        const record = await plugin.getReviewRecord(first);
-        const roots = (await record.getLineItems()).filter(line => line.guid === first.headingGuid);
-        const children = typeof roots[0].getChildren === 'function' ? await roots[0].getChildren() : (await record.getLineItems()).filter(line => line.parent_guid === roots[0].guid);
-        const allLines = await record.getLineItems();
-        return { ...first, sameEntry: first.headingGuid === second.headingGuid, bodies: children.length, bodyUpdated: allLines.filter(line => children.some(body => line.parent_guid === body.guid)).some(line => line.segments?.some(segment => segment.text?.includes('Updated plan'))) };
-    });
-    assert.equal(review.sameEntry, true); assert.equal(review.bodies, 1); assert.equal(review.bodyUpdated, true);
-    report.journalSaveAndUpdate = true;
-    await page.evaluate(async review => { const plugin = window.__freelanceOs; await plugin.openItem(review.headingGuid, review.recordGuid, plugin.activePanel); }, review);
-    await page.waitForFunction(() => [...document.querySelectorAll('.panel:has(> .panel-scroller-y)')].some(panel => panel.innerText.includes('Weekly review · week of 2098-10-20')), { polling: 100, timeout: 10000 });
-    await page.screenshot({ path: path.join(output, 'workflow-journal-verification.png') });
-    await page.evaluate(ids => { const plugin = window.__freelanceOs; for (const panel of plugin.ui.getPanels()) if (!ids.includes(panel.getId())) plugin.ui.closePanel(panel); }, originalPanels);
-    await page.screenshot({ path: path.join(output, 'workflow-review-cycle-2.png') });
-    await page.evaluate(async () => {
-        const plugin = window.__freelanceOs;
-        plugin.workflowMode = 'today'; plugin.actionQueueTab = 'all'; plugin.actionProject = ''; plugin.actionSearch = ''; plugin.queueLimit = 1000;
-        await plugin.render(plugin.activePanel);
-    });
-    await page.waitForFunction(guid => !!document.querySelector(`.os-action-list [data-task="${guid}"] .os-action-edit`), { polling: 100, timeout: 10000 }, fixtures[3].guid);
-    await page.evaluate(guid => { document.querySelector(`.os-action-list [data-task="${guid}"] .os-action-edit`).open = true; }, fixtures[3].guid);
-    await page.evaluate(guid => document.querySelector(`.os-action-list [data-task="${guid}"] .os-action-done`).click(), fixtures[3].guid);
-    await page.waitForFunction(guid => !window.__freelanceOs.workflowData.model.actions.some(task => task.guid === guid), { polling: 100 }, fixtures[3].guid);
-    report.nativeCompletion = true;
-    const measure = () => page.evaluate(() => {
-        const app = document.querySelector('.os-app'); const rect = app.getBoundingClientRect();
-        return { width: Math.round(rect.width), overflow: [...app.querySelectorAll('*')].filter(element => element.getBoundingClientRect().width > 0 && element.getBoundingClientRect().right > rect.right + 1).map(element => element.className).slice(0, 8) };
-    });
-    report.single = await measure();
-    report[`panels${originalPanels.length}`] = report.single;
-    await page.screenshot({ path: path.join(output, 'workflow-today-cycle-2.png') });
-    for (let count = originalPanels.length + 1; count <= 3; count++) {
-        const before = await page.evaluate(() => window.__freelanceOs.ui.getPanels().length);
-        await page.evaluate(async () => { const plugin = window.__freelanceOs; await plugin.openCollection(plugin.collectionGuid('Invoices'), plugin.ui.getPanels().at(-1)); });
-        await new Promise(resolve => setTimeout(resolve, 900));
-        const actual = await page.evaluate(() => window.__freelanceOs.ui.getPanels().length);
-        if (actual <= before) break;
-        report[`panels${actual}`] = await measure();
-        await page.screenshot({ path: path.join(output, `workflow-${actual}-panels-cycle-2.png`) });
-    }
-    for (const key of Object.keys(report).filter(key => key === 'single' || /^panels[23]$/.test(key))) assert.deepEqual(report[key].overflow, [], `${key} overflows`);
-    assert.equal(report.projectCheckin.maxRowHeight < 180, true, `review rows stay compact in the available panel width: ${JSON.stringify(report.projectCheckin.rowHeights)}`);
-    assert.deepEqual(errors, []);
-    console.log(JSON.stringify(report, null, 2));
-} finally {
-    await page.evaluate(async ({ fixtures, reviews, savedState, savedUi }) => {
-        const plugin = window.__freelanceOs;
-        for (const fixture of fixtures) {
-            const record = plugin.data.getRecord(fixture.recordGuid);
-            const line = (await record.getLineItems()).find(line => line.guid === fixture.guid);
-            if (line && await line.delete() === false) throw new Error('Fixture cleanup failed');
-        }
-        for (const savedReview of reviews) {
-            if (!savedReview) continue;
-            const record = await plugin.getReviewRecord(savedReview);
-            const heading = (await record.getLineItems()).find(line => line.guid === savedReview.headingGuid);
-            if (heading) {
-                const allLines = await record.getLineItems();
-                const removeChildren = async parent => { for (const line of allLines.filter(line => line.parent_guid === parent.guid)) { await removeChildren(line); if (await line.delete() === false) throw new Error('Review fixture cleanup failed'); } };
-                await removeChildren(heading); if (await heading.delete() === false) throw new Error('Review fixture heading cleanup failed');
+        const journal = s.collections.find(c => c.getGuid() === p.collectionGuid('Journal', s.collections));
+        const user = p.resolveJournalOwner(journal);
+        // Reserve empty future dates, avoiding every existing review and every nonempty day.
+        for (let offset = 0; offset < 100; offset++) {
+            const date = new Date(2096, 0, 2 + offset * 21, 12);
+            const dates = Array.from({ length: 3 }, (_, i) => { const d = new Date(date); d.setDate(d.getDate() + i * 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+            const weeks = dates.map(value => { const d = new Date(`${value}T12:00:00`); d.setDate(d.getDate() - (d.getDay() + 6) % 7); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; });
+            let available = true;
+            for (let i = 0; i < dates.length; i++) {
+                if ((await p.findWeeklyReview(journal, user, weeks[i])).kind !== 'none') { available = false; break; }
+                const day = await p.getReviewRecord({ journalDate: dates[i], userGuid: user.guid, journalGuid: journal.getGuid() }, journal, user);
+                if (s.baseline.some(record => record.recordGuid === day.guid)) { available = false; break; }
+                if ((await day.getLineItems(false)).length) { available = false; break; }
             }
+            if (available) { s.reviewDates = dates; s.reviewWeeks = weeks; break; }
         }
-        if (savedState) { plugin.workflowState = JSON.parse(savedState); plugin.persistWorkflow(); }
-        for (const panel of plugin.ui.getPanels()) if (!savedUi.panels.includes(panel.getId())) plugin.ui.closePanel(panel);
-        plugin.workflowMode = savedUi.workflowMode; plugin.currentTab = savedUi.currentTab; plugin.actionQueueTab = savedUi.actionQueueTab;
-        plugin.queueLimit = savedUi.queueLimit; plugin.actionSearch = savedUi.actionSearch; plugin.actionProject = savedUi.actionProject;
-        plugin.clientProjectGuid = savedUi.clientProjectGuid; plugin.projectFilter = savedUi.projectFilter; plugin.invoiceFilter = savedUi.invoiceFilter;
-        plugin.searchQuery = savedUi.searchQuery; plugin.expandedProjects = new Set(savedUi.expandedProjects);
-        await plugin.render(plugin.activePanel);
-    }, { fixtures, reviews: [...reviews, review], savedState, savedUi });
-    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: false });
-    await browser.disconnect();
+        if (!s.reviewWeeks) throw new Error('No empty review fixture dates available');
+        p.workflowMode = 'today'; p.actionQueueTab = 'all'; p.actionProject = guid; p.actionSearch = ''; p.actionPreset = 'any'; p.queueLimit = 1000;
+        await p.render(s.panel);
+        return { project: guid, tasks: s.tasks, dates: s.reviewDates, weeks: s.reviewWeeks };
+    });
+    const clickTask = async (guid, selector) => run(({ guid, selector }) => {
+        const p = window.__freelanceOs, s = window.__freelanceOsTestSession;
+        const row = s.panel.getElement().querySelector(`.os-action-list [data-task="${guid}"]`);
+        if (!s.tasks.some(t => t.guid === guid) || !row) throw new Error('Action outside fixture tasks');
+        row.querySelector(selector).click();
+    }, { guid, selector });
+    await clickTask(setup.tasks[0].guid, '.os-next-action');
+    await page.waitForFunction(({ project, guid }) => window.__freelanceOs.workflowState.next[project] === guid, { polling: 100, timeout: 10000 }, { project: setup.project, guid: setup.tasks[0].guid });
+    report.nativeNextAction = true;
+    for (const fixture of setup.tasks.slice(0, 3)) {
+        await clickTask(fixture.guid, '.os-focus-action');
+        await page.waitForFunction(guid => window.__freelanceOs.workflowData.model.focus.some(t => t.guid === guid), { polling: 100, timeout: 10000 }, fixture.guid);
+    }
+    await clickTask(setup.tasks[3].guid, '.os-focus-action');
+    await page.waitForFunction(() => window.__freelanceOs.workflowMessage?.includes('three actions'), { polling: 100, timeout: 10000 });
+    report.focusLimit = true;
+    report.waiting = await run(async () => {
+        const p = window.__freelanceOs, s = window.__freelanceOsTestSession;
+        const task = p.workflowData.tasks.find(t => t.guid === s.tasks[0].guid);
+        await p.rescheduleAction(task, '2030-06-15');
+        await p.saveWaiting(task, { reason: 'Fixture approval', followup: '2030-06-12' });
+        await p.render(s.panel);
+        const waiting = p.workflowData.tasks.find(t => t.guid === task.guid);
+        const details = JSON.parse(waiting.lineItem.props.freelance_os_waiting);
+        if (waiting.status !== 'waiting' || details.reason !== 'Fixture approval' || waiting.date !== '2030-06-15') throw new Error('Waiting state/date/metadata mismatch');
+        if (p.workflowData.model.focus.some(t => t.guid === task.guid) || p.workflowState.next[task.projectGuid]) throw new Error('Waiting work stayed actionable');
+        return true;
+    });
+    // Verify capture loss and waiting failure against real rendered components without native writes.
+    report.auditEditors = await run(async () => {
+        const p = window.__freelanceOs;
+        const a = Object.create(Object.getPrototypeOf(p));
+        a.workflowState = { next: {}, nextLabels: {}, waiting: {}, focus: {}, drafts: {}, reviews: {} };
+        a.workflowMode = 'today'; a.captureProjectGuid = 'missing-project'; a.captureDestinationSource = 'user'; a.captureDraft = 'Keep this draft';
+        a.getWorkspaceGuid = () => p.getWorkspaceGuid(); a.ui = { addToaster() {} };
+        a.loadWorkflowData = async () => ({ error: 'Fixture', projects: [] });
+        let captureCalls = 0; a.captureTask = async () => { captureCalls++; return { prioritySaved: true }; };
+        const container = document.createElement('div'); await a.render({ getElement: () => container });
+        container.querySelector('.os-capture-btn').click(); await Promise.resolve(); await Promise.resolve();
+        if (captureCalls || a.captureDraft !== 'Keep this draft' || container.querySelector('.os-capture-project').value !== 'missing-project') throw new Error('Capture destination fell back');
+        const destination = container.querySelector('.os-capture-project'); destination.value = ''; destination.dispatchEvent(new Event('change'));
+        container.querySelector('.os-capture-btn').click(); await Promise.resolve(); await Promise.resolve();
+        if (captureCalls !== 1 || a.captureProjectGuid !== '' || a.captureDestinationSource !== 'user') throw new Error('Explicit Journal selection did not recover capture');
+        const item = { guid: 'mock', text: 'Mock task', projectGuid: 'mock-project', projectName: 'Mock project', status: 'important', date: '', lineItem: { props: {}, setMetaProperties: async () => false } };
+        a.render = async () => { a.row = a.renderActionRow(item, {}); };
+        const row = a.renderActionRow(item, {}); row.querySelector('.os-wait-reason').value = 'Keep approval text'; row.querySelector('.os-wait-date').value = '2030-06-12';
+        await row.querySelector('.os-wait-save').onclick({ target: row.querySelector('.os-wait-save') });
+        if (a.row.querySelector('.os-wait-reason').value !== 'Keep approval text' || a.row.querySelector('.os-wait-date').value !== '2030-06-12') throw new Error('Waiting input lost on failure');
+        let savedNote;
+        item.lineItem.setMetaProperties = async props => { savedNote = JSON.parse(props.freelance_os_waiting); Object.assign(item.lineItem.props, props); return true; };
+        item.lineItem.setTaskStatus = async status => { item.status = status; return true; };
+        await a.row.querySelector('.os-wait-save').onclick({ target: a.row.querySelector('.os-wait-save') });
+        if (savedNote?.reason !== 'Keep approval text' || savedNote.followup !== '2030-06-12' || a.waitingEditorDrafts.mock) throw new Error('Waiting retry did not save retained input');
+        return { missingCaptureRejected: true, explicitJournalRecovers: true, waitingFailureRetainsText: true, waitingRetrySavesRetainedText: true };
+    });
+    report.freshReviews = await run(async () => {
+        const p = window.__freelanceOs, s = window.__freelanceOsTestSession;
+        const journal = s.collections.find(c => c.getGuid() === p.collectionGuid('Journal', s.collections)); const user = p.resolveJournalOwner(journal);
+        const draft = { notes: 'Fresh fixture review', priorities: 'Carry fixture proposal', priorityItems: [{ id: `${s.token}-priority`, text: 'Carry fixture proposal', taskGuid: s.tasks[1].guid, recordGuid: s.tasks[1].recordGuid, projectGuid: s.records[0] }] };
+        const original = await p.saveReviewToJournal(p.workflowData, draft, s.reviewDates[0]);
+        const first = await p.findWeeklyReview(journal, user, s.reviewWeeks[0]);
+        if (first.kind !== 'one' || first.snapshot.state !== 'saved') throw new Error('Fresh first save failed');
+        const firstSnapshot = JSON.stringify(first.snapshot);
+        const originLine = (await p.data.getRecord(s.records[0]).getLineItems(false)).find(l => l.guid === s.tasks[1].guid);
+        const origin = originLine.props.freelance_os_review_priority;
+        let previous = draft.priorityItems[0];
+        for (let i = 1; i < 3; i++) {
+            const current = { notes: 'Carried fixture review', priorities: '', priorityItems: [] }; p.workflowState.drafts[s.reviewWeeks[i]] = current;
+            const resolution = await p.resolveHistoricalPriority(previous, s.reviewWeeks[i - 1], p.workflowData);
+            const item = { entry: previous, resolution };
+            p.carryPreviousPriority({ week: s.reviewWeeks[i - 1] }, item, null, s.reviewWeeks[i]);
+            p.persistWorkflow(); p.workflowState = null; p.loadWorkflowState();
+            const reloaded = p.workflowState.drafts[s.reviewWeeks[i]];
+            p.carryPreviousPriority({ week: s.reviewWeeks[i - 1] }, item, null, s.reviewWeeks[i]);
+            if (reloaded.priorityItems.length !== 1 || !reloaded.priorityItems[0].carriedFrom) throw new Error('Carry lost identity on reload');
+            await p.saveReviewToJournal(p.workflowData, reloaded, s.reviewDates[i]); previous = reloaded.priorityItems[0];
+        }
+        const fresh = (await p.data.getRecord(s.records[0]).getLineItems(false)).find(l => l.guid === s.tasks[1].guid);
+        if (fresh.props.freelance_os_review_priority !== origin || JSON.stringify((await p.findWeeklyReview(journal, user, s.reviewWeeks[0])).snapshot) !== firstSnapshot) throw new Error('Carry rewrote history');
+        // Update the same native section explicitly; never save into the user's current week.
+        const updated = await p.saveReviewToJournal(p.workflowData, { ...draft, notes: 'Updated fixture review' }, s.reviewDates[0]);
+        if (updated.headingGuid !== original.headingGuid) throw new Error('Review update duplicated its section');
+        return { firstSaveSucceeded: true, threeWeeksOneTask: true, carrySurvivesReload: true, originUnchanged: true, sameSectionUpdate: true };
+    });
+    // Exercise interruption after pending identity is written; ledger already owns the heading.
+    report.pendingCleanup = await run(async () => {
+        const p = window.__freelanceOs, s = window.__freelanceOsTestSession;
+        const journal = s.collections.find(c => c.getGuid() === p.collectionGuid('Journal', s.collections)); const user = p.resolveJournalOwner(journal);
+        const date = new Date(`${s.reviewDates[2]}T12:00:00`); date.setDate(date.getDate() + 7);
+        const day = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        const monday = new Date(date); monday.setDate(monday.getDate() - (monday.getDay() + 6) % 7);
+        const week = `${monday.getFullYear()}-${String(monday.getMonth() + 1).padStart(2, '0')}-${String(monday.getDate()).padStart(2, '0')}`;
+        if ((await p.findWeeklyReview(journal, user, week)).kind !== 'none') throw new Error('Pending fixture date collision');
+        s.reviewWeeks.push(week); const before = s.headings.length;
+        p.writeReviewBody = async () => { throw new Error('Injected fixture body failure'); };
+        try { await p.saveReviewToJournal(p.workflowData, { notes: 'Interrupted fixture', priorities: '', priorityItems: [] }, day); throw new Error('Expected body failure'); }
+        catch (error) { if (error.message !== 'Injected fixture body failure') throw error; }
+        finally { p.writeReviewBody = s.methods.writeReviewBody; }
+        const pending = await p.findWeeklyReview(journal, user, week);
+        if (pending.kind !== 'one' || pending.snapshot.state !== 'pending' || s.headings.length !== before + 1) throw new Error('Pending heading was not owned immediately');
+        const repaired = await p.saveReviewToJournal(p.workflowData, { notes: 'Repaired fixture', priorities: '', priorityItems: [] }, day);
+        if (repaired.headingGuid !== pending.heading.guid) throw new Error('Pending retry duplicated a section');
+        return { failureRegistered: true, retrySameHeading: true };
+    });
+    // Review controls/priority bridge can be exercised without clicking Save on an existing real review.
+    await run(async () => {
+        const p = window.__freelanceOs, s = window.__freelanceOsTestSession; const date = new Date(); date.setDate(date.getDate() - (date.getDay() + 6) % 7);
+        const week = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+        p.workflowState.drafts[week] = { step: 2, notes: 'Fixture review preview', priorities: 'Fixture priority', priorityItems: [{ id: `${s.token}-ui`, text: 'Fixture priority' }] };
+        p.workflowMode = 'review'; await p.render(s.panel);
+    });
+    assert.equal(await run(() => !!window.__freelanceOsTestSession.panel.getElement().querySelector('.os-review-priority-row')), true);
+    await page.screenshot({ path: path.join(output, 'workflow-review.png') });
+    await run(async () => { const p = window.__freelanceOs, s = window.__freelanceOsTestSession; p.workflowMode = 'today'; p.actionQueueTab = 'all'; await p.render(s.panel); });
+    report.layouts = [];
+    for (let count = 1; count <= 3; count++) {
+        if (count > 1) await run(async () => { const p = window.__freelanceOs; await p.openCollection(p.collectionGuid('Invoices'), p.ui.getPanels().at(-1)); });
+        const measure = await run(() => { const app = window.__freelanceOsTestSession.panel.getElement().querySelector('.os-app'); const rect = app.getBoundingClientRect(); return { width: Math.round(rect.width), overflow: [...app.querySelectorAll('*')].filter(e => e.getBoundingClientRect().width > 0 && e.getBoundingClientRect().right > rect.right + 1).map(e => e.className).slice(0, 8) }; });
+        assert.deepEqual(measure.overflow, []); report.layouts.push(measure);
+        await page.screenshot({ path: path.join(output, `workflow-${count}-panels.png`) });
+    }
+} finally {
+    try {
+        if (initialized) report.cleanup = await guardedEvaluate(page, async token => {
+            const p = window.__freelanceOs, s = window.__freelanceOsTestSession; const failures = [];
+            if (!s || s.token !== token) return { skippedUnownedSession: true, failures: [] };
+            // Continue through independent cleanup failures; never skip restoring local state.
+            for (const ref of s.headings) {
+                try {
+                    const record = p.data.getRecord(ref.recordGuid) || ref.record;
+                    const lines = await record.getLineItems(false), ids = new Set([ref.headingGuid]); let previous;
+                    do { previous = ids.size; for (const l of lines) if (ids.has(l.parent_guid)) ids.add(l.guid); } while (ids.size !== previous);
+                    for (const l of [...lines].reverse()) if (ids.has(l.guid) && await l.delete() === false) throw new Error(`Could not remove fixture line ${l.guid}`);
+                    if ((await record.getLineItems(false)).some(l => ids.has(l.guid))) throw new Error('Fixture review remained after cleanup');
+                } catch (error) { failures.push(error.message); }
+            }
+            for (const guid of s.records.reverse()) { try { p.data.getRecord(guid)?.trash(); } catch (error) { failures.push(error.message); } }
+            p.applyNativeReconciliation = s.methods.applyNativeReconciliation; p.saveReviewSnapshot = s.methods.saveReviewSnapshot; p.writeReviewBody = s.methods.writeReviewBody;
+            clearTimeout(p.refreshTimer); p.workflowRefreshPending = false;
+            p.workflowState = JSON.parse(s.state);
+            const adapter = p.workflowStorageAdapter(); adapter.write(s.raw);
+            Object.assign(p, s.ui);
+            for (const panel of p.ui.getPanels()) if (!s.panels.includes(panel.getId())) p.ui.closePanel(panel);
+            p.activePanel = s.panel;
+            for (const baseline of s.baseline) {
+                const record = p.data.getRecord(baseline.recordGuid) || baseline.record;
+                if (!record) { failures.push('Existing record disappeared'); continue; }
+                const actual = JSON.stringify((await record.getLineItems(false)).map(l => ({ guid: l.guid, parent_guid: l.parent_guid, segments: l.segments, props: l.props })).sort((a, b) => a.guid.localeCompare(b.guid)));
+                if (actual !== baseline.lines) failures.push(`Existing record changed: ${baseline.recordGuid}`);
+            }
+            const rawRestored = adapter.read() === s.raw;
+            if (!rawRestored) failures.push('Raw local state was not restored');
+            const result = { ownedRecords: s.records.length, ownedReviewSections: s.headings.length, rawStateRestored: rawRestored, unrelatedRecordsUnchanged: !failures.length, failures };
+            if (s.ui.workflowMode === 'overview' && s.panel) await p.render(s.panel);
+            if (!failures.length) delete window.__freelanceOsTestSession;
+            return result;
+        }, sessionToken);
+        if (report.cleanup) assert.deepEqual(report.cleanup.failures, []);
+    } finally {
+        await cdp?.send('Emulation.setFocusEmulationEnabled', { enabled: false }).catch(() => {});
+        await browser.disconnect();
+        console.log(JSON.stringify(report, null, 2));
+    }
 }
