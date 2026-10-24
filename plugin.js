@@ -3180,7 +3180,8 @@ class Plugin extends AppPlugin {
             this.docActionHandler = async (e) => {
                 const linkbtn = e.target.closest?.('.listitem-linkbtn, [data-doc-action]');
                 if (!linkbtn) return;
-                const text = linkbtn.innerText?.trim() || '';
+                if (linkbtn.closest?.('.os-modal, .os-dialog, .os-freelance-app, .os-panel-actions')) return;
+                const text = (linkbtn.innerText || linkbtn.textContent || '').trim();
                 const panelEl = linkbtn.closest('.panel');
                 const targetPanel = this.ui.getPanels?.().find(pan => pan.getElement?.().closest('.panel') === panelEl) || this.ui.getActivePanel?.();
                 const listview = linkbtn.closest('.listview-items');
@@ -3208,7 +3209,7 @@ class Plugin extends AppPlugin {
                     e.stopPropagation();
                     const data = await this.loadData();
                     this.showAddTaskModal(targetPanel, data, projectGuid);
-                } else if (text.includes('checkpoint') || text.includes('+ Checkpoint')) {
+                } else if (text.includes('Add review checkpoint') || text.includes('+ Checkpoint') || text.includes('review checkpoint')) {
                     e.preventDefault();
                     e.stopPropagation();
                     this.addReviewCheckpointForActiveProject(projectGuid, targetPanel);
@@ -3243,11 +3244,11 @@ class Plugin extends AppPlugin {
                         currency: 'CHF'
                     };
                     await this.copyInvoiceDetails(inv);
-                } else if (text.includes('Add deliverable') || text.includes('deliverable')) {
+                } else if (text.includes('Add deliverable') || text.includes('+ Deliverable')) {
                     e.preventDefault();
                     e.stopPropagation();
                     await this.addDeliverableForActiveInvoice(invoiceGuid || pageGuid, targetPanel);
-                } else if (text.includes('follow-up task') || text.includes('Follow-up task')) {
+                } else if (text.includes('Add follow-up task') || text.includes('+ Follow-up') || text.includes('follow-up task') || text.includes('Follow-up task')) {
                     e.preventDefault();
                     e.stopPropagation();
                     await this.addFollowUpTaskForActiveSession(supportSessionGuid || pageGuid, targetPanel);
@@ -4494,7 +4495,7 @@ class Plugin extends AppPlugin {
             if (!record) throw new Error('Project record not found.');
 
             const lines = await record.getLineItems(false);
-            const heading = lines.find(l => l.type === 'heading' && l.text?.includes('checkpoint'));
+            const heading = lines.find(l => l.type === 'heading' && extractLineText(l).toLowerCase().includes('checkpoint'));
             const lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
 
             const line = await record.createLineItem(heading || null, lastChild || null, 'task', [{ type: 'text', text: 'Client review checkpoint' }], { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' });
@@ -4558,7 +4559,7 @@ class Plugin extends AppPlugin {
             if (!record) throw new Error('Invoice record not found.');
 
             const lines = await record.getLineItems(false);
-            const heading = lines.find(l => l.type === 'heading' && (l.text?.toLowerCase().includes('summary') || l.text?.toLowerCase().includes('scope') || l.text?.toLowerCase().includes('deliverable')));
+            const heading = lines.find(l => l.type === 'heading' && (extractLineText(l).toLowerCase().includes('summary') || extractLineText(l).toLowerCase().includes('scope') || extractLineText(l).toLowerCase().includes('deliverable')));
             const lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
 
             const line = await record.createLineItem(heading || null, lastChild || null, 'task', [{ type: 'text', text: 'Deliverable item' }]);
@@ -4579,7 +4580,7 @@ class Plugin extends AppPlugin {
             if (!record) throw new Error('Support session record not found.');
 
             const lines = await record.getLineItems(false);
-            const heading = lines.find(l => l.type === 'heading' && (l.text?.toLowerCase().includes('follow-up') || l.text?.toLowerCase().includes('action')));
+            const heading = lines.find(l => l.type === 'heading' && (extractLineText(l).toLowerCase().includes('follow-up') || extractLineText(l).toLowerCase().includes('action')));
             const lastChild = heading ? lines.filter(l => l.parent_guid === heading.guid).at(-1) : null;
 
             const line = await record.createLineItem(heading || null, lastChild || null, 'task', [{ type: 'text', text: 'Client follow-up action' }]);
