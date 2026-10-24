@@ -3783,6 +3783,7 @@ class Plugin extends AppPlugin {
         for (const [label, value] of Object.entries(values)) {
             if (value === '' || value === null || value === undefined) continue;
             const field = fields.find(item => item.label === label || item.id === label);
+            if (!field && value === 0 && ['estimated_value_chf', 'budget_chf'].includes(label)) continue;
             if (!field || field.active === false || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the ${role}.${label} field in your collection setup`);
             if (role === 'Invoices') {
                 const expected = { invoice_id: 'text', client: 'record', project: 'record', amount_chf: 'number', currency: 'choice', status: 'choice', payment_status: 'choice', issued: 'datetime', due: 'datetime', paid_date: 'datetime' };
@@ -4058,7 +4059,7 @@ class Plugin extends AppPlugin {
         const properties = [];
         for (const [label, value] of Object.entries(values)) {
             const field = fields.find(item => item.label === label);
-            if (!field && value === '') continue;
+            if (!field && (value === '' || (value === 0 && ['estimated_value_chf', 'budget_chf'].includes(label)))) continue;
             if (!field || field.active === false || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the Clients.${label} field in your collection setup.`);
             const current = label === 'monthly_chf' || label === 'estimated_value_chf' ? Number(getProp(record, label)) || 0 : getProp(record, label);
             const previous = label === 'monthly_chf' ? client.mrr : label === 'estimated_value_chf' ? client.estimatedValue : label === 'lead_stage' ? client.leadStage : label === 'plan' ? client.planValue ?? client.plan : client[label];
