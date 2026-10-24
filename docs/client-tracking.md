@@ -48,4 +48,4 @@ Examples:
 
 The skill reuses matching records, writes native client properties and task lines, and reads back changes. It asks for a project only when the destination is ambiguous. It does not read your inbox or WhatsApp, import conversations, or send messages. Tell the agent the information you want captured.
 
-This operations skill is separate from `thymer-freelance-os`, the plugin development runbook.
+This operations skill is separate from `freelance-os-plugin-dev`, the plugin development runbook.

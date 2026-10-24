@@ -1,6 +1,6 @@
 ---
 name: freelance-os
-description: Manage Freelance OS clients, leads, invoices, and native project tasks through Thymer's built-in MCP. Use when recording prospects, updating client lifecycle or invoice states, recording confirmed payment, or capturing work from a conversation. For plugin development, use the separate thymer-freelance-os development skill.
+description: Manage Freelance OS clients, leads, invoices, and native project tasks through Thymer's built-in MCP. Use when recording prospects, updating client lifecycle or invoice states, recording confirmed payment, or capturing work from a conversation. For plugin development, use the separate freelance-os-plugin-dev development skill.
 ---
 
 # Freelance OS

@@ -8,7 +8,7 @@ Working tree: uncommitted, as requested. Branch `main`, base revision `4ad9e29`.
 
 - Implementation status (this file): `docs/plans/2026-10-24-implementation-status-handoff.md`
 - Source analysis and contracts: `docs/plans/2026-10-24-source-analysis-and-implementation-handover.md`
-- Repo runbook: `.agents/skills/thymer-freelance-os/SKILL.md`
+- Repo runbook: `.agents/skills/freelance-os-plugin-dev/SKILL.md`
 - No `AGENTS.md` exists in the repository.
 - User guide: `docs/usage.md`; overview: `README.md`.
 

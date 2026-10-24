@@ -1,5 +1,5 @@
 ---
-name: thymer-freelance-os
+name: freelance-os-plugin-dev
 description: >-
   Autonomous iterative development runbook for the Thymer Freelance OS plugin.
   Use whenever developing, inspecting, styling, debugging, building, deploying,
