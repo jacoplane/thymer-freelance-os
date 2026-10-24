@@ -796,7 +796,7 @@ const Workflow = {
             await Promise.all(records.slice(index, index + 8).map(async record => {
                 try {
                     const lines = await record.getLineItems(false);
-                    for (const line of lines) if (line.type === 'heading' && extractLineText(line).toLowerCase().replace(/[^a-z]/g, '') === 'clientreviewcheckpoints') clientReviewSections.add(line.guid);
+                    for (const line of lines) if (line.type === 'heading' && ['clientreviewcheckpoints', 'waitingonclient'].includes(extractLineText(line).toLowerCase().replace(/[^a-z]/g, ''))) clientReviewSections.add(line.guid);
                     for (const line of lines) {
                         add(line);
                         if (line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER) nextMarkers.push({ line, recordGuid: record.guid, segments: line.segments });
@@ -974,7 +974,7 @@ const Workflow = {
             return true;
         }
 
-        let section = lines.find(line => line.type === 'heading' && extractLineText(line).toLowerCase().replace(/[^a-z]/g, '') === 'nextactions');
+        let section = lines.find(line => line.type === 'heading' && ['nextactions', 'deliverablesandtasks', 'tasks'].includes(extractLineText(line).toLowerCase().replace(/[^a-z]/g, '')));
         if (!section) {
             const title = lines.find(line => line.type === 'heading' && line.parent_guid === record.guid && (line.getHeadingSize?.() === 1 || line.props?.hsize === 1))
                 || lines.find(line => line.type === 'heading' && line.parent_guid === record.guid);

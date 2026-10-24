@@ -350,6 +350,7 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
         { title: 'Next actions', lines: [{ type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] }] },
         { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('Link briefs, deliverables and working files here.')] },
         { title: 'Client review checkpoints', lines: [text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'), { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }] },
+        { title: 'Activity & time log', lines: [text('Log time and completed work sessions here.')] },
         { title: 'Decisions & updates', lines: [text('Record decisions, client feedback and scope changes here.')] }
     ];
 }

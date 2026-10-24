@@ -837,7 +837,7 @@ const Workflow = {
             await Promise.all(records.slice(index, index + 8).map(async record => {
                 try {
                     const lines = await record.getLineItems(false);
-                    for (const line of lines) if (line.type === 'heading' && extractLineText(line).toLowerCase().replace(/[^a-z]/g, '') === 'clientreviewcheckpoints') clientReviewSections.add(line.guid);
+                    for (const line of lines) if (line.type === 'heading' && ['clientreviewcheckpoints', 'waitingonclient'].includes(extractLineText(line).toLowerCase().replace(/[^a-z]/g, ''))) clientReviewSections.add(line.guid);
                     for (const line of lines) {
                         add(line);
                         if (line.props?.[NEXT_ACTION_PROPERTY] === NEXT_ACTION_MARKER) nextMarkers.push({ line, recordGuid: record.guid, segments: line.segments });
@@ -1015,7 +1015,7 @@ const Workflow = {
             return true;
         }
 
-        let section = lines.find(line => line.type === 'heading' && extractLineText(line).toLowerCase().replace(/[^a-z]/g, '') === 'nextactions');
+        let section = lines.find(line => line.type === 'heading' && ['nextactions', 'deliverablesandtasks', 'tasks'].includes(extractLineText(line).toLowerCase().replace(/[^a-z]/g, '')));
         if (!section) {
             const title = lines.find(line => line.type === 'heading' && line.parent_guid === record.guid && (line.getHeadingSize?.() === 1 || line.props?.hsize === 1))
                 || lines.find(line => line.type === 'heading' && line.parent_guid === record.guid);
@@ -2892,6 +2892,7 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
         { title: 'Next actions', lines: [{ type: 'task', segments: firstAction ? [{ type: 'text', text: firstAction }] : [] }] },
         { title: 'Deliverables & references', lines: deliverables.length ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] })) : [text('Link briefs, deliverables and working files here.')] },
         { title: 'Client review checkpoints', lines: [text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'), { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }] },
+        { title: 'Activity & time log', lines: [text('Log time and completed work sessions here.')] },
         { title: 'Decisions & updates', lines: [text('Record decisions, client feedback and scope changes here.')] }
     ];
 }
