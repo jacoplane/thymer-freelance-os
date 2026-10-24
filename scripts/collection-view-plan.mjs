@@ -3,7 +3,9 @@ const sentOutstanding = '@Invoices.status = "sent" @Invoices.payment_status != "
 const topLevel = '@Projects.parent_page = ""';
 const openProjects = '@Projects.status != "completed" @Projects.status != "archived" @Projects.status != "cancelled"';
 const projectColumns = ['title', 'status', 'priority', 'deadline', 'client'];
-const clientColumns = ['title', 'status', 'lead_stage', 'contact', 'email', 'phone', 'website', 'plan', 'monthly_chf', 'billing_cycle'];
+const clientColumns = ['title', 'status', 'contact', 'email', 'phone', 'website', 'plan', 'monthly_chf', 'billing_cycle'];
+const leadClients = '(@Clients.status = "prospect" OR @Clients.status = "contacted" OR @Clients.status = "discussing" OR @Clients.status = "proposal_sent")';
+const acquiredClients = '(@Clients.status = "proposal_accepted" OR @Clients.status = "active" OR @Clients.status = "maintenance")';
 export const VIEW_PLANS = {
     Invoices: [
         { key: 'register', label: 'Register', aliases: ['Register'], columns: invoiceColumns, query: '', sort: 'issued', direction: 'desc', icon: 'ti-table' },
@@ -22,10 +24,11 @@ export const VIEW_PLANS = {
     ],
     Clients: [
         { key: 'directory', label: 'Directory', columns: clientColumns, query: '', sort: 'title', icon: 'ti-table' },
-        { key: 'active', label: 'Active', columns: clientColumns, query: '@Clients.status = "active"', sort: 'title' },
-        { key: 'prospects', label: 'Leads', aliases: ['Prospects'], columns: ['title', 'lead_stage', 'contact', 'email', 'phone', 'website'], query: '@Clients.status = "prospect"', sort: 'title' },
+        { key: 'status', label: 'Status', type: 'board', columns: ['title', 'contact', 'email', 'plan', 'monthly_chf'], group: 'status', query: '', sort: 'title', preserveSort: true, icon: 'ti-layout-kanban' },
+        { key: 'active', label: 'Active', columns: clientColumns, query: acquiredClients, sort: 'title' },
+        { key: 'prospects', label: 'Leads', aliases: ['Prospects'], columns: ['title', 'status', 'contact', 'email', 'phone', 'website'], query: leadClients, sort: 'title' },
         { key: 'archived', label: 'Archived', columns: clientColumns, query: '@Clients.status = "archived"', sort: 'title' },
-        { key: 'care-plans', label: 'Care plans', columns: ['title', 'monthly_chf', 'plan', 'billing_cycle', 'included_hours'], query: '@Clients.status = "active" @Clients.monthly_chf > 0', sort: 'monthly_chf', direction: 'desc' }
+        { key: 'care-plans', label: 'Care plans', columns: ['title', 'monthly_chf', 'plan', 'billing_cycle', 'included_hours'], query: '(@Clients.status = "active" OR @Clients.status = "maintenance") @Clients.monthly_chf > 0', sort: 'monthly_chf', direction: 'desc' }
     ],
     'Support Sessions': [
         { key: 'register', label: 'Register', columns: ['title', 'date', 'client', 'project', 'hours', 'description'], query: '', sort: 'date', direction: 'desc', icon: 'ti-table' }
@@ -52,7 +55,7 @@ export function planCollectionViews(collection, config) {
             type: definition.type || 'table', icon: definition.icon || 'ti-filter', shown: true, read_only: false,
             description: `Freelance OS: ${definition.label.toLowerCase()}.`,
             field_ids: definition.columns.map(fieldId),
-            sort_field_id: fieldId(definition.sort), sort_dir: definition.direction || 'asc',
+            sort_field_id: definition.preserveSort && existing ? existing.sort_field_id ?? null : fieldId(definition.sort), sort_dir: definition.preserveSort && existing ? existing.sort_dir || 'asc' : definition.direction || 'asc',
             group_by_field_id: definition.group ? fieldId(definition.group) : null, query: definition.query,
             invalid_query: ''
         };

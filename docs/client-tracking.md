@@ -6,24 +6,28 @@ Freelance OS keeps a small relationship register in the existing Clients collect
 
 In Overview, open **Clients & leads**. Use the **Clients**, **Leads**, and **Archived** filters, or search by company, contact, email, phone, or lead stage. **View collection** opens the matching native table alongside the dashboard.
 
-Use **New lead** to add a company or individual and optional contact details. Stages are **New**, **Contacted**, **Discussing**, and **Proposal sent**. Change a stage directly on any client or lead card or use **Edit details**. A missing stage remains visibly unset until you choose one. Existing clients can track the stage of new work while keeping their **Client** relationship and linked projects.
+Use **New lead** to add a company or individual and optional contact details. One Status covers the relationship: **New lead → Contacted → Discussing → Proposal sent → Proposal accepted → Active client → On maintenance → Archived**. Choose the status that describes the relationship; records do not have to pass through every status.
 
-When a lead becomes a client, change **Relationship** to **Client** in Edit details. When it does not proceed, select **Archived**. Both actions keep the original record and any linked projects, notes, or invoices. Stage and relationship are independent: updating a client's stage does not make it a lead, and the Leads filter still shows records whose relationship is Lead. Use profile notes for additional context; the basic register does not introduce a separate deal model.
+Change status from the compact control at the top of a card or through **Edit details**. **Status board** opens the existing native kanban alongside the dashboard, grouped by the same Status field. Drag a card to another column to update it. The native schema uses canonical labels such as `proposal_accepted` and `maintenance`; the dashboard shows their readable names.
+
+The **Leads** filter includes New lead through Proposal sent. **Clients** includes Proposal accepted, Active client, and On maintenance. **Archived** is kept separately. All transitions preserve the same native record and its linked work. Maintenance clients with a positive monthly amount count toward recurring revenue; status alone does not create a fee or support allowance. Use profile notes for additional work discussions with an established client rather than moving it backwards automatically.
 
 Open the native profile for notes, renaming, or additional contacts. The primary `contact` field remains freeform for compatibility with existing information. There are no automated reminders, correspondence imports, sales forecasts, or outbound messages.
 
 ## Upgrade an existing workspace
 
-Freelance OS 1.6.0 adds `email`, `phone`, and `lead_stage` to Clients. Existing contact data and field IDs are preserved; the Prospects view becomes Leads using the same view ID. The update does not change any client records.
+Freelance OS 1.7.0 extends the existing Status choices and enhances the existing Status board, preserving its view ID and existing choice IDs. It uses the contact, email, phone, and website fields already available in 1.6.0. No new register or collection is required.
 
 Preview and then apply just the Clients collection update:
 
 ```sh
 node scripts/setup-workspace.mjs --workspace YOUR_WORKSPACE_GUID --collection Clients
 node scripts/setup-workspace.mjs --workspace YOUR_WORKSPACE_GUID --collection Clients --apply
+node scripts/migrate-client-lifecycle.mjs --workspace YOUR_WORKSPACE_GUID
+node scripts/migrate-client-lifecycle.mjs --workspace YOUR_WORKSPACE_GUID --apply
 ```
 
-The script keeps a local backup of the previous collection configuration and verifies the saved fields and views. Fresh starter installs include these fields automatically.
+The setup script keeps a local configuration backup and verifies saved fields and views. The separate record migration previews and then consolidates old prospect stages into Status. Active and archived clients keep their status, and existing `lead_stage` field values remain as history. Each changed record is backed up and verified. After migration, the legacy field is retired (`active: false`) so later runs cannot undo deliberate status changes. Fresh installs use the unified lifecycle directly.
 
 ## Use Thymer's built-in MCP
 

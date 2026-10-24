@@ -3,9 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { starterConfig } from '../scripts/starter-schema.mjs';
+import { planClientLifecycleMigration } from '../scripts/client-lifecycle-plan.mjs';
 
 const source = ['support-time.js', 'workflow.js', 'index.js'].map(file => fs.readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')).join('\n');
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, clientMatches, clientSearchText });`, { AppPlugin: class {}, Date, Intl, console });
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow); ({ Plugin, clientMatches, clientSearchText, clientStatus, isRevenueClient, summarizeSupportTime });`, { AppPlugin: class {}, Date, Intl, console });
 
 function fixture(values = {}) {
     const stored = { status: 'prospect', contact: 'Alex Martin', email: 'alex@example.test', phone: '', website: '', lead_stage: 'contacted', plan: '', monthly_chf: 0, ...values };
@@ -24,7 +25,7 @@ test('lead filters include legacy leads and keep archived relationships out of t
     assert.equal(api.clientMatches({ status: 'active' }, 'leads'), false);
     assert.equal(api.clientMatches({ status: 'archived' }, 'leads'), false);
     assert.equal(api.clientMatches({ status: 'archived' }, 'archived'), true);
-    assert.match(api.clientSearchText({ name: 'Example', contact: 'Alex', email: 'alex@example.test', phone: '+41 22', leadStage: 'proposal_sent' }), /alex@example.test.*\+41 22.*proposal sent/);
+    assert.match(api.clientSearchText({ name: 'Example', status: 'proposal_sent', contact: 'Alex', email: 'alex@example.test', phone: '+41 22' }), /alex@example.test.*\+41 22.*proposal sent/);
 });
 
 test('client setup adds CRM fields without replacing existing contact values, field IDs, or the Prospects view ID', () => {
@@ -37,6 +38,43 @@ test('client setup adds CRM fields without replacing existing contact values, fi
     assert.equal(next.views.find(view => view.label === 'Leads').id, 'existing-prospects');
     assert.equal(old.fields.some(field => field.label === 'email'), false);
     assert.deepEqual(starterConfig('Clients', next), next);
+});
+
+test('lifecycle schema extends and reorders existing choices while preserving IDs, custom choices and the Status board', () => {
+    const old = starterConfig('Clients');
+    const status = old.fields.find(field => field.label === 'status');
+    status.choices = status.choices.filter(choice => ['prospect', 'active', 'archived'].includes(choice.label));
+    status.choices.push({ id: 'custom-choice', label: 'custom', active: true });
+    old.fields.push({ id: 'old-stage', label: 'lead_stage', type: 'choice', choices: [{ id: 'old-contacted', label: 'contacted' }] });
+    old.views.find(view => view.label === 'Status').id = 'existing-status-board';
+    old.views.find(view => view.label === 'Status').sort_field_id = null;
+    const next = starterConfig('Clients', old);
+    for (const choice of status.choices) assert.deepEqual(next.fields.find(field => field.id === status.id).choices.find(item => item.id === choice.id), choice);
+    assert.equal(next.fields.find(field => field.id === 'old-stage').choices[0].id, 'old-contacted');
+    assert.equal(next.views.find(view => view.label === 'Status').id, 'existing-status-board');
+    assert.equal(next.views.find(view => view.label === 'Status').sort_field_id, null);
+    assert.deepEqual(next.fields.find(field => field.id === status.id).choices.slice(0, 8).map(choice => choice.label), ['prospect', 'contacted', 'discussing', 'proposal_sent', 'proposal_accepted', 'active', 'maintenance', 'archived']);
+    assert.deepEqual(starterConfig('Clients', next), next);
+});
+
+test('migration consolidates only prospect stages and never downgrades acquired or archived clients', () => {
+    const config = { fields: [{ label: 'status', choices: ['prospect', 'active', 'archived'].map(label => ({ id: `s-${label}`, label })) }, { label: 'lead_stage', choices: [{ id: 'l-sent', label: 'proposal_sent' }] }] };
+    const records = ['prospect', 'active', 'archived'].map(status => ({ guid: status, properties: { status: ['choice', `s-${status}`], lead_stage: ['choice', 'l-sent'] } }));
+    assert.deepEqual(planClientLifecycleMigration(records, config), [{ guid: 'prospect', from: 'prospect', to: 'proposal_sent', stage: 'proposal_sent' }]);
+    assert.deepEqual(planClientLifecycleMigration([{ guid: 'already-migrated', properties: { status: ['choice', 'proposal_sent'], lead_stage: ['choice', 'l-sent'] } }], config), []);
+    assert.equal(api.clientStatus({ status: 'active', leadStage: 'proposal_sent' }), 'active');
+    assert.equal(api.clientStatus({ status: 'prospect', leadStage: 'proposal_sent' }), 'prospect');
+    config.fields.find(field => field.label === 'lead_stage').active = false;
+    assert.deepEqual(planClientLifecycleMigration(records, config), []);
+});
+
+test('acquired statuses count as clients; maintenance contributes revenue and support allowance without counting prospects', () => {
+    for (const status of ['proposal_accepted', 'active', 'maintenance']) assert.equal(api.clientMatches({ status }, 'active'), true);
+    for (const status of ['prospect', 'contacted', 'discussing', 'proposal_sent']) assert.equal(api.clientMatches({ status }, 'leads'), true);
+    assert.equal(api.isRevenueClient({ status: 'maintenance' }), true);
+    assert.equal(api.isRevenueClient({ status: 'proposal_accepted' }), false);
+    const summary = api.summarizeSupportTime([{ guid: 'maintenance', status: 'maintenance', includedHours: 3 }, { guid: 'accepted', status: 'proposal_accepted', includedHours: 10 }], [], new Date(2026, 9, 24));
+    assert.equal(summary.allowance, 3);
 });
 
 test('client edits update only changed native fields and can clear optional contact details', async () => {
@@ -71,6 +109,6 @@ test('a blank native monthly amount can be edited without a false conflict', asy
 test('duplicate client creation stops before creating or writing another record', async () => {
     const { plugin, collection } = fixture();
     let created = 0; collection.createRecord = () => { created++; };
-    await assert.rejects(plugin.createConfiguredRecord('Clients', ' example studio ', { status: 'prospect', lead_stage: 'contacted' }), /already exists/);
+    await assert.rejects(plugin.createConfiguredRecord('Clients', ' example studio ', { status: 'contacted' }), /already exists/);
     assert.equal(created, 0);
 });

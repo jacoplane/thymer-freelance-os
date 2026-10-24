@@ -1,6 +1,6 @@
 ---
 name: freelance-os
-description: Manage Freelance OS clients, leads, and native project tasks through Thymer's built-in MCP. Use when recording a prospect, updating client contact details or lead stages, or capturing work described in an email or conversation. For plugin development, use the separate thymer-freelance-os development skill.
+description: Manage Freelance OS clients, leads, and native project tasks through Thymer's built-in MCP. Use when recording a prospect, updating contact details or client lifecycle status, or capturing work described in an email or conversation. For plugin development, use the separate thymer-freelance-os development skill.
 ---
 
 # Freelance OS
@@ -21,12 +21,11 @@ Both are native records in **Clients**. Reuse the same record as the relationshi
 | Field | Meaning |
 | --- | --- |
 | Record title | Client, company, or individual name |
-| `status` | `prospect` for a lead; `active` for a client; `archived` for a closed relationship or a lead that did not proceed |
+| `status` | One lifecycle: `prospect` (New lead), `contacted`, `discussing`, `proposal_sent`, `proposal_accepted`, `active` (Active client), `maintenance` (On maintenance), `archived` |
 | `contact` | Primary contact name or existing freeform contact details |
 | `email`, `phone`, `website` | Optional details supplied by the user |
-| `lead_stage` | Optional progress for new work: `new`, `contacted`, `discussing`, or `proposal_sent`. Editable for leads and existing clients independently of relationship status. |
 
-The native **Leads** view filters `status = prospect`. The dashboard reads these same properties; there is no second register to synchronize. Missing lead stage means unset, not evidence of an interaction. Existing `contact` text may include an email address: preserve it unless asked to change it.
+The native **Status** board groups the same records by `status`. Leads includes prospect/contacted/discussing/proposal_sent; Clients includes proposal_accepted/active/maintenance. The dashboard and native views use the same Status, with no separate stage to synchronize. Existing `contact` text may include an email address: preserve it unless asked to change it. Older `lead_stage` fields may remain retired for history. Do not use historical stage values to override Status or write new progress there.
 
 Use the page body for a short lead description or a note explicitly requested by the user. Keep any existing content. A second contact can be recorded in the page body when needed; do not invent more collections. Care-plan fields (`plan`, `monthly_chf`, `included_hours`, `billing_cycle`) are optional and should change only when requested. Potential work is not recurring revenue.
 
@@ -35,10 +34,10 @@ Use the page body for a short lead description or a note explicitly requested by
 For “I emailed a new prospect; add them to lead tracking”:
 
 1. Search or list the Clients records to find an existing match by company/name and, when supplied, email. Use `get_record_properties` to confirm matches. Ask only if multiple plausible matches would change where the data goes.
-2. Reuse a match; otherwise call `create_record` in Clients with the supplied name and properties. Use `status: prospect`, `lead_stage: contacted` for an email already sent. Use `new` when the user merely identifies a prospect. Do not invent contact details or a date.
-3. Set or change fields with `update_record_property`. Preserve all unrelated data. An existing active client stays active when tracking more potential work; update its `lead_stage` when requested and keep a brief context note when useful. Changing stage does not change relationship status.
-4. When the user reports an accepted engagement, change a prospect to `active`. If a prospect does not proceed, use `archived`. Losing new work from an existing active client does not archive that client. Keep the last stage as historical context. Neither action creates a project or tasks automatically.
-5. Read back the affected properties and return a short confirmation naming the client and actual stage.
+2. Reuse a match; otherwise call `create_record` in Clients with the supplied name and properties. For a new prospect use `status: contacted` when an email was already sent, or `prospect` when the user merely identifies a lead. Do not invent contact details or a date.
+3. Change status with `update_record_property`. Use `discussing` for an ongoing sales discussion, `proposal_sent` for an explicitly sent proposal, and `proposal_accepted` for an explicitly accepted one. Keep an acquired client's current lifecycle status when merely recording an email or task request; a new conversation does not automatically make it a lead again.
+4. Use `active` when the user says work has started, `maintenance` for an agreed maintenance relationship, and `archived` when the user closes the relationship or a prospect does not proceed. Losing an additional opportunity from an active client does not archive that client. Status changes do not create projects, tasks, or financial amounts. Change care-plan amounts only when supplied or requested.
+5. Read back the affected properties and return a short confirmation naming the client and actual status.
 
 If a write fails or its result is unclear, read the target before retrying. Reuse any created record GUID and repair only the incomplete fields rather than creating another record.
 

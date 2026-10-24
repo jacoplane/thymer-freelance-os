@@ -128,6 +128,15 @@ test('collection loading preserves zero totals and excludes prospect retainers',
     assert.equal(data.loadError, undefined);
 });
 
+test('maintenance contributes recurring revenue while an accepted proposal remains unrecognized', async () => {
+    const plugin = new api.Plugin();
+    const records = ['maintenance', 'proposal_accepted', 'contacted'].map(status => ({ guid: status, getName: () => status, prop: label => ({ text: () => label === 'status' ? status : label === 'monthly_chf' ? '100' : '' }) }));
+    plugin.data = { getAllCollections: async () => ['Clients', 'Invoices', 'Projects'].map(name => ({ getGuid: () => `new-${name}`, getName: () => name, getAllRecords: async () => name === 'Clients' ? records : [] })), searchByQuery: async () => ({ lines: [] }) };
+    const data = await plugin.loadData();
+    assert.equal(data.mrr, 100); assert.equal(data.activeCarePlans, 1);
+    assert.equal(data.activeClientsCount, 2); assert.equal(data.prospectsCount, 1);
+});
+
 test('the task inbox hides reusable template checklists but keeps copied tasks actionable', async () => {
     const plugin = new api.Plugin();
     const makeRecord = (guid, name, type) => ({

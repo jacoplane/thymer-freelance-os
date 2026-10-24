@@ -8,7 +8,7 @@ The starter command creates these fields and views. A collection name mapping do
 
 | Field label | Type | Values or meaning |
 | --- | --- | --- |
-| `status` | Choice | `prospect`, `active`, `archived` |
+| `status` | Choice | `prospect`, `contacted`, `discussing`, `proposal_sent`, `proposal_accepted`, `active`, `maintenance`, `archived` |
 | `plan` | Text | Care plan or service description |
 | `monthly_chf` | Number | Monthly recurring value; positive values on active clients contribute to MRR |
 | `billing_cycle` | Choice | `Monthly`, `Annual`, `Project` |
@@ -17,11 +17,10 @@ The starter command creates these fields and views. A collection name mapping do
 | `email` | Text | Optional primary contact email |
 | `phone` | Text | Optional phone number |
 | `website` | URL | Client website |
-| `lead_stage` | Choice | Optional stage: `new`, `contacted`, `discussing`, `proposal_sent`; independent of relationship status and editable on clients and leads |
 
-Clients and leads share the same collection. Set `status` to `active` when a lead becomes a client, or `archived` when it does not proceed. Keep the original record so its notes and linked work remain intact. The native Leads view filters `status = prospect`. See [client and lead tracking](client-tracking.md) for the lightweight workflow and Thymer MCP skill.
+Clients and leads share one lifecycle Status. The Status board uses this field, as do the dashboard's compact status control and native filters. Proposal accepted, Active client, and On maintenance count as acquired clients; only active and maintenance records contribute recurring revenue and included support allowances. The old `lead_stage` field is retained in existing workspaces for history, and is not used for new updates. See [client and lead tracking](client-tracking.md) for the migration and native MCP workflow.
 
-MRR reads `monthly_chf` directly; an annual billing cycle does not automatically divide a yearly amount by twelve. Store the normalized monthly value in that field.
+MRR reads `monthly_chf` directly on active and maintenance clients; an annual billing cycle does not automatically divide a yearly amount by twelve. Store the normalized monthly value in that field. Maintenance status alone does not invent a fee or included hours.
 
 ## Projects
 
@@ -75,7 +74,7 @@ This optional register records support work by date. The overview totals only se
 
 ## Existing collections
 
-The setup script adds missing fields and keeps existing IDs. It stops when a required label has an incompatible type, or a choice field lacks a required value. It does not replace such fields automatically. Export a backup before changing an existing schema, resolve the mismatch, and rerun the preview.
+The setup script adds missing fields and keeps existing IDs. Clients.status extends the existing prospect/active/archived choices with the lifecycle values and preserves existing choice IDs and custom choices. Other incompatible types or missing required choices stop setup rather than replacing fields automatically. Export a backup before changing an existing schema, resolve any reported mismatch, and rerun the preview.
 
 If only native views need updating, set `THYMER_WORKSPACE` to the target GUID and run:
 

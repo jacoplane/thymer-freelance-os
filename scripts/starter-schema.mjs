@@ -3,9 +3,8 @@ import { planCollectionViews, VIEW_PLANS } from './collection-view-plan.mjs';
 
 const definitions = {
     Clients: { icon: 'ti-users', description: 'Client relationships and recurring care plans', fields: {
-        status: ['choice', ['prospect', 'active', 'archived']], plan: ['text'], monthly_chf: ['number'],
-        billing_cycle: ['choice', ['Monthly', 'Annual', 'Project']], included_hours: ['number'], contact: ['text'], email: ['text'], phone: ['text'], website: ['url'],
-        lead_stage: ['choice', ['new', 'contacted', 'discussing', 'proposal_sent']]
+        status: ['choice', ['prospect', 'contacted', 'discussing', 'proposal_sent', 'proposal_accepted', 'active', 'maintenance', 'archived']], plan: ['text'], monthly_chf: ['number'],
+        billing_cycle: ['choice', ['Monthly', 'Annual', 'Project']], included_hours: ['number'], contact: ['text'], email: ['text'], phone: ['text'], website: ['url']
     } },
     Projects: { icon: 'ti-stack-2', description: 'Projects, deliverables and native tasks', fields: {
         status: ['choice', ['backlog', 'in_progress', 'in_review', 'completed', 'archived', 'cancelled']],
@@ -26,6 +25,7 @@ const definitions = {
 };
 export const STARTER_ROLES = Object.keys(definitions);
 const idFor = (prefix, key) => prefix + createHash('sha256').update(`freelance-os:${key}`).digest('hex').slice(0, 14).toUpperCase();
+const clientStatusColors = { prospect: 'gray', contacted: 'blue', discussing: 'blue', proposal_sent: 'orange', proposal_accepted: 'green', active: 'green', maintenance: 'green', archived: 'gray' };
 
 export function starterConfig(role, current = {}, links = {}) {
     const definition = definitions[role];
@@ -40,13 +40,19 @@ export function starterConfig(role, current = {}, links = {}) {
         const existing = config.fields.find(field => field.label === label);
         if (existing) {
             if (existing.type !== type) throw new Error(`${role}.${label} must be ${type}; found ${existing.type}. No existing field was replaced.`);
+            if (role === 'Clients' && label === 'status') {
+                for (const required of ['prospect', 'active', 'archived']) if (!existing.choices?.some(choice => choice.label === required && choice.active !== false)) throw new Error(`Clients.status is missing required choice labels. Keep prospect, active, and archived before upgrading.`);
+                for (const choice of choices) if (!existing.choices.some(value => value.label === choice)) existing.choices.push({ id: idFor('c', `Clients.status.${choice}`), label: choice, color: clientStatusColors[choice], icon: '', active: true });
+                const order = new Map(choices.map((choice, index) => [choice, index]));
+                existing.choices.sort((a, b) => (order.get(a.label) ?? choices.length) - (order.get(b.label) ?? choices.length));
+            }
             if (choices?.some(choice => !existing.choices?.some(value => value.label === choice && value.active !== false))) throw new Error(`${role}.${label} is missing required choice labels. Add ${choices.join(', ')} before running setup.`);
             if (label === 'client' && links.Clients) existing.filter_colguid = links.Clients;
             if (label === 'project' && links.Projects) existing.filter_colguid = links.Projects;
             continue;
         }
         const field = { id: idFor('f', `${role}.${label}`), label, type, active: true, many: false, read_only: false };
-        if (choices) field.choices = choices.map((choice, index) => ({id: idFor('c', `${role}.${label}.${choice}`), label: choice, color: ['gray','blue','green','orange','purple','red'][index % 6], icon: '', active: true}));
+        if (choices) field.choices = choices.map((choice, index) => ({id: idFor('c', `${role}.${label}.${choice}`), label: choice, color: role === 'Clients' && label === 'status' ? clientStatusColors[choice] : ['gray','blue','green','orange','purple','red'][index % 6], icon: '', active: true}));
         if (label === 'client' && links.Clients) field.filter_colguid = links.Clients;
         if (label === 'project' && links.Projects) field.filter_colguid = links.Projects;
         config.fields.push(field);

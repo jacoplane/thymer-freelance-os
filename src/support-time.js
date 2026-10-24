@@ -1,7 +1,7 @@
 function summarizeSupportTime(clients, records, today = new Date()) {
     const month = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}`;
     const clientMap = new Map(clients.map(client => [client.guid, client]));
-    const allowance = clients.filter(client => client.status === 'active')
+    const allowance = clients.filter(client => ['active', 'maintenance'].includes(client.status))
         .reduce((sum, client) => sum + Math.max(0, Number(client.includedHours) || 0), 0);
     const sessions = records.map(record => {
         const date = String(getProp(record, 'date') || '').slice(0, 10);
@@ -26,7 +26,7 @@ function summarizeSupportTime(clients, records, today = new Date()) {
         month,
         hours: sessions.reduce((sum, session) => sum + session.hours, 0),
         allowance,
-        clients: clients.filter(client => client.status === 'active' && client.includedHours > 0)
+        clients: clients.filter(client => ['active', 'maintenance'].includes(client.status) && client.includedHours > 0)
             .map(client => ({ ...client, logged: byClient.get(client.guid) || 0 })),
         sessions
     };

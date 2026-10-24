@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.7.0 — 2026-10-24
+
+- Use one client lifecycle Status from New lead through Proposal accepted, Active client, On maintenance, and Archived.
+- Enhance the existing native Status board with the complete lifecycle and add a direct dashboard link.
+- Replace the large card dropdown row with a compact status control beside the card heading; simplify Edit details to one Status field.
+- Count maintenance clients correctly in recurring revenue, care plans, and included support hours.
+- Add a preview-first migration for legacy prospect stages, preserving acquired client statuses, record IDs, and the old field values.
+
 ## 1.6.1 — 2026-10-24
 
 - Make stage editable on existing clients as well as leads, from cards, Edit details, and native client tables.

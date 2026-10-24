@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { execFileSync } from 'node:child_process';
 import { connectMcp } from '../scripts/thymer-mcp.mjs';
 import { assertTestIdentity, guardedEvaluate, TEST_WORKSPACE } from './live-safety.mjs';
+import { choiceLabel, planClientLifecycleMigration } from '../scripts/client-lifecycle-plan.mjs';
 
 const token = `CRM verification ${Date.now()}`;
 const output = process.env.OS_ARTIFACT_DIR || path.join(os.tmpdir(), 'freelance-os-clients');
@@ -48,17 +50,38 @@ try {
         const p = window.__freelanceOs;
         const collection = (await p.data.getAllCollections()).find(c => c.getName() === 'Clients');
         const record = (await collection.getAllRecords()).find(r => r.guid === guid);
-        return Object.fromEntries(['status', 'lead_stage', 'contact', 'email', 'phone'].map(label => {
+        return Object.fromEntries(['status', 'contact', 'email', 'phone'].map(label => {
             const property = record.prop(label); return [label, property.choiceLabel?.() || property.text?.() || ''];
         }));
     }, guid);
-    const lead = await create('Clients', `${token} Studio`, { status: 'prospect', lead_stage: 'contacted', contact: 'Alex Example', email: 'alex@example.test', phone: '+41 22 555 01 23' });
+    const legacyConfig = (await native('get_collection_config_json', { collection: 'Clients' })).config;
+    if (legacyConfig.fields.some(field => field.label === 'lead_stage' && field.active !== false)) {
+        const legacy = await create('Clients', `${token} Legacy`, { status: 'prospect', lead_stage: 'proposal_sent' });
+        const inventory = await native('list_records', { collection: 'Clients', limit: 1000 });
+        assert.equal(inventory.total, inventory.returned);
+        const snapshots = [];
+        for (const record of inventory.records) {
+            const props = await native('get_record_properties', { record: record.guid });
+            snapshots.push({ ...record, properties: { status: props.properties.status?.value, lead_stage: props.properties.lead_stage?.value } });
+        }
+        assert.deepEqual(planClientLifecycleMigration(snapshots, legacyConfig).map(change => change.guid), [legacy]);
+        execFileSync(process.execPath, ['scripts/migrate-client-lifecycle.mjs', '--workspace', TEST_WORKSPACE, '--apply'], { stdio: 'pipe' });
+        assert.equal((await read(legacy)).status, 'proposal_sent');
+        const old = await native('get_record_properties', { record: legacy });
+        assert.equal(choiceLabel(legacyConfig, 'lead_stage', old.properties.lead_stage.value), 'proposal_sent');
+        await native('update_record_property', { record: legacy, property: 'status', value: 'prospect' });
+        execFileSync(process.execPath, ['scripts/migrate-client-lifecycle.mjs', '--workspace', TEST_WORKSPACE, '--apply'], { stdio: 'pipe' });
+        assert.equal((await read(legacy)).status, 'prospect');
+        await native('trash_record', { record: legacy }); records.splice(records.indexOf(legacy), 1);
+        report.legacyMigrationBackedUpAndVerified = true;
+    }
+    const lead = await create('Clients', `${token} Studio`, { status: 'contacted', contact: 'Alex Example', email: 'alex@example.test', phone: '+41 22 555 01 23' });
     await native('insert_markdown', { record: lead, markdown: 'Interested in a website refresh. Short context supplied by the user.' });
     await show('leads');
-    assert.equal(await page.$eval('.os-cards .os-lead-stage', e => e.value), 'contacted');
-    await page.select('.os-cards .os-lead-stage', 'discussing');
-    await page.waitForFunction(() => !document.querySelector('.os-lead-stage')?.disabled);
-    assert.equal((await read(lead)).lead_stage, 'discussing');
+    assert.equal(await page.$eval('.os-cards .os-client-status', e => e.value), 'contacted');
+    await page.select('.os-cards .os-client-status', 'discussing');
+    await page.waitForFunction(() => !document.querySelector('.os-client-status')?.disabled);
+    assert.equal((await read(lead)).status, 'discussing');
     report.nativeMcpLeadAndStage = true;
     await page.$eval('.os-app', e => e.scrollTo(0, 0));
     await page.$eval('.os-app', e => e.dataset.verification = 'clients');
@@ -70,29 +93,27 @@ try {
     await page.select('.os-client-form .input-status', 'active');
     await page.locator('.os-client-form .btn-submit').click();
     await page.waitForSelector('.os-client-form', { hidden: true });
-    assert.deepEqual(await read(lead), { status: 'active', lead_stage: 'discussing', contact: 'Alex Example', email: '', phone: '+41 22 555 09 87' });
+    assert.deepEqual(await read(lead), { status: 'active', contact: 'Alex Example', email: '', phone: '+41 22 555 09 87' });
     const body = await native('get_record', { record: lead, format: 'markdown' });
     assert.match(JSON.stringify(body), /Interested in a website refresh/);
     report.conversionPreservesIdentityAndNotes = true;
     await show('active');
-    await page.select('.os-cards .os-lead-stage', 'proposal_sent');
-    await page.waitForFunction(() => !document.querySelector('.os-lead-stage')?.disabled);
-    assert.equal((await read(lead)).status, 'active');
-    assert.equal((await read(lead)).lead_stage, 'proposal_sent');
+    await page.select('.os-cards .os-client-status', 'maintenance');
+    await page.waitForFunction(() => !document.querySelector('.os-client-status')?.disabled);
+    assert.equal((await read(lead)).status, 'maintenance');
     await page.locator('.os-edit-client').click();
-    assert.equal(await page.$eval('.input-stage', e => !!e.getClientRects().length), true);
-    await page.select('.input-stage', 'contacted');
+    assert.equal(await page.$eval('.input-status', e => !!e.getClientRects().length), true);
+    await page.select('.input-status', 'proposal_accepted');
     await page.locator('.os-client-form .btn-submit').click();
     await page.waitForSelector('.os-client-form', { hidden: true });
-    assert.equal((await read(lead)).status, 'active');
-    assert.equal((await read(lead)).lead_stage, 'contacted');
-    report.existingClientStageFromCardAndForm = true;
+    assert.equal((await read(lead)).status, 'proposal_accepted');
+    report.acquiredClientLifecycleFromCardAndForm = true;
 
     await page.locator('.btn-new-lead').click();
     await page.type('.input-title', `${token} Design`);
     await page.type('.input-contact', 'Morgan Example');
     await page.type('.input-email', 'morgan@example.test');
-    await page.select('.input-stage', 'contacted');
+    await page.select('.input-status', 'contacted');
     await (await page.$('.os-client-form')).screenshot({ path: path.join(output, 'client-form.png') });
     await page.locator('.os-client-form .btn-submit').click();
     await page.waitForSelector('.os-client-form', { hidden: true });
@@ -102,7 +123,7 @@ try {
         return (await c.getAllRecords()).find(r => r.getName() === title)?.guid;
     }, `${token} Design`);
     assert.ok(created); records.push(created);
-    assert.equal((await read(created)).lead_stage, 'contacted');
+    assert.equal((await read(created)).status, 'contacted');
     report.uiCreate = true;
 
     await page.locator('.btn-new-lead').click();
@@ -129,9 +150,38 @@ try {
     assert.equal(nativeView.type, 'overview'); assert.match(nativeView.subId, /prospects/);
     assert.equal(await page.evaluate(() => document.body.innerText.includes('Failed to load panel')), false);
     await page.screenshot({ path: path.join(output, 'clients-split.png') });
-    const overflow = await run(() => [...document.querySelectorAll('.os-project-card, .os-main, .os-client-stage')].filter(e => e.scrollWidth > e.clientWidth + 2).length);
+    const overflow = await run(() => [...document.querySelectorAll('.os-project-card, .os-main, .os-client-status')].filter(e => e.scrollWidth > e.clientWidth + 2).length);
     assert.equal(overflow, 0);
     report.nativeLeadsViewAndSplitLayout = true;
+    await run(ids => { const p = window.__freelanceOs; for (const panel of p.ui.getPanels()) if (!ids.includes(panel.getId())) p.ui.closePanel(panel); }, original.panels);
+    await page.locator('.os-client-board-link').click();
+    await page.waitForFunction(() => document.querySelectorAll('.board-column').length >= 8);
+    const board = await run(ids => {
+        const p = window.__freelanceOs, c = p.data.getPluginByGuid(p.collectionGuid('Clients')).getConfiguration();
+        const panel = p.ui.getPanels().find(p => !ids.includes(p.getId()));
+        return { navigation: panel.getNavigation(), expectedId: c.views.find(v => v.label === 'Status').id, columns: document.querySelectorAll('.board-column').length };
+    }, original.panels);
+    assert.equal(board.navigation.subId, board.expectedId); assert.ok(board.columns >= 8);
+    const source = await page.$(`.board-card[data-guid="${created}"]`);
+    assert.ok(source);
+    const target = (await page.$$('.board-column'))[2];
+    assert.match(await target.$eval('.board-column-title', e => e.innerText), /discussing/);
+    const handle = await source.$('.item-drag-handle'); assert.ok(handle);
+    const from = await handle.boundingBox(), to = await target.boundingBox();
+    await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
+    await page.mouse.down();
+    await new Promise(resolve => setTimeout(resolve, 150));
+    await page.mouse.move(from.x + 30, from.y + 20, { steps: 8 });
+    await page.mouse.move(to.x + 65, to.y + 100, { steps: 20 });
+    await page.mouse.up();
+    await page.waitForFunction(guid => {
+        const card = document.querySelector(`.board-card[data-guid="${guid}"]`);
+        return card?.closest('.board-column')?.querySelector('.board-column-title')?.innerText.includes('discussing');
+    }, { timeout: 5000 }, created);
+    assert.equal((await read(created)).status, 'discussing');
+    report.nativeBoardDragUpdatesStatus = true;
+    await page.screenshot({ path: path.join(output, 'client-status-board.png') });
+    report.nativeLifecycleStatusBoard = true;
     await run(ids => { const p = window.__freelanceOs; for (const panel of p.ui.getPanels()) if (!ids.includes(panel.getId())) p.ui.closePanel(panel); }, original.panels);
     await page.locator('.os-edit-client').click();
     await page.select('.input-status', 'archived');
@@ -146,12 +196,12 @@ try {
         const data = await p.loadData();
         p.showCreateClientModal(p.activePanel, data.clients.find(c => c.guid === guid));
     }, unstaged);
-    assert.equal(await page.$eval('.input-stage', e => e.value), '');
+    assert.equal(await page.$eval('.input-status', e => e.value), 'prospect');
     await page.type('.input-phone', '+41 22 555 00 11');
     await page.locator('.os-client-form .btn-submit').click();
     await page.waitForSelector('.os-client-form', { hidden: true });
-    assert.equal((await read(unstaged)).lead_stage, '');
-    report.contactEditPreservesUnsetStage = true;
+    assert.equal((await read(unstaged)).status, 'prospect');
+    report.contactEditPreservesLifecycle = true;
     assert.deepEqual(await page.evaluate(() => [innerWidth, innerHeight]), original.dimensions);
     assert.deepEqual(errors, []);
 } finally {

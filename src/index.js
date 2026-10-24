@@ -10,7 +10,7 @@ const COLLECTION_ROLES = ['Projects', 'Clients', 'Invoices', 'Library', 'Journal
 const COLLECTION_VIEWS = {
     Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
     Projects: { all: 'Register', board: 'Board', in_progress: 'Active', overdue: 'Overdue', deadlines: 'Due dates' },
-    Clients: { all: 'Directory', active: 'Active', prospects: 'Leads', leads: 'Leads', archived: 'Archived', 'care-plans': 'Care plans' },
+    Clients: { all: 'Directory', status: 'Status', active: 'Active', prospects: 'Leads', leads: 'Leads', archived: 'Archived', 'care-plans': 'Care plans' },
     'Support Sessions': { all: 'Register' }
 };
 
@@ -300,16 +300,21 @@ function summarizeInvoices(invoices) {
     return summary;
 }
 
-const LEAD_STAGES = { new: 'New', contacted: 'Contacted', discussing: 'Discussing', proposal_sent: 'Proposal sent' };
-function isLeadClient(client) { return ['prospect', 'lead'].includes(client.status); }
+const CLIENT_STATUSES = { prospect: 'New lead', contacted: 'Contacted', discussing: 'Discussing', proposal_sent: 'Proposal sent', proposal_accepted: 'Proposal accepted', active: 'Active client', maintenance: 'On maintenance', archived: 'Archived' };
+function clientStatus(client) {
+    if (client.status === 'lead') return 'prospect';
+    return client.status === 'cancelled' ? 'archived' : client.status;
+}
+function isLeadClient(client) { return ['prospect', 'contacted', 'discussing', 'proposal_sent'].includes(clientStatus(client)); }
+function isRevenueClient(client) { return ['active', 'maintenance'].includes(clientStatus(client)); }
 function clientMatches(client, filter = 'all') {
     if (filter === 'leads') return isLeadClient(client);
-    if (filter === 'active') return client.status === 'active';
+    if (filter === 'active') return ['proposal_accepted', 'active', 'maintenance'].includes(clientStatus(client));
     if (filter === 'archived') return ['archived', 'cancelled'].includes(client.status);
     return true;
 }
 function clientSearchText(client) {
-    return [client.name, client.contact, client.email, client.phone, client.website, client.plan, LEAD_STAGES[client.leadStage]].filter(Boolean).join(' ').toLowerCase();
+    return [client.name, client.contact, client.email, client.phone, client.website, client.plan, CLIENT_STATUSES[clientStatus(client)]].filter(Boolean).join(' ').toLowerCase();
 }
 
 function clientSummary(client, projects, invoices) {
@@ -469,7 +474,7 @@ export class Plugin extends AppPlugin {
         clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
             // Preserve focus and selection while composing. Blur flushes the deferred refresh.
-            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-stage')) {
+            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-status')) {
                 this.workflowRefreshPending = true;
                 return;
             }
@@ -480,7 +485,7 @@ export class Plugin extends AppPlugin {
 
     flushRefresh() {
         if (!this.workflowRefreshPending) return;
-        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-stage')) return;
+        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-status')) return;
         this.workflowRefreshPending = false;
         this.scheduleRefresh();
     }
@@ -773,14 +778,14 @@ export class Plugin extends AppPlugin {
 
                 if (cr.guid) clientMap.set(cr.guid, name);
 
-                if (mrrVal > 0 && status === 'active') {
+                if (mrrVal > 0 && isRevenueClient({ status })) {
                     mrrSum += mrrVal;
                     carePlans++;
                 }
 
                 if (status === 'archived' || status === 'cancelled') {
                     // skipped
-                } else if (status === 'prospect' || status === 'lead') {
+                } else if (isLeadClient({ status })) {
                     prospects++;
                 } else {
                     activeC++;
@@ -1422,7 +1427,7 @@ export class Plugin extends AppPlugin {
 
     showCreateClientModal(panel, client = null, initialStatus = 'active') {
         const editing = !!client;
-        const status = client?.status === 'lead' ? 'prospect' : client?.status || initialStatus;
+        const status = client ? clientStatus(client) : initialStatus;
         const launchControl = document.activeElement;
         let saving = false;
         const modal = document.createElement('div');
@@ -1440,14 +1445,10 @@ export class Plugin extends AppPlugin {
                     </div>
                     <div class="os-client-form-grid">
                         <div class="os-form-group">
-                            <label for="os-client-status">Relationship</label>
+                            <label for="os-client-status">Status</label>
                             <select id="os-client-status" class="os-select input-status">
-                                <option value="active">Client</option><option value="prospect">Lead</option><option value="archived">Archived</option>
+                                ${Object.entries(CLIENT_STATUSES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}
                             </select>
-                        </div>
-                        <div class="os-form-group os-lead-stage-field">
-                            <label for="os-client-stage">Stage</label>
-                            <select id="os-client-stage" class="os-select input-stage"><option value="" disabled>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select>
                         </div>
                         <div class="os-form-group"><label for="os-client-contact">Contact</label><input id="os-client-contact" class="os-input input-contact" value="${escapeHtml(client?.contact || '')}" autocomplete="name" placeholder="e.g. Alex Martin" /></div>
                         <div class="os-form-group"><label for="os-client-email">Email</label><input id="os-client-email" type="email" class="os-input input-email" value="${escapeHtml(client?.email || '')}" autocomplete="email" placeholder="alex@example.com" /></div>
@@ -1469,9 +1470,8 @@ export class Plugin extends AppPlugin {
         `;
         const form = modal.querySelector('form');
         const statusInput = modal.querySelector('.input-status'); statusInput.value = status;
-        modal.querySelector('.input-stage').value = LEAD_STAGES[client?.leadStage] ? client.leadStage : !editing && status === 'prospect' ? 'new' : '';
         statusInput.onchange = () => {
-            if (!editing) modal.querySelector('.btn-submit').textContent = statusInput.value === 'prospect' ? 'Add lead' : 'Add client';
+            if (!editing) modal.querySelector('.btn-submit').textContent = isLeadClient({ status: statusInput.value }) ? 'Add lead' : 'Add client';
         };
         const close = () => { if (saving) return; modal.remove(); if (launchControl?.isConnected) launchControl.focus(); this.flushRefresh(); };
         modal.querySelector('.os-modal-close').addEventListener('click', close);
@@ -1494,16 +1494,15 @@ export class Plugin extends AppPlugin {
             const values = { monthly_chf: Number(modal.querySelector('.input-mrr').value) || 0, status: statusInput.value,
                 plan: modal.querySelector('.input-plan').value.trim(), website: modal.querySelector('.input-website').value.trim(),
                 contact: modal.querySelector('.input-contact').value.trim(), email: modal.querySelector('.input-email').value.trim(), phone: modal.querySelector('.input-phone').value.trim() };
-            if (modal.querySelector('.input-stage').value) values.lead_stage = modal.querySelector('.input-stage').value;
             const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             saving = true; form.setAttribute('aria-busy', 'true'); submit.textContent = 'Saving…';
             try {
                 if (editing) await this.updateClientDetails(client, values);
                 else await this.createConfiguredRecord('Clients', title, values);
-                saving = false; close(); this.currentTab = 'clients'; this.clientFilter = values.status === 'prospect' ? 'leads' : values.status === 'archived' ? 'archived' : 'active';
+                saving = false; close(); this.currentTab = 'clients'; this.clientFilter = isLeadClient(values) ? 'leads' : values.status === 'archived' ? 'archived' : 'active';
                 this.scheduleRefresh();
             } catch (err) {
-                saving = false; form.removeAttribute('aria-busy'); submit.disabled = false; submit.textContent = editing ? 'Save details' : 'Add ' + (values.status === 'prospect' ? 'lead' : 'client');
+                saving = false; form.removeAttribute('aria-busy'); submit.disabled = false; submit.textContent = editing ? 'Save details' : 'Add ' + (isLeadClient(values) ? 'lead' : 'client');
                 error.textContent = err.message || 'Details could not be saved. Your entries are still here.'; error.hidden = false; error.tabIndex = -1; error.focus();
             }
         });
@@ -1934,6 +1933,7 @@ export class Plugin extends AppPlugin {
                 </div>
                 <div class="os-filter-search">
                     <input type="text" class="os-search-input" aria-label="Filter ${this.currentTab}" placeholder="Filter ${this.currentTab}..." value="${escapeHtml(this.searchQuery)}" />
+                    ${this.currentTab === 'clients' ? '<button type="button" class="os-card-open os-client-board-link">Status board ↗</button>' : ''}
                     <a class="os-view-all">View collection ↗</a>
                 </div>
             </div>
@@ -1958,6 +1958,7 @@ export class Plugin extends AppPlugin {
             else if (this.currentTab === 'invoices') col = this.collectionGuid('Invoices');
             this.openCollection(col, panel, this.currentTab === 'invoices' ? this.invoiceFilter : this.currentTab === 'clients' ? this.clientFilter : 'all');
         });
+        sectionHead.querySelector('.os-client-board-link')?.addEventListener('click', () => this.openCollection(this.collectionGuid('Clients'), panel, 'status'));
 
         const searchInput = sectionHead.querySelector('.os-search-input');
         searchInput.addEventListener('input', (e) => {
@@ -2310,23 +2311,23 @@ export class Plugin extends AppPlugin {
             }
 
             for (const cli of list) {
-                const lead = isLeadClient(cli), archived = clientMatches(cli, 'archived');
+                const lead = isLeadClient(cli);
+                const currentStatus = clientStatus(cli);
                 const card = document.createElement('div');
                 card.className = 'os-project-card';
                 card.innerHTML = `
                     <div class="os-card-top">
-                        <span class="os-badge status-${lead ? 'backlog' : archived ? 'archived' : 'in_progress'}">${lead ? 'LEAD' : archived ? 'ARCHIVED' : escapeHtml(cli.status.toUpperCase())}</span>
-                        ${cli.mrr > 0 && cli.status === 'active' ? '<span class="os-badge badge-care-plan">🛡 Care Plan</span>' : ''}
+                        <select class="os-client-status" aria-label="Status for ${escapeHtml(cli.name)}">${!CLIENT_STATUSES[currentStatus] ? `<option value="${escapeHtml(currentStatus)}" selected>${escapeHtml(currentStatus || 'Status not set')}</option>` : ''}${Object.entries(CLIENT_STATUSES).map(([key, label]) => `<option value="${key}" ${currentStatus === key ? 'selected' : ''}>${label}</option>`).join('')}</select>
+                        ${cli.mrr > 0 && isRevenueClient(cli) && currentStatus !== 'maintenance' ? '<span class="os-client-plan-label">Care plan</span>' : ''}
                     </div>
                     <button type="button" class="os-card-title">${escapeHtml(cli.name)}</button>
-                    ${cli.planValue || cli.mrr > 0 ? `<div class="os-card-client">${escapeHtml([cli.planValue, cli.mrr > 0 ? `${cli.status === 'active' ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : ''].filter(Boolean).join(' · '))}</div>` : ''}
+                    ${cli.planValue || cli.mrr > 0 ? `<div class="os-card-client">${escapeHtml([cli.planValue, cli.mrr > 0 ? `${isRevenueClient(cli) ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : ''].filter(Boolean).join(' · '))}</div>` : ''}
                     <div class="os-client-contact">
                         ${cli.contact ? `<span class="os-client-contact-name">${escapeHtml(cli.contact)}</span>` : ''}
                         ${cli.email ? `<a href="mailto:${encodeURIComponent(cli.email)}">${escapeHtml(cli.email)}</a>` : ''}
                         ${cli.phone ? `<span>${escapeHtml(cli.phone)}</span>` : ''}
                         ${!cli.contact && !cli.email && !cli.phone ? '<span class="os-client-contact-empty">No contact details yet</span>' : ''}
                     </div>
-                    <label class="os-client-stage"><span>Stage</span><select class="os-select os-lead-stage" aria-label="Stage for ${escapeHtml(cli.name)}"><option value="" disabled ${!LEAD_STAGES[cli.leadStage] ? 'selected' : ''}>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}" ${cli.leadStage === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>
                     <div class="os-client-meta">
                         <button type="button" class="os-meta-tag os-client-projects" aria-label="View ${cli.projectCount} projects for ${escapeHtml(cli.name)}">${cli.projectCount} projects · ${cli.summary.activeProjects} active</button>
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
@@ -2346,10 +2347,10 @@ export class Plugin extends AppPlugin {
                     this.clientProjectGuid = cli.guid; this.currentTab = 'projects'; this.projectFilter = 'all'; this.searchQuery = ''; this.render(panel);
                 });
                 card.querySelector('.os-edit-client').onclick = () => this.showCreateClientModal(panel, cli);
-                card.querySelector('.os-lead-stage')?.addEventListener('change', async event => {
+                card.querySelector('.os-client-status')?.addEventListener('change', async event => {
                     const select = event.target; select.disabled = true;
-                    try { await this.updateClientDetails(cli, { lead_stage: select.value }); cli.leadStage = select.value; }
-                    catch (error) { select.value = cli.leadStage || ''; this.ui.addToaster({ title: error.message || 'The lead stage could not be saved.', dismissible: true }); }
+                    try { await this.updateClientDetails(cli, { status: select.value }); cli.status = select.value; }
+                    catch (error) { select.value = currentStatus; this.ui.addToaster({ title: error.message || 'The status could not be saved.', dismissible: true }); }
                     finally { select.disabled = false; }
                 });
                 card.querySelector('.os-card-bottom .os-card-open:not(.os-edit-client)').addEventListener('click', (e) => {
