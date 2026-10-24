@@ -9,6 +9,7 @@ const acquiredClients = '(@Clients.status = "proposal_accepted" OR @Clients.stat
 export const VIEW_PLANS = {
     Invoices: [
         { key: 'register', label: 'Register', aliases: ['Register'], columns: invoiceColumns, query: '', sort: 'issued', direction: 'desc', icon: 'ti-table' },
+        { key: 'board', label: 'Preparation', type: 'board', columns: ['title', 'client', 'amount_chf', 'currency', 'payment_status', 'due'], group: 'status', query: '@Invoices.payment_status != "paid"', sort: 'title', preserveSort: true, icon: 'ti-layout-kanban' },
         { key: 'outstanding', label: 'Outstanding', aliases: ['Unpaid'], columns: invoiceColumns, query: sentOutstanding, sort: 'due' },
         { key: 'overdue', label: 'Overdue', columns: invoiceColumns, query: `${sentOutstanding} @Invoices.due < "today"`, sort: 'due' },
         { key: 'review', label: 'To confirm', columns: invoiceColumns, query: '@Invoices.payment_status = "unconfirmed"', sort: 'due' },

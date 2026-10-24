@@ -161,6 +161,43 @@
 .os-client-status:hover { border-color: var(--os-border); color: var(--os-text); }
 .os-client-status:focus-visible { outline: 2px solid var(--os-accent); outline-offset: 2px; }
 .os-client-plan-label { color: var(--os-muted); font-size: 11px; }
+.os-billing { min-width: 0; }
+.os-billing [hidden], .os-billing-dialog [hidden] { display: none; }
+.os-billing-heading, .os-billing-heading-actions, .os-billing-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+.os-billing-heading h2 { font-size: 20px; font-weight: 650; }
+.os-billing-heading p { color: var(--os-muted); margin-top: 4px; font-size: 12px; }
+.os-billing-heading-actions { justify-content: flex-end; }
+.os-billing-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 16px; margin: 22px 0 8px; padding-bottom: 18px; border-bottom: 1px solid var(--os-border); }
+.os-billing-summary dt { color: var(--os-muted); font-size: 12px; margin-bottom: 5px; }
+.os-billing-summary dd { margin: 0; font-size: 24px; font-weight: 600; line-height: 1.2; }
+.os-billing-summary dd span { color: var(--os-muted); font-size: 12px; font-weight: 400; }
+.os-billing-currency-note { color: var(--os-muted); font-size: 11px; }
+.os-billing-message { margin: 14px 0; color: var(--os-text); font-size: 12px; }
+.os-billing-toolbar { margin: 24px 0 14px; }
+.os-billing-search { min-width: 180px; width: min(300px, 100%); }
+.os-billing-table-wrap { width: 100%; max-width: 100%; overflow-x: auto; scrollbar-color: var(--os-border) var(--os-surface); }
+.os-billing-table-wrap:focus-visible { outline: 2px solid var(--os-accent); outline-offset: 3px; }
+.os-billing-table { width: 100%; min-width: 900px; border-collapse: collapse; text-align: left; font-size: 12px; }
+.os-billing-table th, .os-billing-table td { padding: 12px 14px; border-bottom: 1px solid var(--os-border); vertical-align: top; }
+.os-billing-table th:first-child, .os-billing-table td:first-child { padding-left: 0; }
+.os-billing-table th:last-child, .os-billing-table td:last-child { padding-right: 0; }
+.os-billing-table thead th { color: var(--os-muted); font-weight: 550; padding-top: 10px; padding-bottom: 9px; }
+.os-billing-table tbody th { font-weight: 500; max-width: 260px; min-width: 170px; overflow-wrap: anywhere; }
+.os-billing-table tbody tr:hover { background: var(--os-surface); }
+.os-billing-table .os-billing-number { white-space: nowrap; text-align: right; font-variant-numeric: tabular-nums; }
+.os-billing-detail { display: block; margin-top: 3px; color: var(--os-muted); font-size: 11px; font-weight: 400; }
+.os-billing-overdue { color: var(--os-warning, #d29922); white-space: nowrap; }
+.os-billing-overdue .os-billing-detail { color: inherit; }
+.os-billing-row-action { min-height: 28px; padding: 4px 9px; font-size: 11px; white-space: nowrap; }
+.os-billing-caption { text-align: left; color: var(--os-muted); font-size: 11px; padding: 8px 0 10px; }
+.os-billing-confirm-summary { display: grid; gap: 5px; }
+.os-billing-confirm-summary strong { font-size: 16px; overflow-wrap: anywhere; }
+.os-billing-confirm-summary span { color: var(--os-muted); font-size: 13px; }
+.os-billing-dialog { container-type: inline-size; container-name: billingDialog; }
+.os-billing-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.os-billing-error { color: var(--text-error, #f85149); font-size: 12px; margin: 0; line-height: 1.5; }
+@container billingDialog (max-width: 360px) { .os-billing-form-grid { grid-template-columns: minmax(0, 1fr); } }
+@container osApp (max-width: 760px) { .os-billing-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); } .os-billing-toolbar { align-items: stretch; } .os-billing-search { width: 100%; } }
 .os-client-form { container-type: inline-size; container-name: clientForm; }
 .os-client-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
 .os-client-form [hidden] { display: none; }

@@ -1,6 +1,6 @@
 ---
 name: freelance-os
-description: Manage Freelance OS clients, leads, and native project tasks through Thymer's built-in MCP. Use when recording a prospect, updating contact details or client lifecycle status, or capturing work described in an email or conversation. For plugin development, use the separate thymer-freelance-os development skill.
+description: Manage Freelance OS clients, leads, invoices, and native project tasks through Thymer's built-in MCP. Use when recording prospects, updating client lifecycle or invoice states, recording confirmed payment, or capturing work from a conversation. For plugin development, use the separate thymer-freelance-os development skill.
 ---
 
 # Freelance OS
@@ -52,6 +52,18 @@ For “This client emailed asking for these tasks”:
 - If the user explicitly wants inbox capture before a project is chosen, use the native Journal tools and include a reference to the client. Preserve the existing capture workflow.
 - Save a short source/context note only when useful to the requested task. Do not import an email thread or WhatsApp history, send correspondence, or create an automatic follow-up sequence.
 - Read back the created tasks and confirm their project and any specified dates. After an unclear write, inspect for the newly created line before retrying it.
+
+## Billing register
+
+Invoices remain records in **Invoices**. Resolve the actual schema before writing and find the existing record by `invoice_id` or title; references should be unique. Its `client` is a native Clients reference. `amount_chf` is the historical amount-field name even for other currencies: keep the explicit `currency` (configured values commonly CHF/EUR/USD) and never silently convert or add different currencies together.
+
+- `status` is the sending stage: `draft`, `ready`, `sent`. The native Preparation board changes this field only. Marking Ready does not invent an issue date. When recording Sent, use the actual `issued` date supplied or clearly implied by the user's request, and keep payment state intact.
+- `payment_status` is `unpaid`, `unconfirmed`, or `paid`. A report from a client that they sent payment can be recorded as `unconfirmed`; the user's explicit confirmation that the full payment was received permits `paid`. Save the known `paid_date` before the Paid state. Ask for a missing received date only when it cannot be inferred from what the user said.
+- A new paid record needs Sent stage, an issue date, and its payment-received date. Do not invent dates, turn a draft into an issued invoice without evidence, or mark a partially paid invoice fully paid. Partial-payment accounting is outside this register.
+- Before changing state, re-read the invoice's amount, currency, client, sending/payment fields, and dates. If they changed from what the user is acting on, resolve the conflict instead of overwriting. Validate target schema/choices before writes, read back the result, and inspect any unclear failure before retrying to avoid duplicate records or unverified payment claims.
+- Maintenance plans are references on Clients (`plan`, `monthly_chf`, `billing_cycle`, `included_hours`), not invoices or scheduled charges. Update only supplied terms. Do not create a recurring invoice, charge, PDF, or outbound reminder merely from maintenance status.
+
+Open Billing when the user asks to inspect the custom view; native invoice/client profiles remain the source records. Producing an official invoice document is a separate task from updating this register.
 
 ## Other native tools
 

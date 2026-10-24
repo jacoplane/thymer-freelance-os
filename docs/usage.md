@@ -24,7 +24,7 @@ The destination is checked again when you save. A project that was moved out of 
 
 An inbox task on a client page, or one that references a client record, can show **Link project** when it has no project relationship yet. Freelance OS lists that client’s active projects with the evidence for each suggestion. Nothing changes until you choose **Link project**; **Open project** only navigates. Before writing, the task is re-read and reclassified. If it now belongs to a project, references several projects or clients, or its project context is unresolved, Freelance OS explains that instead of appending another reference. A successful link appends a native project reference and preserves the task’s text, date and other references. The project’s Client property is never changed. Suggestions dismissed with **Not now** stay dismissed for this session.
 
-Create a new client, project or invoice using the Overview action rail. The invoice action records an issued invoice with separate sent stage and payment state; draft or ready invoices can be maintained in the native Invoices collection. This is an invoice register, not a PDF generator or email sender.
+Create a new client, project or invoice using the Overview action rail. **Billing** adds a dedicated invoice register with draft/ready/sent entry, filters, dated sending and full-payment actions, and maintenance-plan references. Sending stage and payment state remain separate. The optional native Preparation board changes sending stage only. See the [Billing guide](billing.md).
 
 ## Start and connect projects
 

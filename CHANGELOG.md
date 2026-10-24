@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.8.0 — 2026-10-24
+
+- Add a dedicated Billing page with a compact summary, searchable invoice table, invoice filters, and maintenance-plan references.
+- Add explicit Ready to send, Mark sent, and Record full payment actions with date entry, schema validation, stale-record checks, and verified native writes.
+- Keep sending stage and payment state separate; native Preparation kanban moves sending stage only and excludes paid invoices.
+- Support draft, ready, and sent invoice entry with configured currencies and duplicate-reference prevention.
+- Keep CHF totals separate from other currencies while counting invoices across all currencies.
+
 ## 1.7.0 — 2026-10-24
 
 - Use one client lifecycle Status from New lead through Proposal accepted, Active client, On maintenance, and Archived.

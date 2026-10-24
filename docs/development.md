@@ -26,6 +26,7 @@ node test/live-collections.mjs
 node test/live-workflow.mjs
 node test/live-create.mjs
 node test/live-clients.mjs
+node test/live-billing.mjs
 ```
 
 Run these with the intended dashboard workspace active. Set `THYMER_WORKSPACE` to that explicit workspace GUID before the creation check. Set `OS_SKIP_RELOAD=1` if you have just reloaded the saved bundle yourself. `OS_ARTIFACT_DIR` selects a local screenshot directory. The workflow check creates temporary tasks and a dated review, verifies behavior, removes its fixtures and restores local workflow state. The creation check creates temporary client, project and invoice records, verifies their properties and a project status change, then moves only its own fixtures to Trash.
@@ -33,6 +34,8 @@ Run these with the intended dashboard workspace active. Set `THYMER_WORKSPACE` t
 `live-workflow.mjs` only accepts the dedicated test workspace `W8JXPTMKY8DEDMGB3JZ6ARRHJ2` and plugin `1Y01APTHH8RZN3BRYVHQT0YXQP`. It rejects production before reload or mutation, creates its own project, reserves empty future Journal dates, registers pending review headings immediately, and restores raw local storage. Cleanup checks that existing project/Journal content is unchanged. A failed run with cleanup failures retains its browser fixture ledger for diagnosis; do not start another run over an unresolved ledger. Other live scripts have their own target checks; do not run mutation tests on production.
 
 `live-clients.mjs` uses the same production guard. It verifies lead creation through native Thymer MCP, lifecycle changes and contact edits in the dashboard, duplicate prevention, conversion and archiving, native project task capture, the native Leads table in a split panel, and actual native drag-handle movement on the Status board. When an active legacy field exists, it also verifies its backed-up migration and that rerunning cannot undo a later deliberate status reset. Its temporary records are moved to Trash and the original dashboard state and panel layout are restored. Screenshots and a result report stay in the local temporary directory, not Git.
+
+`live-billing.mjs` also rejects production. It owns its client and invoice fixtures, checks separate sending/payment transitions, dated full-payment confirmation, stale-form rejection, duplicate references, maintenance references, and native Preparation board dragging. It checks split-panel overflow, restores the original UI, removes its fixtures, and verifies that existing invoice states, amounts, and dates stayed unchanged.
 
 ## Reproduce the fictional demo
 

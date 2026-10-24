@@ -8,7 +8,7 @@ const DASHBOARD_PANEL_ID = 'freelance-os-dashboard';
 const COLLECTION_ROLES = ['Projects', 'Clients', 'Invoices', 'Library', 'Journal', 'Support Sessions'];
 
 const COLLECTION_VIEWS = {
-    Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
+    Invoices: { all: 'Register', board: 'Preparation', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
     Projects: { all: 'Register', board: 'Board', in_progress: 'Active', overdue: 'Overdue', deadlines: 'Due dates' },
     Clients: { all: 'Directory', status: 'Status', active: 'Active', prospects: 'Leads', leads: 'Leads', archived: 'Archived', 'care-plans': 'Care plans' },
     'Support Sessions': { all: 'Register' }
@@ -382,6 +382,7 @@ export class Plugin extends AppPlugin {
         this.clientProjectGuid = '';
         this.clientFilter = 'all';
         this.invoiceFilter = 'all';
+        this.billingTab = 'invoices'; this.billingSearch = ''; this.billingMessage = '';
         this.searchQuery = '';
         this.agendaTab = null;
         this.agendaTabSetByUser = false;
@@ -474,7 +475,7 @@ export class Plugin extends AppPlugin {
         clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
             // Preserve focus and selection while composing. Blur flushes the deferred refresh.
-            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-status')) {
+            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-status, .os-billing-dialog')) {
                 this.workflowRefreshPending = true;
                 return;
             }
@@ -485,7 +486,7 @@ export class Plugin extends AppPlugin {
 
     flushRefresh() {
         if (!this.workflowRefreshPending) return;
-        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-status')) return;
+        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-status, .os-billing-dialog')) return;
         this.workflowRefreshPending = false;
         this.scheduleRefresh();
     }
@@ -799,6 +800,7 @@ export class Plugin extends AppPlugin {
                     mrr: mrrVal,
                     plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} CHF/mo` : 'Active'),
                     planValue: getProp(cr, 'plan') || '',
+                    billingCycle: getProp(cr, 'billing_cycle') || '',
                     includedHours: Math.max(0, Number(getProp(cr, 'included_hours')) || 0),
                     contact: getProp(cr, 'contact') || '', email: getProp(cr, 'email') || '', phone: getProp(cr, 'phone') || '', website: getProp(cr, 'website') || '',
                     leadStage: getProp(cr, 'lead_stage') || ''
@@ -813,6 +815,7 @@ export class Plugin extends AppPlugin {
 
             // 2. Fetch Invoices
             const invRecords = await readCollection(this.collectionGuid('Invoices'));
+            data.invoiceCurrencies = collections.find(collection => collection.getGuid() === this.collectionGuid('Invoices', collections))?.getConfiguration?.()?.fields?.find(field => field.label === 'currency')?.choices?.filter(choice => choice.active !== false).map(choice => choice.label) || ['CHF', 'EUR', 'USD'];
             const invoiceList = [];
             const today = dateDay(localDate());
 
@@ -841,6 +844,7 @@ export class Plugin extends AppPlugin {
                     record: ir,
                     guid: ir.guid,
                     name,
+                    invoiceId: getProp(ir, 'invoice_id') || name,
                     amount: amt,
                     status,
                     stage,
@@ -849,7 +853,8 @@ export class Plugin extends AppPlugin {
                     isOutstanding,
                     daysOverdue,
                     clientName: client,
-                    dueDate: dueDay !== null ? due : ''
+                    dueDate: dueDay !== null ? due : '',
+                    issuedDate: getProp(ir, 'issued') || '', paidDate: getProp(ir, 'paid_date') || ''
                 });
             }
 
@@ -1195,13 +1200,25 @@ export class Plugin extends AppPlugin {
         for (const [label, value] of Object.entries(values)) {
             if (value === '' || value === null || value === undefined) continue;
             const field = fields.find(item => item.label === label || item.id === label);
-            if (!field || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the ${role}.${label} field in your collection setup`);
+            if (!field || field.active === false || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the ${role}.${label} field in your collection setup`);
+            if (role === 'Invoices') {
+                const expected = { invoice_id: 'text', client: 'record', amount_chf: 'number', currency: 'choice', status: 'choice', payment_status: 'choice', issued: 'datetime', due: 'datetime', paid_date: 'datetime' };
+                if (expected[label] && field.type !== expected[label]) throw new Error(`Check the Invoices.${label} field type in your collection setup`);
+            }
         }
-        if (role === 'Projects' && values.client) {
+        if (['Projects', 'Invoices'].includes(role) && values.client) {
             const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
             if (!clients || !(await clients.getAllRecords()).some(item => item.guid === values.client && !isTemplateRecord(item))) throw new Error('Choose a client from your Clients collection');
         }
         if (role === 'Clients' && (await collection.getAllRecords()).some(item => !isTemplateRecord(item) && (item.getName?.() || item.name || '').trim().toLowerCase() === title.trim().toLowerCase())) throw new Error('A client or lead with this name already exists. Open its profile to update it.');
+        if (role === 'Invoices') {
+            if (!title.trim() || !Number.isFinite(Number(values.amount_chf)) || !(Number(values.amount_chf) > 0) || !values.client) throw new Error('Enter an invoice reference, positive amount, and client.');
+            if (!['draft', 'ready', 'sent'].includes(values.status) || !['unpaid', 'unconfirmed', 'paid'].includes(values.payment_status) || !values.currency) throw new Error('Choose the invoice sending stage, payment state, and currency.');
+            for (const label of ['issued', 'due', 'paid_date']) if (values[label] && (dateDay(values[label]) === null || (label !== 'due' && values[label] > localDate()))) throw new Error('Choose valid invoice dates; issue and payment dates cannot be in the future.');
+            if (values.status === 'sent' && dateDay(values.issued) === null) throw new Error('A sent invoice needs its valid issue date.');
+            if (values.payment_status === 'paid' && (values.status !== 'sent' || dateDay(values.paid_date) === null || values.paid_date > localDate())) throw new Error('Paid invoices need Sent stage and a valid payment date no later than today.');
+            if ((await collection.getAllRecords()).some(item => [item.getName?.() || item.name || '', getProp(item, 'invoice_id')].some(reference => String(reference).trim().toLowerCase() === title.trim().toLowerCase()))) throw new Error('This invoice reference already exists. Open the existing invoice to update it.');
+        }
         if (role === 'Support Sessions') {
             if (!values.client) throw new Error('Choose a client for this support session');
             const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
@@ -1223,18 +1240,36 @@ export class Plugin extends AppPlugin {
         }
         if (!record) throw new Error('The page was created but could not be loaded. Open its collection before retrying.');
         try {
-            for (const [label, value] of Object.entries(values)) {
+            const writes = Object.entries(values);
+            if (role === 'Invoices') {
+                const order = label => label === 'payment_status' ? 3 : label === 'status' ? 2 : ['issued', 'due', 'paid_date'].includes(label) ? 1 : 0;
+                writes.sort(([a], [b]) => order(a) - order(b));
+            }
+            for (const [label, value] of writes) {
                 if (value === '' || value === null || value === undefined) continue;
                 const field = fields.find(item => item.label === label || item.id === label);
                 const property = record.prop(label);
                 if (field.type === 'choice') { if (!property.setChoice(value)) throw new Error(`Could not set ${label}`); }
                 else if (field.type === 'datetime') {
                     const parts = value.split('-').map(Number);
-                    property.set(DateTime.dateOnly(parts[0], parts[1] - 1, parts[2]).value());
+                    if (property.set(DateTime.dateOnly(parts[0], parts[1] - 1, parts[2]).value()) === false) throw new Error(`Could not set ${label}`);
                 } else if (property.set(value) === false) throw new Error(`Could not set ${label}`);
             }
             if (role === 'Projects') await this.initializeProject(record, options);
-        } catch (error) { record.trash(); throw error; }
+            if (role === 'Invoices') {
+                const verified = (await collection.getAllRecords()).find(item => item.guid === guid);
+                for (const [label, value] of writes) {
+                    if (value === '' || value === null || value === undefined) continue;
+                    const actual = label === 'client' ? getClientGuid(verified) : getProp(verified, label);
+                    if (!verified || String(actual) !== String(value)) throw new Error(`The new invoice's ${label} could not be verified.`);
+                }
+                record = verified;
+            }
+        } catch (error) {
+            try { if (await record.trash() === false) throw new Error('Removal failed'); }
+            catch { throw new Error(`The new page could not be fully saved or removed. Open its collection before retrying. ${error.message}`); }
+            throw error;
+        }
         return record;
     }
 
@@ -1511,85 +1546,7 @@ export class Plugin extends AppPlugin {
     }
 
     showCreateInvoiceModal(panel, data) {
-        const modal = document.createElement('div');
-        modal.className = 'os-modal-backdrop';
-
-        const clientOptions = data.clients.map(c => `<option value="${c.guid}">${escapeHtml(c.name)}</option>`).join('');
-        const nextInvNum = `FAC-2026-${String(data.issuedCount + 1).padStart(3, '0')}`;
-
-        modal.innerHTML = `
-            <div class="os-modal-card">
-                <div class="os-modal-header">
-                    <h3>Create New Invoice</h3>
-                    <button class="os-modal-close" type="button">✕</button>
-                </div>
-                <div class="os-modal-body">
-                    <div style="display:flex;gap:12px;">
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Invoice Number *</label>
-                            <input type="text" class="os-input input-title" value="${nextInvNum}" autofocus />
-                        </div>
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Amount (CHF) *</label>
-                            <input type="number" class="os-input input-amount" placeholder="e.g. 350" />
-                        </div>
-                    </div>
-                    <div class="os-form-group">
-                        <label>Client *</label>
-                        <select class="os-select input-client">
-                            ${clientOptions}
-                        </select>
-                    </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Status</label>
-                            <select class="os-select input-status">
-                                <option value="unpaid" selected>Unpaid / Sent</option>
-                                <option value="paid">Paid</option>
-                            </select>
-                        </div>
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Due Date</label>
-                            <input type="date" class="os-input input-due" />
-                        </div>
-                    </div>
-                </div>
-                <div class="os-modal-footer">
-                    <button class="os-button btn-cancel" type="button">Cancel</button>
-                    <button class="os-button os-primary btn-submit" type="button">Create Invoice</button>
-                </div>
-            </div>
-        `;
-
-        const close = () => modal.remove();
-        modal.querySelector('.os-modal-close').addEventListener('click', close);
-        modal.querySelector('.btn-cancel').addEventListener('click', close);
-        modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-
-        modal.querySelector('.btn-submit').addEventListener('click', async () => {
-            const title = modal.querySelector('.input-title').value.trim();
-            const amount = Number(modal.querySelector('.input-amount').value) || 0;
-            const clientGuid = modal.querySelector('.input-client').value;
-            if (!title || !Number.isFinite(amount) || amount <= 0 || !clientGuid) {
-                alert('Please enter an invoice number, a positive amount, and a client.');
-                return;
-            }
-            const status = modal.querySelector('.input-status').value;
-            const due = modal.querySelector('.input-due').value;
-            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
-            try {
-                await this.createConfiguredRecord('Invoices', title, { amount_chf: amount, client: clientGuid, status: 'sent', payment_status: status, currency: 'CHF', due, issued: localDate(), ...(status === 'paid' ? {paid_date:localDate()} : {}) });
-                this.ui.addToaster({ title: `✓ Created Invoice "${title}"`, autoDestroyTime: 2500, dismissible: true });
-                close();
-                this.currentTab = 'invoices';
-                this.scheduleRefresh();
-            } catch (err) {
-                submit.disabled = false;
-                this.ui.addToaster({ title: err.message || 'Invoice could not be created', dismissible: true });
-            }
-        });
-
-        document.body.appendChild(modal);
+        return this.showBillingInvoiceModal(panel, data);
     }
 
     async render(panel) {
@@ -1613,15 +1570,16 @@ export class Plugin extends AppPlugin {
 
         const renderVersion = this.renderVersion = (this.renderVersion || 0) + 1;
         const mode = this.workflowMode || 'overview';
+        const needsWorkflow = !['overview', 'billing'].includes(mode);
         let workflow;
-        if (mode !== 'overview') {
+        if (needsWorkflow) {
             try { workflow = await this.loadWorkflowData({ expectedVersion: renderVersion, deferApply: true }); }
             catch { workflow = { error: 'Project tasks could not be loaded. Check collection mappings in Settings, then retry.' }; }
             this.workflowData = workflow;
         }
-        const data = mode === 'overview' ? await this.loadData() : { projects: workflow?.projects || [] };
+        const data = !needsWorkflow ? await this.loadData() : { projects: workflow?.projects || [] };
         if (renderVersion !== this.renderVersion) return;
-        if (mode !== 'overview' && !workflow?.error) {
+        if (needsWorkflow && !workflow?.error) {
             const applied = await this.applyWorkflowSnapshot(workflow, { expectedVersion: renderVersion });
             if (!applied && workflow.stale) return;
             if (renderVersion !== this.renderVersion) return;
@@ -1654,7 +1612,7 @@ export class Plugin extends AppPlugin {
                 </div>
                 <div>
                     <h1>Freelance OS</h1>
-                    <div class="os-subtitle">Workspace Overview · ${dateStr}</div>
+                    <div class="os-subtitle">${mode === 'billing' ? 'Billing' : 'Workspace Overview'} · ${dateStr}</div>
                 </div>
             </div>
             <div class="os-capture">
@@ -1672,7 +1630,7 @@ export class Plugin extends AppPlugin {
             </div>
             <div class="os-header-actions">
                 <button class="os-button os-btn-board" type="button">
-                    <span>🗂 Open board</span>
+                    <span>${mode === 'billing' ? 'Preparation board' : '🗂 Open board'}</span>
                 </button>
             </div>
         `;
@@ -1741,7 +1699,7 @@ export class Plugin extends AppPlugin {
         });
 
         header.querySelector('.os-btn-board').addEventListener('click', () => {
-            this.openCollection(this.collectionGuid('Projects'), panel, 'board');
+            this.openCollection(this.collectionGuid(mode === 'billing' ? 'Invoices' : 'Projects'), panel, 'board');
         });
 
         app.appendChild(header);
@@ -1749,7 +1707,7 @@ export class Plugin extends AppPlugin {
         const modes = document.createElement('nav');
         modes.className = 'os-workflow-modes';
         modes.setAttribute('aria-label', 'Dashboard sections');
-        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['review', 'Weekly review'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
+        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['billing', 'Billing'], ['review', 'Weekly review'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" data-focus-key="mode-${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
         app.appendChild(modes);
         if (this.workflowStorageError) {
@@ -1759,12 +1717,13 @@ export class Plugin extends AppPlugin {
             storageWarning.textContent = this.workflowStorageError;
             app.appendChild(storageWarning);
         }
-        if (mode === 'overview' && data.missingCollections?.length) {
+        if (!needsWorkflow && data.missingCollections?.length) {
             const setup = document.createElement('section'); setup.className = 'os-workflow os-workflow-settings';
             setup.innerHTML = `<h2>Set up your workspace</h2><p>Freelance OS needs Clients, Projects and Invoices collections with its starter fields.</p><p>Missing collections: ${data.missingCollections.map(escapeHtml).join(', ')}. Create them using the setup guide, or map your existing collections in Settings.</p><button class="os-button os-primary">Choose collections</button>`;
             setup.querySelector('button').onclick = () => { this.workflowMode = 'settings'; this.render(panel); };
             app.appendChild(setup); this.mountWorkflowApp(container, app); return;
         }
+        if (mode === 'billing') { app.appendChild(this.renderBilling(data, panel)); this.mountWorkflowApp(container, app); return; }
         if (mode !== 'overview') {
             app.appendChild(mode === 'settings' ? this.renderWorkflowSettings(panel) : this.renderWorkflow(workflow, panel));
             this.mountWorkflowApp(container, app);
