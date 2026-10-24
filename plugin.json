@@ -1,12 +1,12 @@
 {
   "ver": 1,
   "name": "Freelance OS",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "author": "jacoplane",
   "repository": "https://github.com/jacoplane/thymer-freelance-os",
   "icon": "layout-grid",
   "item_name": "Freelance OS",
-  "description": "Freelance dashboard with daily task triage, cashflow, client support time, project next actions and weekly reviews.",
+  "description": "Freelance dashboard with clients and leads, daily task triage, cashflow, support time and weekly reviews.",
   "type": "app",
   "show_sidebar_items": true,
   "show_cmdpal_items": true

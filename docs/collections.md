@@ -13,8 +13,13 @@ The starter command creates these fields and views. A collection name mapping do
 | `monthly_chf` | Number | Monthly recurring value; positive values on active clients contribute to MRR |
 | `billing_cycle` | Choice | `Monthly`, `Annual`, `Project` |
 | `included_hours` | Number | Care plan reference |
-| `contact` | Text | Contact details |
+| `contact` | Text | Primary contact name or existing freeform contact details |
+| `email` | Text | Optional primary contact email |
+| `phone` | Text | Optional phone number |
 | `website` | URL | Client website |
+| `lead_stage` | Choice | `new`, `contacted`, `discussing`, `proposal_sent`; used while status is `prospect` |
+
+Clients and leads share the same collection. Set `status` to `active` when a lead becomes a client, or `archived` when it does not proceed. Keep the original record so its notes and linked work remain intact. The native Leads view filters `status = prospect`. See [client and lead tracking](client-tracking.md) for the lightweight workflow and Thymer MCP skill.
 
 MRR reads `monthly_chf` directly; an annual billing cycle does not automatically divide a yearly amount by twelve. Store the normalized monthly value in that field.
 

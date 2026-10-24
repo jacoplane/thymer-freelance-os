@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.6.0 — 2026-10-24
+
+- Manage clients and leads in the existing Clients collection, with primary contact, email, phone, and simple lead stages.
+- Add searchable Clients, Leads, and Archived filters, quick lead-stage updates, and an accessible create/edit form.
+- Preserve the same native client record when a lead becomes a client; keep linked projects, tasks, notes, and invoices intact.
+- Add the Freelance OS skill for Thymer's built-in MCP: capture client work as native project tasks and maintain the lead register from natural-language requests.
+- Add a preview-first Clients-only schema upgrade that preserves existing field and view identifiers.
+
 ## 1.5.0 — 2026-10-24
 
 - Add the Start Here daily triage shortlist with explainable task ranking and one-step Focus pinning.

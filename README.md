@@ -13,6 +13,7 @@ All screenshots use a separate demo workspace with fictional content.
 ## What it does
 
 - **Overview is home.** Recurring revenue, issued invoices, confirmed payments, overdue balances, client relationships, projects and an agenda in one view.
+- **Keep clients and leads together.** Store primary contact details, track a lead from New to Proposal sent, and change it to a client on the same native record. Search by company, contact, email or phone. The optional [Freelance OS skill](.agents/skills/freelance-os/SKILL.md) uses Thymer's built-in MCP to maintain this register and capture client requests as native project tasks. See [client and lead tracking](docs/client-tracking.md).
 - **Give projects a useful starting point.** Create a native brief, next actions, deliverable links, client review checkpoints and decision log. The checkpoint section uses project tasks and due dates, so approvals stay with the work. Open a project's client profile or filter a client's projects from their card.
 - **Move each project forward.** Choose its next action from Today or Weekly review. Freelance OS writes a linked reference under the project’s **Next actions** section, so the choice travels with the project across devices; Overview and the focused queue use that same reference.
 - **Pick today’s focus.** Pin up to three project tasks. Search, scope by project and use simple presets such as due/overdue, important or no date. Complete work, reschedule tasks, or record a waiting reason and follow-up date.

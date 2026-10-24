@@ -10,7 +10,7 @@ const COLLECTION_ROLES = ['Projects', 'Clients', 'Invoices', 'Library', 'Journal
 const COLLECTION_VIEWS = {
     Invoices: { all: 'Register', outstanding: 'Outstanding', overdue: 'Overdue', review: 'To confirm', 'to-send': 'To send', paid: 'Paid' },
     Projects: { all: 'Register', board: 'Board', in_progress: 'Active', overdue: 'Overdue', deadlines: 'Due dates' },
-    Clients: { all: 'Directory', active: 'Active', prospects: 'Prospects', 'care-plans': 'Care plans' },
+    Clients: { all: 'Directory', active: 'Active', prospects: 'Leads', leads: 'Leads', archived: 'Archived', 'care-plans': 'Care plans' },
     'Support Sessions': { all: 'Register' }
 };
 
@@ -300,6 +300,18 @@ function summarizeInvoices(invoices) {
     return summary;
 }
 
+const LEAD_STAGES = { new: 'New', contacted: 'Contacted', discussing: 'Discussing', proposal_sent: 'Proposal sent' };
+function isLeadClient(client) { return ['prospect', 'lead'].includes(client.status); }
+function clientMatches(client, filter = 'all') {
+    if (filter === 'leads') return isLeadClient(client);
+    if (filter === 'active') return client.status === 'active';
+    if (filter === 'archived') return ['archived', 'cancelled'].includes(client.status);
+    return true;
+}
+function clientSearchText(client) {
+    return [client.name, client.contact, client.email, client.phone, client.website, client.plan, LEAD_STAGES[client.leadStage]].filter(Boolean).join(' ').toLowerCase();
+}
+
 function clientSummary(client, projects, invoices) {
     const linked = invoices.filter(i => i.clientGuid === client.guid && i.currency === 'CHF');
     return {
@@ -363,6 +375,7 @@ export class Plugin extends AppPlugin {
         this.currentTab = 'projects';
         this.projectFilter = 'all'; // 'all', 'in_progress', 'backlog', 'completed'
         this.clientProjectGuid = '';
+        this.clientFilter = 'all';
         this.invoiceFilter = 'all';
         this.searchQuery = '';
         this.agendaTab = null;
@@ -456,7 +469,7 @@ export class Plugin extends AppPlugin {
         clearTimeout(this.refreshTimer);
         this.refreshTimer = setTimeout(() => {
             // Preserve focus and selection while composing. Blur flushes the deferred refresh.
-            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields')) {
+            if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-stage')) {
                 this.workflowRefreshPending = true;
                 return;
             }
@@ -467,7 +480,7 @@ export class Plugin extends AppPlugin {
 
     flushRefresh() {
         if (!this.workflowRefreshPending) return;
-        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields')) return;
+        if (document.activeElement?.closest('.os-capture, .os-review-form, .os-action-editor, .os-settings-fields, .os-client-form, .os-client-stage')) return;
         this.workflowRefreshPending = false;
         this.scheduleRefresh();
     }
@@ -780,7 +793,10 @@ export class Plugin extends AppPlugin {
                     status,
                     mrr: mrrVal,
                     plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} CHF/mo` : 'Active'),
-                    includedHours: Math.max(0, Number(getProp(cr, 'included_hours')) || 0)
+                    planValue: getProp(cr, 'plan') || '',
+                    includedHours: Math.max(0, Number(getProp(cr, 'included_hours')) || 0),
+                    contact: getProp(cr, 'contact') || '', email: getProp(cr, 'email') || '', phone: getProp(cr, 'phone') || '', website: getProp(cr, 'website') || '',
+                    leadStage: getProp(cr, 'lead_stage') || ''
                 });
             }
 
@@ -1180,6 +1196,7 @@ export class Plugin extends AppPlugin {
             const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
             if (!clients || !(await clients.getAllRecords()).some(item => item.guid === values.client && !isTemplateRecord(item))) throw new Error('Choose a client from your Clients collection');
         }
+        if (role === 'Clients' && (await collection.getAllRecords()).some(item => !isTemplateRecord(item) && (item.getName?.() || item.name || '').trim().toLowerCase() === title.trim().toLowerCase())) throw new Error('A client or lead with this name already exists. Open its profile to update it.');
         if (role === 'Support Sessions') {
             if (!values.client) throw new Error('Choose a client for this support session');
             const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
@@ -1377,81 +1394,122 @@ export class Plugin extends AppPlugin {
         modal.querySelector('.input-title').focus();
     }
 
-    showCreateClientModal(panel) {
+    async updateClientDetails(client, values) {
+        const collections = await this.data.getAllCollections();
+        const collection = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
+        if (!collection) throw new Error('Choose your Clients collection in Settings.');
+        const record = (await collection.getAllRecords()).find(item => item.guid === client.guid);
+        if (!record || isTemplateRecord(record)) throw new Error('This client could not be found. Refresh and try again.');
+        const fields = collection.getConfiguration().fields;
+        const properties = [];
+        for (const [label, value] of Object.entries(values)) {
+            const field = fields.find(item => item.label === label);
+            if (!field && value === '') continue;
+            if (!field || field.active === false || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the Clients.${label} field in your collection setup.`);
+            const current = label === 'monthly_chf' ? Number(getProp(record, label)) || 0 : getProp(record, label);
+            const previous = label === 'monthly_chf' ? client.mrr : label === 'lead_stage' ? client.leadStage : label === 'plan' ? client.planValue ?? client.plan : client[label];
+            if (String(value) === String(previous ?? '')) continue;
+            if (String(current) !== String(previous ?? '') && String(current) !== String(value)) throw new Error(`${label} changed elsewhere. Close this form and refresh before editing it again.`);
+            const property = record.prop(label);
+            if (!property) throw new Error(`The ${label} field could not be loaded.`);
+            properties.push({ field, property, value });
+        }
+        for (const { field, property, value } of properties) {
+            const saved = field.type === 'choice' ? property.setChoice(value) : property.set(value);
+            if (saved === false) throw new Error(`${field.label} could not be saved. Check the profile before retrying.`);
+        }
+    }
+
+    showCreateClientModal(panel, client = null, initialStatus = 'active') {
+        const editing = !!client;
+        const status = client?.status === 'lead' ? 'prospect' : client?.status || initialStatus;
+        const launchControl = document.activeElement;
+        let saving = false;
         const modal = document.createElement('div');
         modal.className = 'os-modal-backdrop';
-
         modal.innerHTML = `
-            <div class="os-modal-card">
+            <form class="os-modal-card os-client-form" role="dialog" aria-modal="true" aria-labelledby="os-client-form-title">
                 <div class="os-modal-header">
-                    <h3>Create New Client</h3>
-                    <button class="os-modal-close" type="button">✕</button>
+                    <h3 id="os-client-form-title">${editing ? 'Edit details' : status === 'prospect' ? 'Add lead' : 'Add client'}</h3>
+                    <button class="os-modal-close" type="button" aria-label="Close">✕</button>
                 </div>
                 <div class="os-modal-body">
                     <div class="os-form-group">
-                        <label>Client Name *</label>
-                        <input type="text" class="os-input input-title" placeholder="e.g. Acme Corp" autofocus />
+                        <label for="os-client-name">Client or company name *</label>
+                        <input id="os-client-name" type="text" class="os-input input-title" value="${escapeHtml(client?.name || '')}" placeholder="e.g. Acme Studio" required ${editing ? 'readonly' : ''} />
                     </div>
-                    <div style="display:flex;gap:12px;">
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Monthly Retainer (CHF)</label>
-                            <input type="number" class="os-input input-mrr" placeholder="e.g. 150" />
-                        </div>
-                        <div class="os-form-group" style="flex:1;">
-                            <label>Status</label>
-                            <select class="os-select input-status">
-                                <option value="active" selected>Active Client</option>
-                                <option value="prospect">Prospect / Lead</option>
+                    <div class="os-client-form-grid">
+                        <div class="os-form-group">
+                            <label for="os-client-status">Relationship</label>
+                            <select id="os-client-status" class="os-select input-status">
+                                <option value="active">Client</option><option value="prospect">Lead</option><option value="archived">Archived</option>
                             </select>
                         </div>
+                        <div class="os-form-group os-lead-stage-field" ${status === 'prospect' ? '' : 'hidden'}>
+                            <label for="os-client-stage">Lead stage</label>
+                            <select id="os-client-stage" class="os-select input-stage"><option value="" disabled>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}">${label}</option>`).join('')}</select>
+                        </div>
+                        <div class="os-form-group"><label for="os-client-contact">Contact</label><input id="os-client-contact" class="os-input input-contact" value="${escapeHtml(client?.contact || '')}" autocomplete="name" placeholder="e.g. Alex Martin" /></div>
+                        <div class="os-form-group"><label for="os-client-email">Email</label><input id="os-client-email" type="email" class="os-input input-email" value="${escapeHtml(client?.email || '')}" autocomplete="email" placeholder="alex@example.com" /></div>
+                        <div class="os-form-group"><label for="os-client-phone">Phone</label><input id="os-client-phone" type="tel" class="os-input input-phone" value="${escapeHtml(client?.phone || '')}" autocomplete="tel" /></div>
+                        <div class="os-form-group"><label for="os-client-website">Website</label><input id="os-client-website" type="url" class="os-input input-website" value="${escapeHtml(client?.website || '')}" placeholder="https://example.com" /></div>
                     </div>
-                    <div class="os-form-group">
-                        <label>Plan / Retainer Service</label>
-                        <input type="text" class="os-input input-plan" placeholder="e.g. Website Maintenance & SEO" />
-                    </div>
-                    <div class="os-form-group">
-                        <label>Website URL</label>
-                        <input type="url" class="os-input input-website" placeholder="https://example.com" />
-                    </div>
+                    <details class="os-client-care-plan"><summary>Care plan (optional)</summary><div class="os-client-form-grid">
+                        <div class="os-form-group"><label for="os-client-plan">Service</label><input id="os-client-plan" class="os-input input-plan" value="${escapeHtml(client?.planValue ?? (client?.plan === 'Active' ? '' : client?.plan || ''))}" placeholder="e.g. Website maintenance" /></div>
+                        <div class="os-form-group"><label for="os-client-mrr">Monthly retainer (CHF)</label><input id="os-client-mrr" type="number" min="0" step="any" class="os-input input-mrr" value="${Number(client?.mrr) || ''}" /></div>
+                    </div></details>
+                    <p class="os-form-help">Keep short notes on the native profile. Projects and tasks stay in their existing Thymer pages.</p>
+                    <p class="os-client-form-error" role="alert" hidden></p>
                 </div>
                 <div class="os-modal-footer">
                     <button class="os-button btn-cancel" type="button">Cancel</button>
-                    <button class="os-button os-primary btn-submit" type="button">Create Client</button>
+                    <button class="os-button os-primary btn-submit" type="submit">${editing ? 'Save details' : 'Add ' + (status === 'prospect' ? 'lead' : 'client')}</button>
                 </div>
-            </div>
+            </form>
         `;
-
-        const close = () => modal.remove();
+        const form = modal.querySelector('form');
+        const statusInput = modal.querySelector('.input-status'); statusInput.value = status;
+        modal.querySelector('.input-stage').value = LEAD_STAGES[client?.leadStage] ? client.leadStage : editing ? '' : 'new';
+        statusInput.onchange = () => {
+            modal.querySelector('.os-lead-stage-field').hidden = statusInput.value !== 'prospect';
+            if (!editing) modal.querySelector('.btn-submit').textContent = statusInput.value === 'prospect' ? 'Add lead' : 'Add client';
+        };
+        const close = () => { if (saving) return; modal.remove(); if (launchControl?.isConnected) launchControl.focus(); this.flushRefresh(); };
         modal.querySelector('.os-modal-close').addEventListener('click', close);
         modal.querySelector('.btn-cancel').addEventListener('click', close);
         modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
-
-        modal.querySelector('.btn-submit').addEventListener('click', async () => {
-            const title = modal.querySelector('.input-title').value.trim();
-            if (!title) {
-                alert('Please enter a client name.');
-                return;
-            }
-
-            const mrr = Number(modal.querySelector('.input-mrr').value) || 0;
-            const status = modal.querySelector('.input-status').value;
-            const plan = modal.querySelector('.input-plan').value.trim();
-            const website = modal.querySelector('.input-website').value.trim();
-            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
-            try {
-                await this.createConfiguredRecord('Clients', title, { monthly_chf: mrr, status, plan, website });
-                this.ui.addToaster({ title: `✓ Created Client "${title}"`, autoDestroyTime: 2500, dismissible: true });
-                close();
-                this.currentTab = 'clients';
-                this.scheduleRefresh();
-            } catch (err) {
-                submit.disabled = false;
-                this.ui.addToaster({ title: err.message || 'Client could not be created', dismissible: true });
+        modal.addEventListener('keydown', event => {
+            if (event.key === 'Escape') { event.preventDefault(); close(); }
+            if (event.key === 'Tab') {
+                const controls = [...modal.querySelectorAll('button, input, select, summary')].filter(el => !el.disabled && el.getClientRects().length);
+                const first = controls[0], last = controls.at(-1);
+                if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+                else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
             }
         });
-
+        form.addEventListener('submit', async event => {
+            event.preventDefault(); if (saving || !form.reportValidity()) return;
+            const title = modal.querySelector('.input-title').value.trim();
+            const error = modal.querySelector('.os-client-form-error'); error.hidden = true;
+            if (!title) { error.textContent = 'Enter a client or company name.'; error.hidden = false; return; }
+            const values = { monthly_chf: Number(modal.querySelector('.input-mrr').value) || 0, status: statusInput.value,
+                plan: modal.querySelector('.input-plan').value.trim(), website: modal.querySelector('.input-website').value.trim(),
+                contact: modal.querySelector('.input-contact').value.trim(), email: modal.querySelector('.input-email').value.trim(), phone: modal.querySelector('.input-phone').value.trim() };
+            if (values.status === 'prospect' && modal.querySelector('.input-stage').value) values.lead_stage = modal.querySelector('.input-stage').value;
+            const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
+            saving = true; form.setAttribute('aria-busy', 'true'); submit.textContent = 'Saving…';
+            try {
+                if (editing) await this.updateClientDetails(client, values);
+                else await this.createConfiguredRecord('Clients', title, values);
+                saving = false; close(); this.currentTab = 'clients'; this.clientFilter = values.status === 'prospect' ? 'leads' : values.status === 'archived' ? 'archived' : 'active';
+                this.scheduleRefresh();
+            } catch (err) {
+                saving = false; form.removeAttribute('aria-busy'); submit.disabled = false; submit.textContent = editing ? 'Save details' : 'Add ' + (values.status === 'prospect' ? 'lead' : 'client');
+                error.textContent = err.message || 'Details could not be saved. Your entries are still here.'; error.hidden = false; error.tabIndex = -1; error.focus();
+            }
+        });
         document.body.appendChild(modal);
-        modal.querySelector('.input-title').focus();
+        modal.querySelector(editing ? '.input-contact' : '.input-title').focus();
     }
 
     showCreateInvoiceModal(panel, data) {
@@ -1737,7 +1795,7 @@ export class Plugin extends AppPlugin {
             <div class="os-metric metric-clients" title="Click to view Clients">
                 <div class="os-metric-label">Active clients</div>
                 <div class="os-metric-value">${data.activeClientsCount}</div>
-                <div class="os-metric-footnote">${data.prospectsCount} prospects in pipeline</div>
+                <div class="os-metric-footnote">${data.prospectsCount} leads</div>
             </div>
         `;
 
@@ -1830,6 +1888,7 @@ export class Plugin extends AppPlugin {
                 <button class="os-button btn-new-client" type="button">
                     <span>+ New client</span>
                 </button>
+                <button class="os-button btn-new-lead" type="button"><span>+ New lead</span></button>
                 <button class="os-button btn-new-invoice" type="button">
                     <span>+ New invoice</span>
                 </button>
@@ -1849,6 +1908,7 @@ export class Plugin extends AppPlugin {
         rail.querySelector('.btn-new-task').addEventListener('click', () => captureInput.focus());
         rail.querySelector('.btn-new-project').addEventListener('click', () => this.showCreateProjectModal(panel, data));
         rail.querySelector('.btn-new-client').addEventListener('click', () => this.showCreateClientModal(panel));
+        rail.querySelector('.btn-new-lead').addEventListener('click', () => this.showCreateClientModal(panel, null, 'prospect'));
         rail.querySelector('.btn-new-invoice').addEventListener('click', () => this.showCreateInvoiceModal(panel, data));
         rail.querySelector('.btn-log-support').addEventListener('click', () => this.showCreateSupportSessionModal(panel, data));
 
@@ -1870,7 +1930,7 @@ export class Plugin extends AppPlugin {
             <div class="os-section-toolbar">
                 <div class="os-tabs">
                     <button class="os-tab ${this.currentTab === 'projects' ? 'active' : ''} tab-proj">Projects (${data.projects.length})</button>
-                    <button class="os-tab ${this.currentTab === 'clients' ? 'active' : ''} tab-cli">Clients (${data.clients.length})</button>
+                    <button class="os-tab ${this.currentTab === 'clients' ? 'active' : ''} tab-cli">Clients & leads (${data.clients.length})</button>
                     <button class="os-tab ${this.currentTab === 'invoices' ? 'active' : ''} tab-inv">Invoices (${data.invoices.length})</button>
                 </div>
                 <div class="os-filter-search">
@@ -1897,7 +1957,7 @@ export class Plugin extends AppPlugin {
             let col = this.collectionGuid('Projects');
             if (this.currentTab === 'clients') col = this.collectionGuid('Clients');
             else if (this.currentTab === 'invoices') col = this.collectionGuid('Invoices');
-            this.openCollection(col, panel, this.currentTab === 'invoices' ? this.invoiceFilter : 'all');
+            this.openCollection(col, panel, this.currentTab === 'invoices' ? this.invoiceFilter : this.currentTab === 'clients' ? this.clientFilter : 'all');
         });
 
         const searchInput = sectionHead.querySelector('.os-search-input');
@@ -1918,6 +1978,19 @@ export class Plugin extends AppPlugin {
         }
 
         // Project filter pills (if on projects tab)
+        if (this.currentTab === 'clients') {
+            const filterBar = document.createElement('div'); filterBar.className = 'os-filter-pills';
+            filterBar.setAttribute('aria-label', 'Filter clients and leads');
+            for (const [key, label] of [['all', 'All'], ['active', 'Clients'], ['leads', 'Leads'], ['archived', 'Archived']]) {
+                const button = document.createElement('button'); button.type = 'button';
+                button.className = `os-filter-pill ${this.clientFilter === key ? 'active' : ''}`;
+                button.setAttribute('aria-pressed', String(this.clientFilter === key));
+                button.textContent = `${label} (${data.clients.filter(client => clientMatches(client, key)).length})`;
+                button.onclick = () => { this.clientFilter = key; this.render(panel); };
+                filterBar.appendChild(button);
+            }
+            main.appendChild(filterBar);
+        }
         if (this.currentTab === 'invoices') {
             const filters = [['all', 'All'], ['outstanding', 'Outstanding'], ['overdue', 'Overdue'], ['review', 'To confirm'], ['to-send', 'To send'], ['paid', 'Paid']];
             const filterBar = document.createElement('div');
@@ -2220,36 +2293,51 @@ export class Plugin extends AppPlugin {
                 cardsContainer.appendChild(card);
             }
         } else if (this.currentTab === 'clients') {
-            let list = data.clients;
+            let list = data.clients.filter(client => clientMatches(client, this.clientFilter));
             if (q) {
-                list = list.filter(c => c.name.toLowerCase().includes(q) || c.plan.toLowerCase().includes(q));
+                list = list.filter(client => clientSearchText(client).includes(q));
             }
 
             if (list.length === 0) {
-                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No matching clients found.</div>';
+                const message = q ? 'No matching clients or leads. Try a name, contact, email or phone number.' : this.clientFilter === 'leads' ? 'No leads yet. Add a prospect to start tracking new work.' : this.clientFilter === 'archived' ? 'No archived clients or leads.' : 'No clients in this view yet.';
+                const empty = document.createElement('div'); empty.className = 'os-empty-placeholder';
+                const description = document.createElement('p'); description.textContent = message; empty.appendChild(description);
+                if (!q && this.clientFilter !== 'archived') {
+                    const add = document.createElement('button'); add.type = 'button'; add.className = 'os-button'; add.textContent = this.clientFilter === 'leads' ? 'Add lead' : 'Add client';
+                    add.onclick = () => this.showCreateClientModal(panel, null, this.clientFilter === 'leads' ? 'prospect' : 'active'); empty.appendChild(add);
+                }
+                cardsContainer.appendChild(empty);
                 return;
             }
 
             for (const cli of list) {
+                const lead = isLeadClient(cli), archived = clientMatches(cli, 'archived');
                 const card = document.createElement('div');
                 card.className = 'os-project-card';
                 card.innerHTML = `
                     <div class="os-card-top">
-                        <span class="os-badge status-${cli.status === 'prospect' ? 'backlog' : 'in_progress'}">${cli.status.toUpperCase()}</span>
+                        <span class="os-badge status-${lead ? 'backlog' : archived ? 'archived' : 'in_progress'}">${lead ? 'LEAD' : archived ? 'ARCHIVED' : escapeHtml(cli.status.toUpperCase())}</span>
                         ${cli.mrr > 0 && cli.status === 'active' ? '<span class="os-badge badge-care-plan">🛡 Care Plan</span>' : ''}
                     </div>
                     <button type="button" class="os-card-title">${escapeHtml(cli.name)}</button>
-                    <div class="os-card-client">${escapeHtml(cli.plan)}</div>
+                    ${cli.planValue || cli.mrr > 0 ? `<div class="os-card-client">${escapeHtml([cli.planValue, cli.mrr > 0 ? `${cli.status === 'active' ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : ''].filter(Boolean).join(' · '))}</div>` : ''}
+                    <div class="os-client-contact">
+                        ${cli.contact ? `<span class="os-client-contact-name">${escapeHtml(cli.contact)}</span>` : ''}
+                        ${cli.email ? `<a href="mailto:${encodeURIComponent(cli.email)}">${escapeHtml(cli.email)}</a>` : ''}
+                        ${cli.phone ? `<span>${escapeHtml(cli.phone)}</span>` : ''}
+                        ${!cli.contact && !cli.email && !cli.phone ? '<span class="os-client-contact-empty">No contact details yet</span>' : ''}
+                    </div>
+                    ${lead ? `<label class="os-client-stage"><span>Stage</span><select class="os-select os-lead-stage" aria-label="Lead stage for ${escapeHtml(cli.name)}"><option value="" disabled ${!LEAD_STAGES[cli.leadStage] ? 'selected' : ''}>Stage not set</option>${Object.entries(LEAD_STAGES).map(([key, label]) => `<option value="${key}" ${cli.leadStage === key ? 'selected' : ''}>${label}</option>`).join('')}</select></label>` : ''}
                     <div class="os-client-meta">
                         <button type="button" class="os-meta-tag os-client-projects" aria-label="View ${cli.projectCount} projects for ${escapeHtml(cli.name)}">${cli.projectCount} projects · ${cli.summary.activeProjects} active</button>
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
                     </div>
-                    <dl class="os-client-value">
+                    ${lead ? '' : `<dl class="os-client-value">
                         <div><dt>Collected · all time</dt><dd>${money(cli.summary.collected)} CHF</dd></div>
                         <div><dt>Outstanding</dt><dd>${money(cli.summary.outstanding)} CHF${cli.summary.overdueCount ? ` · ${cli.summary.overdueCount} overdue` : ''}</dd></div>
-                    </dl>
+                    </dl>`}
                     <div class="os-card-bottom">
-                        <span>${cli.mrr > 0 ? `${cli.status === 'active' ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : 'No care plan'}</span>
+                        <button type="button" class="os-card-open os-edit-client">Edit details</button>
                         <button type="button" class="os-card-open">Open profile ↗</button>
                     </div>
                 `;
@@ -2258,7 +2346,14 @@ export class Plugin extends AppPlugin {
                 card.querySelector('.os-client-projects').addEventListener('click', () => {
                     this.clientProjectGuid = cli.guid; this.currentTab = 'projects'; this.projectFilter = 'all'; this.searchQuery = ''; this.render(panel);
                 });
-                card.querySelector('.os-card-open').addEventListener('click', (e) => {
+                card.querySelector('.os-edit-client').onclick = () => this.showCreateClientModal(panel, cli);
+                card.querySelector('.os-lead-stage')?.addEventListener('change', async event => {
+                    const select = event.target; select.disabled = true;
+                    try { await this.updateClientDetails(cli, { lead_stage: select.value }); cli.leadStage = select.value; }
+                    catch (error) { select.value = cli.leadStage || ''; this.ui.addToaster({ title: error.message || 'The lead stage could not be saved.', dismissible: true }); }
+                    finally { select.disabled = false; }
+                });
+                card.querySelector('.os-card-bottom .os-card-open:not(.os-edit-client)').addEventListener('click', (e) => {
                     e.stopPropagation();
                     this.openRecord(cli.guid, panel);
                 });

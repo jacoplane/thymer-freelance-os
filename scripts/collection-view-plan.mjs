@@ -3,7 +3,7 @@ const sentOutstanding = '@Invoices.status = "sent" @Invoices.payment_status != "
 const topLevel = '@Projects.parent_page = ""';
 const openProjects = '@Projects.status != "completed" @Projects.status != "archived" @Projects.status != "cancelled"';
 const projectColumns = ['title', 'status', 'priority', 'deadline', 'client'];
-const clientColumns = ['title', 'status', 'plan', 'monthly_chf', 'billing_cycle', 'contact', 'website'];
+const clientColumns = ['title', 'status', 'contact', 'email', 'phone', 'website', 'plan', 'monthly_chf', 'billing_cycle'];
 export const VIEW_PLANS = {
     Invoices: [
         { key: 'register', label: 'Register', aliases: ['Register'], columns: invoiceColumns, query: '', sort: 'issued', direction: 'desc', icon: 'ti-table' },
@@ -23,7 +23,8 @@ export const VIEW_PLANS = {
     Clients: [
         { key: 'directory', label: 'Directory', columns: clientColumns, query: '', sort: 'title', icon: 'ti-table' },
         { key: 'active', label: 'Active', columns: clientColumns, query: '@Clients.status = "active"', sort: 'title' },
-        { key: 'prospects', label: 'Prospects', columns: clientColumns, query: '@Clients.status = "prospect"', sort: 'title' },
+        { key: 'prospects', label: 'Leads', aliases: ['Prospects'], columns: ['title', 'lead_stage', 'contact', 'email', 'phone', 'website'], query: '@Clients.status = "prospect"', sort: 'title' },
+        { key: 'archived', label: 'Archived', columns: clientColumns, query: '@Clients.status = "archived"', sort: 'title' },
         { key: 'care-plans', label: 'Care plans', columns: ['title', 'monthly_chf', 'plan', 'billing_cycle', 'included_hours'], query: '@Clients.status = "active" @Clients.monthly_chf > 0', sort: 'monthly_chf', direction: 'desc' }
     ],
     'Support Sessions': [

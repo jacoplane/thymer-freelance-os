@@ -8,8 +8,10 @@ import { STARTER_ROLES, starterConfig } from './starter-schema.mjs';
 const args = process.argv.slice(2);
 const value = flag => args[args.indexOf(flag) + 1];
 const workspace = args.includes('--workspace') ? value('--workspace') : process.env.THYMER_WORKSPACE;
-if (!workspace || !/^W[0-9A-Z]{25}$/.test(workspace)) throw new Error('Pass an explicit workspace GUID: node scripts/setup-workspace.mjs --workspace W… [--apply] [--install]');
+if (!workspace || !/^W[0-9A-Z]{25}$/.test(workspace)) throw new Error('Pass an explicit workspace GUID: node scripts/setup-workspace.mjs --workspace W… [--collection Clients] [--apply] [--install]');
 const apply = args.includes('--apply');
+const roles = args.includes('--collection') ? [value('--collection')] : STARTER_ROLES;
+if (roles.some(role => !STARTER_ROLES.includes(role))) throw new Error('Choose a starter collection by name with --collection, for example --collection Clients.');
 const call = await connectMcp(process.env.THYMER_MCP_ENDPOINT);
 const inventory = await call('list_workspaces', {});
 const target = inventory.workspaces.find(item => item.guid === workspace);
@@ -19,7 +21,7 @@ let collections = (await call('list_collections', {workspace})).collections;
 const links = {};
 const plans = [];
 // Validate every existing collection before making changes.
-for (const role of STARTER_ROLES) {
+for (const role of roles) {
     const matches = collections.filter(item => item.name === role);
     if (matches.length > 1) throw new Error(`More than one collection is named ${role}; rename the duplicate first.`);
     const existing = matches[0];
@@ -71,5 +73,6 @@ if (args.includes('--install')) {
     await call('update_plugin_css',{workspace,plugin:plugin.guid,css:await fs.readFile(new URL('../dist/plugin.css',import.meta.url),'utf8')});
     console.log('Freelance OS installed. Open it from the sidebar or command palette.');
 }
-console.log('Journal uses Thymer’s built-in JournalCorePlugin. No sample records were created.');
+if (roles.includes('Journal')) console.log('Journal uses Thymer’s built-in JournalCorePlugin.');
+console.log('No existing records were changed and no sample records were created.');
 console.log(`Local backups: ${directory}`);

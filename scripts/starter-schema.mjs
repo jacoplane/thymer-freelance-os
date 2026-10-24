@@ -4,7 +4,8 @@ import { planCollectionViews, VIEW_PLANS } from './collection-view-plan.mjs';
 const definitions = {
     Clients: { icon: 'ti-users', description: 'Client relationships and recurring care plans', fields: {
         status: ['choice', ['prospect', 'active', 'archived']], plan: ['text'], monthly_chf: ['number'],
-        billing_cycle: ['choice', ['Monthly', 'Annual', 'Project']], included_hours: ['number'], contact: ['text'], website: ['url']
+        billing_cycle: ['choice', ['Monthly', 'Annual', 'Project']], included_hours: ['number'], contact: ['text'], email: ['text'], phone: ['text'], website: ['url'],
+        lead_stage: ['choice', ['new', 'contacted', 'discussing', 'proposal_sent']]
     } },
     Projects: { icon: 'ti-stack-2', description: 'Projects, deliverables and native tasks', fields: {
         status: ['choice', ['backlog', 'in_progress', 'in_review', 'completed', 'archived', 'cancelled']],

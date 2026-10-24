@@ -153,6 +153,20 @@
 .os-client-value > div { display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
 .os-client-value dt { color: var(--os-muted); }
 .os-client-value dd { margin: 0; color: var(--os-text); }
+.os-client-contact { display: grid; gap: 3px; margin: 4px 0; font-size: 12px; overflow-wrap: anywhere; }
+.os-client-contact-name { font-weight: 550; }
+.os-client-contact a { color: var(--os-accent); text-decoration: underline; text-underline-offset: 3px; }
+.os-client-contact-empty { color: var(--os-muted); }
+.os-client-stage { display: flex; align-items: center; gap: 12px; margin: 8px 0; font-size: 12px; color: var(--os-muted); }
+.os-client-stage .os-select { min-width: 0; width: auto; flex: 1; }
+.os-client-form { container-type: inline-size; container-name: clientForm; }
+.os-client-form-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px; }
+.os-client-form [hidden] { display: none; }
+.os-client-care-plan summary { color: var(--os-muted); font-size: 12px; cursor: pointer; }
+.os-client-care-plan[open] summary { margin-bottom: 12px; }
+.os-form-help { font-size: 12px; line-height: 1.5; color: var(--os-muted); margin: 0; }
+.os-client-form-error { font-size: 12px; line-height: 1.5; color: var(--text-error, #f85149); margin: 0; }
+@container clientForm (max-width: 360px) { .os-client-form-grid { grid-template-columns: minmax(0, 1fr); } }
 .os-main, .os-agenda, .os-rail { min-width: 0; }
 .os-card-bottom, .os-client-meta { flex-wrap: wrap; }
 .os-project-next-link { display: block; width: 100%; min-width: 0; padding: 5px 0; border: 0; background: transparent; color: var(--os-accent); text-align: left; font: inherit; font-size: 12px; overflow-wrap: anywhere; cursor: pointer; }

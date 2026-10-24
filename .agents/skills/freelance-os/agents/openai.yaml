@@ -1,0 +1,4 @@
+interface:
+  display_name: "Freelance OS"
+  short_description: "Manage Thymer clients, leads, and project tasks"
+  default_prompt: "Use $freelance-os to capture client work and maintain my lead register in Thymer."
