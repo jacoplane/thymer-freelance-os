@@ -349,6 +349,12 @@ button.os-badge { border: 0; font-family: inherit; line-height: inherit; }
 .os-card-client { font-size: 12px; color: var(--os-muted); }
 .os-card-client-link { cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .os-card-client-link:hover { color: var(--os-accent); }
+.os-project-financials { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 4px 0; font-size: 11px; }
+.os-project-fee-type { font-size: 10px; font-weight: 600; text-transform: uppercase; padding: 1px 5px; border-radius: 3px; background: var(--os-surface-hover); color: var(--os-muted); border: 1px solid var(--os-border); }
+.os-project-budget-label { color: var(--os-muted); font-size: 11px; }
+.os-project-budget-label strong { color: var(--os-text); }
+.os-lead-pipeline-banner { display: flex; align-items: center; justify-content: space-between; padding: 6px 12px; margin-bottom: 12px; border-radius: 6px; background: var(--os-surface-hover); border: 1px solid var(--os-border); font-size: 12px; color: var(--os-muted); }
+.os-lead-pipeline-banner strong { color: var(--os-accent); }
 .os-client-projects { cursor: pointer; font: inherit; }
 .os-client-projects:hover { color: var(--os-accent); border-color: var(--os-accent); }
 .os-client-project-filter { display: flex; gap: 12px; justify-content: space-between; align-items: baseline; flex-wrap: wrap; margin-bottom: 12px; font-size: 12px; color: var(--os-muted); overflow-wrap: anywhere; }

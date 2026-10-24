@@ -13,7 +13,7 @@ function billingNextAction(invoice) {
 
 function billingInvoices(invoices, filter, search = '') {
     const query = search.trim().toLowerCase();
-    return invoices.filter(invoice => invoiceMatches(invoice, filter) && (!query || [invoice.invoiceId, invoice.name, invoice.clientName, invoice.currency].filter(Boolean).join(' ').toLowerCase().includes(query)));
+    return invoices.filter(invoice => invoiceMatches(invoice, filter) && (!query || [invoice.invoiceId, invoice.name, invoice.clientName, invoice.projectName, invoice.currency].filter(Boolean).join(' ').toLowerCase().includes(query)));
 }
 
 function billingSummary(invoices) {
@@ -128,6 +128,7 @@ const Billing = {
             body: `<div class="os-billing-form-grid">
                 <div class="os-form-group"><label for="os-invoice-ref">Invoice reference *</label><input id="os-invoice-ref" class="os-input input-title" placeholder="e.g. INV-2026-014" required /></div>
                 <div class="os-form-group"><label for="os-invoice-client">Client *</label><select id="os-invoice-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}">${escapeHtml(client.name)}</option>`).join('')}</select></div>
+                <div class="os-form-group"><label for="os-invoice-project">Project (optional)</label><select id="os-invoice-project" class="os-select input-project"><option value="">No project linked</option></select></div>
                 <div class="os-form-group"><label for="os-invoice-amount">Amount *</label><input id="os-invoice-amount" class="os-input input-amount" type="number" min="0.01" step="0.01" required /></div>
                 <div class="os-form-group"><label for="os-invoice-currency">Currency</label><select id="os-invoice-currency" class="os-select input-currency" required>${currencies.map(currency => `<option ${currency === 'CHF' ? 'selected' : ''}>${escapeHtml(currency)}</option>`).join('')}</select></div>
                 <div class="os-form-group"><label for="os-invoice-stage">Sending stage</label><select id="os-invoice-stage" class="os-select input-stage">${Object.entries(INVOICE_STAGES).map(([key, value]) => `<option value="${key}">${value}</option>`).join('')}</select></div>
@@ -139,14 +140,26 @@ const Billing = {
             save: async form => {
                 const title = form.querySelector('.input-title').value.trim(), stage = form.querySelector('.input-stage').value, payment = form.querySelector('.input-status').value;
                 const issued = form.querySelector('.input-issued').value, paid = form.querySelector('.input-paid-date').value;
+                const project = form.querySelector('.input-project')?.value || '';
                 if (stage === 'sent' && !issued) throw new Error('Choose the issue date for a sent invoice.');
                 if (payment === 'paid' && (stage !== 'sent' || !issued || !paid)) throw new Error('A paid invoice needs Sent stage, an issue date, and its payment date.');
-                await this.createConfiguredRecord('Invoices', title, { invoice_id: title, amount_chf: Number(form.querySelector('.input-amount').value), currency: form.querySelector('.input-currency').value, client: form.querySelector('.input-client').value, status: stage, payment_status: payment, issued, due: form.querySelector('.input-due').value, ...(payment === 'paid' ? { paid_date: paid } : {}) });
+                await this.createConfiguredRecord('Invoices', title, { invoice_id: title, amount_chf: Number(form.querySelector('.input-amount').value), currency: form.querySelector('.input-currency').value, client: form.querySelector('.input-client').value, ...(project ? { project } : {}), status: stage, payment_status: payment, issued, due: form.querySelector('.input-due').value, ...(payment === 'paid' ? { paid_date: paid } : {}) });
                 this.workflowMode = 'billing'; this.billingTab = 'invoices'; this.billingSearch = ''; this.invoiceFilter = payment === 'paid' ? 'paid' : stage === 'sent' ? 'outstanding' : 'to-send';
                 this.billingMessage = `${title} added to the invoice register.`;
             }
         });
         if (!form) return;
+        const clientSelect = form.querySelector('.input-client');
+        const projectSelect = form.querySelector('.input-project');
+        const updateProjects = () => {
+            const selectedClient = clientSelect?.value;
+            const clientProjects = (data.projects || []).filter(p => p.clientGuid === selectedClient);
+            if (projectSelect) {
+                projectSelect.innerHTML = `<option value="">No project linked</option>${clientProjects.map(p => `<option value="${p.guid}">${escapeHtml(p.name)}</option>`).join('')}`;
+            }
+        };
+        if (clientSelect) clientSelect.onchange = updateProjects;
+        updateProjects();
         form.querySelector('.input-stage').onchange = () => { form.querySelector('.input-issued').required = form.querySelector('.input-stage').value === 'sent'; };
         form.querySelector('.input-status').onchange = () => {
             const paid = form.querySelector('.input-status').value === 'paid';
@@ -194,7 +207,7 @@ const Billing = {
             } else {
                 table.innerHTML = `<caption class="os-billing-caption">${rows.length} invoice${rows.length === 1 ? '' : 's'} · Sending and payment are recorded separately.</caption><thead><tr><th scope="col">Invoice</th><th scope="col">Client</th><th scope="col">Amount</th><th scope="col">Due</th><th scope="col">Sending</th><th scope="col">Payment</th><th scope="col">Action</th></tr></thead><tbody>${rows.map(invoice => {
                     const action = billingNextAction(invoice);
-                    return `<tr data-invoice="${invoice.guid}"><th scope="row"><button class="os-card-open os-billing-invoice" data-focus-key="invoice-${invoice.guid}">${escapeHtml(invoice.invoiceId || invoice.name)}</button>${invoice.issuedDate ? `<span class="os-billing-detail">Issued ${escapeHtml(invoice.issuedDate)}</span>` : ''}</th><td>${invoice.clientGuid ? `<button class="os-card-open os-billing-client">${escapeHtml(invoice.clientName || 'Open client')}</button>` : 'No client linked'}</td><td class="os-billing-number">${money(invoice.amount)} ${escapeHtml(invoice.currency)}</td><td class="${invoice.daysOverdue ? 'os-billing-overdue' : ''}">${escapeHtml(invoice.dueDate || 'No due date')}${invoice.daysOverdue ? `<span class="os-billing-detail">${invoice.daysOverdue}d overdue</span>` : ''}</td><td>${escapeHtml(INVOICE_STAGES[invoice.stage] || 'Unknown')}</td><td>${escapeHtml(INVOICE_PAYMENTS[invoice.status] || 'Unknown')}${invoice.status === 'paid' ? `<span class="os-billing-detail">${escapeHtml(invoice.paidDate || 'Date not recorded')}</span>` : ''}</td><td>${action ? `<button class="os-button os-billing-row-action" data-action="${action.action}" data-focus-key="invoice-action-${invoice.guid}" ${this.billingWrites?.has(invoice.guid) ? 'disabled' : ''}>${action.label}</button>` : '<span class="os-billing-detail">—</span>'}</td></tr>`;
+                    return `<tr data-invoice="${invoice.guid}"><th scope="row"><button class="os-card-open os-billing-invoice" data-focus-key="invoice-${invoice.guid}">${escapeHtml(invoice.invoiceId || invoice.name)}</button>${invoice.issuedDate ? `<span class="os-billing-detail">Issued ${escapeHtml(invoice.issuedDate)}</span>` : ''}</th><td>${invoice.clientGuid ? `<button class="os-card-open os-billing-client">${escapeHtml(invoice.clientName || 'Open client')}</button>${invoice.projectName ? `<span class="os-billing-detail">${escapeHtml(invoice.projectName)}</span>` : ''}` : 'No client linked'}</td><td class="os-billing-number">${money(invoice.amount)} ${escapeHtml(invoice.currency)}</td><td class="${invoice.daysOverdue ? 'os-billing-overdue' : ''}">${escapeHtml(invoice.dueDate || 'No due date')}${invoice.daysOverdue ? `<span class="os-billing-detail">${invoice.daysOverdue}d overdue</span>` : ''}</td><td>${escapeHtml(INVOICE_STAGES[invoice.stage] || 'Unknown')}</td><td>${escapeHtml(INVOICE_PAYMENTS[invoice.status] || 'Unknown')}${invoice.status === 'paid' ? `<span class="os-billing-detail">${escapeHtml(invoice.paidDate || 'Date not recorded')}</span>` : ''}</td><td>${action ? `<button class="os-button os-billing-row-action" data-action="${action.action}" data-focus-key="invoice-action-${invoice.guid}" ${this.billingWrites?.has(invoice.guid) ? 'disabled' : ''}>${action.label}</button>` : '<span class="os-billing-detail">—</span>'}</td></tr>`;
                 }).join('')}</tbody>`;
                 table.querySelectorAll('.os-billing-invoice').forEach(button => { button.onclick = () => this.openRecord(button.closest('tr').dataset.invoice, panel); });
                 table.querySelectorAll('.os-billing-client').forEach(button => { button.onclick = () => this.openRecord(invoices.find(invoice => invoice.guid === button.closest('tr').dataset.invoice).clientGuid, panel); });

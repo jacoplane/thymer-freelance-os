@@ -191,15 +191,15 @@ function getParentGuid(record) {
     return '';
 }
 
-function getClientGuid(record) {
+function getLinkedRecordGuid(record, fieldName) {
     if (!record) return '';
     try {
         if (typeof record.linkedRecord === 'function') {
-            const lr = record.linkedRecord('client');
+            const lr = record.linkedRecord(fieldName);
             if (lr && lr.guid) return cleanGuid(lr.guid);
         }
         if (typeof record.prop === 'function') {
-            const p = record.prop('client');
+            const p = record.prop(fieldName);
             if (p) {
                 if (typeof p.linkedRecord === 'function') {
                     const lr = p.linkedRecord();
@@ -215,16 +215,24 @@ function getClientGuid(record) {
                 }
             }
         }
-        const c1 = getProp(record, 'client');
-        if (c1 && BASE32_GUID.test(c1)) return c1;
-        if (record.properties && record.properties.client) {
-            const c = record.properties.client;
-            if (Array.isArray(c) && c[0] === 'record') return cleanGuid(c[1]);
-            if (typeof c === 'string' && BASE32_GUID.test(c)) return c;
-            if (c.value && Array.isArray(c.value) && c.value[0] === 'record') return cleanGuid(c.value[1]);
+        const val = getProp(record, fieldName);
+        if (val && BASE32_GUID.test(val)) return val;
+        if (record.properties && record.properties[fieldName]) {
+            const prop = record.properties[fieldName];
+            if (Array.isArray(prop) && prop[0] === 'record') return cleanGuid(prop[1]);
+            if (typeof prop === 'string' && BASE32_GUID.test(prop)) return prop;
+            if (prop.value && Array.isArray(prop.value) && prop.value[0] === 'record') return cleanGuid(prop.value[1]);
         }
     } catch (e) {}
     return '';
+}
+
+function getClientGuid(record) {
+    return getLinkedRecordGuid(record, 'client');
+}
+
+function getProjectGuid(record) {
+    return getLinkedRecordGuid(record, 'project');
 }
 
 function extractLineText(line) {
@@ -314,7 +322,7 @@ function clientMatches(client, filter = 'all') {
     return true;
 }
 function clientSearchText(client) {
-    return [client.name, client.contact, client.email, client.phone, client.website, client.plan, CLIENT_STATUSES[clientStatus(client)]].filter(Boolean).join(' ').toLowerCase();
+    return [client.name, client.contact, client.email, client.phone, client.website, client.plan, client.source, CLIENT_STATUSES[clientStatus(client)]].filter(Boolean).join(' ').toLowerCase();
 }
 
 function clientSummary(client, projects, invoices) {
@@ -803,7 +811,9 @@ export class Plugin extends AppPlugin {
                     billingCycle: getProp(cr, 'billing_cycle') || '',
                     includedHours: Math.max(0, Number(getProp(cr, 'included_hours')) || 0),
                     contact: getProp(cr, 'contact') || '', email: getProp(cr, 'email') || '', phone: getProp(cr, 'phone') || '', website: getProp(cr, 'website') || '',
-                    leadStage: getProp(cr, 'lead_stage') || ''
+                    leadStage: getProp(cr, 'lead_stage') || '',
+                    estimatedValue: Number(getProp(cr, 'estimated_value_chf')) || 0,
+                    source: getProp(cr, 'source') || ''
                 });
             }
 
@@ -812,6 +822,9 @@ export class Plugin extends AppPlugin {
             data.activeClientsCount = activeC;
             data.prospectsCount = prospects;
             data.clients = clientList;
+            data.pipelineValueCHF = clientList
+                .filter(c => isLeadClient(c) && c.status !== 'archived')
+                .reduce((sum, c) => sum + (c.estimatedValue || 0), 0);
 
             // 2. Fetch Invoices
             const invRecords = await readCollection(this.collectionGuid('Invoices'));
@@ -850,6 +863,8 @@ export class Plugin extends AppPlugin {
                     stage,
                     currency,
                     clientGuid,
+                    projectGuid: getProjectGuid(ir),
+                    projectName: '',
                     isOutstanding,
                     daysOverdue,
                     clientName: client,
@@ -889,6 +904,9 @@ export class Plugin extends AppPlugin {
                 if (!deadline || typeof deadline === 'object' || String(deadline).includes('object') || String(deadline).includes('Object')) {
                     deadline = 'No deadline';
                 }
+                const rawBudget = Number(getProp(pr, 'budget_chf'));
+                const budget = Number.isFinite(rawBudget) && rawBudget > 0 ? rawBudget : 0;
+                const feeType = (getProp(pr, 'fee_type') || '').toLowerCase();
 
                 const item = {
                     record: pr,
@@ -900,6 +918,11 @@ export class Plugin extends AppPlugin {
                     clientName,
                     parentGuid,
                     deadline: deadline || 'No deadline',
+                    budget,
+                    feeType,
+                    totalBilledCHF: 0,
+                    totalPaidCHF: 0,
+                    invoiceCount: 0,
                     deliverables: []
                 };
 
@@ -921,6 +944,23 @@ export class Plugin extends AppPlugin {
             // Sort deliverables inside each project alphabetically
             for (const p of parentList) {
                 p.deliverables.sort((a, b) => a.name.localeCompare(b.name));
+            }
+
+            // Cross-reference invoices with projects and calculate project financials:
+            for (const inv of invoiceList) {
+                if (inv.projectGuid && parentMap.has(inv.projectGuid)) {
+                    inv.projectName = parentMap.get(inv.projectGuid).name;
+                }
+            }
+            for (const p of parentList) {
+                const projectInvoices = invoiceList.filter(i => i.projectGuid === p.guid);
+                p.invoiceCount = projectInvoices.length;
+                p.totalBilledCHF = projectInvoices
+                    .filter(i => i.currency === 'CHF' && (i.stage === 'sent' || i.status === 'paid'))
+                    .reduce((sum, i) => sum + i.amount, 0);
+                p.totalPaidCHF = projectInvoices
+                    .filter(i => i.currency === 'CHF' && i.status === 'paid')
+                    .reduce((sum, i) => sum + i.amount, 0);
             }
 
             // Cross-reference clients with projects and invoices:
@@ -1202,13 +1242,26 @@ export class Plugin extends AppPlugin {
             const field = fields.find(item => item.label === label || item.id === label);
             if (!field || field.active === false || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the ${role}.${label} field in your collection setup`);
             if (role === 'Invoices') {
-                const expected = { invoice_id: 'text', client: 'record', amount_chf: 'number', currency: 'choice', status: 'choice', payment_status: 'choice', issued: 'datetime', due: 'datetime', paid_date: 'datetime' };
+                const expected = { invoice_id: 'text', client: 'record', project: 'record', amount_chf: 'number', currency: 'choice', status: 'choice', payment_status: 'choice', issued: 'datetime', due: 'datetime', paid_date: 'datetime' };
                 if (expected[label] && field.type !== expected[label]) throw new Error(`Check the Invoices.${label} field type in your collection setup`);
+            }
+            if (role === 'Projects') {
+                const expected = { client: 'record', status: 'choice', priority: 'choice', deadline: 'datetime', completed_date: 'datetime', budget_chf: 'number', fee_type: 'choice' };
+                if (expected[label] && field.type !== expected[label]) throw new Error(`Check the Projects.${label} field type in your collection setup`);
+            }
+            if (role === 'Clients') {
+                const expected = { status: 'choice', plan: 'text', monthly_chf: 'number', billing_cycle: 'choice', included_hours: 'number', contact: 'text', email: 'text', phone: 'text', website: 'url', estimated_value_chf: 'number', source: 'choice' };
+                if (expected[label] && field.type !== expected[label]) throw new Error(`Check the Clients.${label} field type in your collection setup`);
             }
         }
         if (['Projects', 'Invoices'].includes(role) && values.client) {
             const clients = collections.find(item => item.getGuid() === this.collectionGuid('Clients', collections));
             if (!clients || !(await clients.getAllRecords()).some(item => item.guid === values.client && !isTemplateRecord(item))) throw new Error('Choose a client from your Clients collection');
+        }
+        if (role === 'Invoices' && values.project) {
+            const projects = collections.find(item => item.getGuid() === this.collectionGuid('Projects', collections));
+            const projectRecord = projects && (await projects.getAllRecords()).find(item => item.guid === values.project && !isTemplateRecord(item));
+            if (!projectRecord || (getClientGuid(projectRecord) && getClientGuid(projectRecord) !== values.client)) throw new Error('Choose a project linked to this client');
         }
         if (role === 'Clients' && (await collection.getAllRecords()).some(item => !isTemplateRecord(item) && (item.getName?.() || item.name || '').trim().toLowerCase() === title.trim().toLowerCase())) throw new Error('A client or lead with this name already exists. Open its profile to update it.');
         if (role === 'Invoices') {
@@ -1260,7 +1313,7 @@ export class Plugin extends AppPlugin {
                 const verified = (await collection.getAllRecords()).find(item => item.guid === guid);
                 for (const [label, value] of writes) {
                     if (value === '' || value === null || value === undefined) continue;
-                    const actual = label === 'client' ? getClientGuid(verified) : getProp(verified, label);
+                    const actual = label === 'client' || label === 'project' ? getLinkedRecordGuid(verified, label) : getProp(verified, label);
                     if (!verified || String(actual) !== String(value)) throw new Error(`The new invoice's ${label} could not be verified.`);
                 }
                 record = verified;
@@ -1370,6 +1423,21 @@ export class Plugin extends AppPlugin {
                             </select>
                         </div>
                     </div>
+                    <div class="os-form-pair">
+                        <div class="os-form-group">
+                            <label for="os-project-fee-type">Fee type</label>
+                            <select id="os-project-fee-type" class="os-select input-fee-type">
+                                <option value="fixed" selected>Fixed price</option>
+                                <option value="hourly">Hourly</option>
+                                <option value="retainer">Retainer</option>
+                                <option value="non_billable">Non-billable</option>
+                            </select>
+                        </div>
+                        <div class="os-form-group">
+                            <label for="os-project-budget">Budget (CHF)</label>
+                            <input id="os-project-budget" type="number" min="0" step="100" class="os-input input-budget" placeholder="e.g. 5000" />
+                        </div>
+                    </div>
                     <div class="os-form-group">
                         <label for="os-project-deadline">Deadline (optional)</label>
                         <input id="os-project-deadline" type="date" class="os-input input-deadline" />
@@ -1416,9 +1484,12 @@ export class Plugin extends AppPlugin {
             const priority = modal.querySelector('.input-priority').value;
             const status = modal.querySelector('.input-status').value;
             const deadline = modal.querySelector('.input-deadline').value;
+            const rawBudget = Number(modal.querySelector('.input-budget')?.value);
+            const budget = Number.isFinite(rawBudget) && rawBudget > 0 ? rawBudget : '';
+            const feeType = modal.querySelector('.input-fee-type')?.value || 'fixed';
             const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             try {
-                const record = await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline }, { brief: modal.querySelector('.input-brief').value.trim(), firstAction: modal.querySelector('.input-first-action').value.trim() });
+                const record = await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline, ...(budget ? { budget_chf: budget } : {}), fee_type: feeType }, { brief: modal.querySelector('.input-brief').value.trim(), firstAction: modal.querySelector('.input-first-action').value.trim() });
                 this.ui.addToaster({ title: `✓ Created "${title}"`, autoDestroyTime: 2500, dismissible: true });
                 close();
                 this.scheduleRefresh();
@@ -1446,8 +1517,8 @@ export class Plugin extends AppPlugin {
             const field = fields.find(item => item.label === label);
             if (!field && value === '') continue;
             if (!field || field.active === false || field.read_only || (field.type === 'choice' && !field.choices?.some(choice => choice.label === value && choice.active !== false))) throw new Error(`Check the Clients.${label} field in your collection setup.`);
-            const current = label === 'monthly_chf' ? Number(getProp(record, label)) || 0 : getProp(record, label);
-            const previous = label === 'monthly_chf' ? client.mrr : label === 'lead_stage' ? client.leadStage : label === 'plan' ? client.planValue ?? client.plan : client[label];
+            const current = label === 'monthly_chf' || label === 'estimated_value_chf' ? Number(getProp(record, label)) || 0 : getProp(record, label);
+            const previous = label === 'monthly_chf' ? client.mrr : label === 'estimated_value_chf' ? client.estimatedValue : label === 'lead_stage' ? client.leadStage : label === 'plan' ? client.planValue ?? client.plan : client[label];
             if (String(value) === String(previous ?? '')) continue;
             if (String(current) !== String(previous ?? '') && String(current) !== String(value)) throw new Error(`${label} changed elsewhere. Close this form and refresh before editing it again.`);
             const property = record.prop(label);
@@ -1494,6 +1565,13 @@ export class Plugin extends AppPlugin {
                         <div class="os-form-group"><label for="os-client-plan">Service</label><input id="os-client-plan" class="os-input input-plan" value="${escapeHtml(client?.planValue ?? (client?.plan === 'Active' ? '' : client?.plan || ''))}" placeholder="e.g. Website maintenance" /></div>
                         <div class="os-form-group"><label for="os-client-mrr">Monthly retainer (CHF)</label><input id="os-client-mrr" type="number" min="0" step="any" class="os-input input-mrr" value="${Number(client?.mrr) || ''}" /></div>
                     </div></details>
+                    <details class="os-client-lead-details" ${status === 'prospect' || isLeadClient({ status }) ? 'open' : ''}><summary>Deal & source (for leads)</summary><div class="os-client-form-grid">
+                        <div class="os-form-group"><label for="os-client-deal">Estimated deal (CHF)</label><input id="os-client-deal" type="number" min="0" step="100" class="os-input input-deal" value="${Number(client?.estimatedValue) || ''}" placeholder="e.g. 5000" /></div>
+                        <div class="os-form-group"><label for="os-client-source">Lead source</label><select id="os-client-source" class="os-select input-source">
+                            <option value="">-- Not specified --</option>
+                            ${['referral', 'website', 'linkedin', 'inbound', 'outbound', 'other'].map(src => `<option value="${src}" ${client?.source === src ? 'selected' : ''}>${src.charAt(0).toUpperCase() + src.slice(1)}</option>`).join('')}
+                        </select></div>
+                    </div></details>
                     <p class="os-form-help">Keep short notes on the native profile. Projects and tasks stay in their existing Thymer pages.</p>
                     <p class="os-client-form-error" role="alert" hidden></p>
                 </div>
@@ -1528,7 +1606,9 @@ export class Plugin extends AppPlugin {
             if (!title) { error.textContent = 'Enter a client or company name.'; error.hidden = false; return; }
             const values = { monthly_chf: Number(modal.querySelector('.input-mrr').value) || 0, status: statusInput.value,
                 plan: modal.querySelector('.input-plan').value.trim(), website: modal.querySelector('.input-website').value.trim(),
-                contact: modal.querySelector('.input-contact').value.trim(), email: modal.querySelector('.input-email').value.trim(), phone: modal.querySelector('.input-phone').value.trim() };
+                contact: modal.querySelector('.input-contact').value.trim(), email: modal.querySelector('.input-email').value.trim(), phone: modal.querySelector('.input-phone').value.trim(),
+                estimated_value_chf: Number(modal.querySelector('.input-deal')?.value) || 0,
+                source: modal.querySelector('.input-source')?.value || '' };
             const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             saving = true; form.setAttribute('aria-busy', 'true'); submit.textContent = 'Saving…';
             try {
@@ -1949,6 +2029,12 @@ export class Plugin extends AppPlugin {
                 filterBar.appendChild(button);
             }
             main.appendChild(filterBar);
+            if (this.clientFilter === 'leads' && data.pipelineValueCHF > 0) {
+                const pipelineBanner = document.createElement('div');
+                pipelineBanner.className = 'os-lead-pipeline-banner';
+                pipelineBanner.innerHTML = `<span>Estimated pipeline: <strong>${money(data.pipelineValueCHF)} CHF</strong></span><span>${data.clients.filter(c => isLeadClient(c) && c.status !== 'archived').length} active proposals & leads</span>`;
+                main.appendChild(pipelineBanner);
+            }
         }
         if (this.currentTab === 'invoices') {
             const filters = [['all', 'All'], ['outstanding', 'Outstanding'], ['overdue', 'Overdue'], ['review', 'To confirm'], ['to-send', 'To send'], ['paid', 'Paid']];
@@ -2167,6 +2253,14 @@ export class Plugin extends AppPlugin {
                     </div>
                     <button type="button" class="os-card-title">${escapeHtml(proj.name)}</button>
                     ${proj.clientName ? `<button type="button" class="os-card-client os-card-client-link" title="Open client profile">${escapeHtml(proj.clientName)}</button>` : '<div class="os-card-client">Internal / no client linked</div>'}
+                    ${proj.budget > 0 || (proj.totalBilledCHF && proj.totalBilledCHF > 0) ? `
+                        <div class="os-project-financials">
+                            <span class="os-project-fee-type">${proj.feeType ? escapeHtml(proj.feeType.replace('_', ' ')) : 'fixed'}</span>
+                            <span class="os-project-budget-label">
+                                ${proj.budget > 0 ? `Billed ${money(proj.totalBilledCHF || 0)} / <strong>${money(proj.budget)} CHF</strong> (${Math.round(((proj.totalBilledCHF || 0) / proj.budget) * 100)}%)` : `Billed <strong>${money(proj.totalBilledCHF || 0)} CHF</strong>`}
+                            </span>
+                        </div>
+                    ` : ''}
                     ${activeProject ? `<button type="button" class="os-project-next-link" aria-label="Open actions for ${escapeHtml(proj.name)}">${nextGuid ? `<span class="os-project-next-label">Next action</span>${nextLabel ? ` · ${escapeHtml(nextLabel)}` : ' · Selected in Today'}` : 'Choose a next action →'}</button>` : ''}
 
                     ${hasDeliverables ? `
@@ -2291,7 +2385,10 @@ export class Plugin extends AppPlugin {
                         <button type="button" class="os-meta-tag os-client-projects" aria-label="View ${cli.projectCount} projects for ${escapeHtml(cli.name)}">${cli.projectCount} projects · ${cli.summary.activeProjects} active</button>
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
                     </div>
-                    ${lead ? '' : `<dl class="os-client-value">
+                    ${lead ? `<dl class="os-client-value">
+                        <div><dt>Estimated deal</dt><dd>${cli.estimatedValue ? `${money(cli.estimatedValue)} CHF` : 'Not set'}</dd></div>
+                        <div><dt>Source</dt><dd>${cli.source ? escapeHtml(cli.source) : 'Not set'}</dd></div>
+                    </dl>` : `<dl class="os-client-value">
                         <div><dt>Collected · all time</dt><dd>${money(cli.summary.collected)} CHF</dd></div>
                         <div><dt>Outstanding</dt><dd>${money(cli.summary.outstanding)} CHF${cli.summary.overdueCount ? ` · ${cli.summary.overdueCount} overdue` : ''}</dd></div>
                     </dl>`}

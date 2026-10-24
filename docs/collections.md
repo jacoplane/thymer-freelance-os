@@ -17,6 +17,8 @@ The starter command creates these fields and views. A collection name mapping do
 | `email` | Text | Optional primary contact email |
 | `phone` | Text | Optional phone number |
 | `website` | URL | Client website |
+| `estimated_value_chf` | Number | Estimated deal value for prospective leads |
+| `source` | Choice | `referral`, `website`, `linkedin`, `inbound`, `outbound`, `other` |
 
 Clients and leads share one lifecycle Status. The Status board uses this field, as do the dashboard's compact status control and native filters. Proposal accepted, Active client, and On maintenance count as acquired clients; only active and maintenance records contribute recurring revenue and included support allowances. The old `lead_stage` field is retained in existing workspaces for history, and is not used for new updates. See [client and lead tracking](client-tracking.md) for the migration and native MCP workflow.
 
@@ -31,6 +33,8 @@ MRR reads `monthly_chf` directly on active and maintenance clients; an annual bi
 | `deadline` | Date/time | Project deadline |
 | `completed_date` | Date/time | Optional reference |
 | `client` | Record link | A Clients record |
+| `budget_chf` | Number | Agreed project budget / cap in CHF |
+| `fee_type` | Choice | `fixed`, `hourly`, `retainer`, `non_billable` |
 | `parent_page` | Native parent field | Links a deliverable or nested page to its parent project/page |
 
 `parent_page` is the field ID; Thymer normally displays its label as **Sub-page of**. Top-level records are the projects. Native tasks live in the page body; there is no separate Tasks collection to maintain.
@@ -41,6 +45,7 @@ MRR reads `monthly_chf` directly on active and maintenance clients; an annual bi
 | --- | --- | --- |
 | `invoice_id` | Text | Invoice reference |
 | `client` | Record link | A Clients record |
+| `project` | Record link | Optional project link for delivery attribution |
 | `amount_chf` | Number | Invoice amount |
 | `currency` | Choice | Starter values: `CHF`, `EUR`, `USD` |
 | `issued` | Date/time | Issue date |

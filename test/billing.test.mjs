@@ -160,3 +160,51 @@ test('new sent and paid entries require their actual dates before any page is cr
     await assert.rejects(f.plugin.createConfiguredRecord('Invoices', 'INV-NEW', { ...paidEntry(), paid_date: '' }), /valid payment date/);
     assert.equal(count, 0);
 });
+
+
+test('invoice search matches project name', () => {
+    const rows = [
+        { invoiceId: 'INV-001', clientName: 'Example Studio', projectName: 'Website Redesign', isOutstanding: true },
+        { invoiceId: 'INV-002', clientName: 'Other', projectName: 'Brand Guide', isOutstanding: false }
+    ];
+    assert.equal(api.billingInvoices(rows, 'outstanding', 'redesign').length, 1);
+    assert.equal(api.billingInvoices(rows, 'outstanding', 'brand').length, 0);
+});
+
+test('invoice creation validates linked project belongs to the client', async () => {
+    const f = fixture({ status: '', payment_status: '', issued: '', paid_date: '' });
+    const projectGuid = '1B0J3X9Y8QS96C75M3QMT23DNW';
+    const projects = {
+        getGuid: () => 'projects',
+        getName: () => 'Projects',
+        getAllRecords: async () => [{
+            guid: projectGuid,
+            getName: () => 'Client Project',
+            prop: (label) => ({ linkedRecord: () => label === 'client' ? { guid: clientGuid } : null })
+        }, {
+            guid: '1B0J3X9Y8QS96C75M3QMT23DXX',
+            getName: () => 'Other Project',
+            prop: (label) => ({ linkedRecord: () => label === 'client' ? { guid: '1FD58J39X6KJ4JK5F06T7P4TXX' } : null })
+        }]
+    };
+    f.plugin.data.getAllCollections = async () => [f.collection, { getGuid: () => 'clients', getName: () => 'Clients', getAllRecords: async () => [{ guid: clientGuid, getName: () => 'Example client' }] }, projects];
+    f.collection.createRecord = title => { f.record.getName = () => title; return f.record.guid; };
+
+    // Mismatched project
+    await assert.rejects(
+        f.plugin.createConfiguredRecord('Invoices', 'INV-ERR', { ...paidEntry(), project: '1B0J3X9Y8QS96C75M3QMT23DXX' }),
+        /linked to this client/
+    );
+
+    // Matching project succeeds
+    f.record.prop = label => ({
+        text: () => typeof f.stored[label] === 'string' ? f.stored[label] : '',
+        number: () => typeof f.stored[label] === 'number' ? f.stored[label] : null,
+        date: () => typeof f.stored[label] === 'object' ? f.stored[label] : null,
+        linkedRecord: () => label === 'client' ? { guid: clientGuid } : label === 'project' ? { guid: projectGuid } : null,
+        set: value => { f.writes.push([label, value]); f.stored[label] = value; return true; },
+        setChoice: value => { f.writes.push([label, value]); f.stored[label] = value; return true; }
+    });
+    await f.plugin.createConfiguredRecord('Invoices', 'INV-VALID', { ...paidEntry(), project: projectGuid });
+    assert.equal(f.stored.project, projectGuid);
+});

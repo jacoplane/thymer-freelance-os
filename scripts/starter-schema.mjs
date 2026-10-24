@@ -4,14 +4,16 @@ import { planCollectionViews, VIEW_PLANS } from './collection-view-plan.mjs';
 const definitions = {
     Clients: { icon: 'ti-users', description: 'Client relationships and recurring care plans', fields: {
         status: ['choice', ['prospect', 'contacted', 'discussing', 'proposal_sent', 'proposal_accepted', 'active', 'maintenance', 'archived']], plan: ['text'], monthly_chf: ['number'],
-        billing_cycle: ['choice', ['Monthly', 'Annual', 'Project']], included_hours: ['number'], contact: ['text'], email: ['text'], phone: ['text'], website: ['url']
+        billing_cycle: ['choice', ['Monthly', 'Annual', 'Project']], included_hours: ['number'], contact: ['text'], email: ['text'], phone: ['text'], website: ['url'],
+        estimated_value_chf: ['number'], source: ['choice', ['referral', 'website', 'linkedin', 'inbound', 'outbound', 'other']]
     } },
     Projects: { icon: 'ti-stack-2', description: 'Projects, deliverables and native tasks', fields: {
         status: ['choice', ['backlog', 'in_progress', 'in_review', 'completed', 'archived', 'cancelled']],
-        priority: ['choice', ['high', 'medium', 'low']], deadline: ['datetime'], completed_date: ['datetime'], client: ['record']
+        priority: ['choice', ['high', 'medium', 'low']], deadline: ['datetime'], completed_date: ['datetime'], client: ['record'],
+        budget_chf: ['number'], fee_type: ['choice', ['fixed', 'hourly', 'retainer', 'non_billable']]
     } },
     Invoices: { icon: 'ti-receipt', description: 'Invoice register and payment tracking', fields: {
-        invoice_id: ['text'], client: ['record'], amount_chf: ['number'], currency: ['choice', ['CHF', 'EUR', 'USD']],
+        invoice_id: ['text'], client: ['record'], project: ['record'], amount_chf: ['number'], currency: ['choice', ['CHF', 'EUR', 'USD']],
         issued: ['datetime'], due: ['datetime'], paid_date: ['datetime'], status: ['choice', ['draft', 'ready', 'sent']],
         payment_status: ['choice', ['unpaid', 'unconfirmed', 'paid']], pdf: ['file']
     } },

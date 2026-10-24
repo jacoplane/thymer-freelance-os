@@ -25,7 +25,17 @@ test('lead filters include legacy leads and keep archived relationships out of t
     assert.equal(api.clientMatches({ status: 'active' }, 'leads'), false);
     assert.equal(api.clientMatches({ status: 'archived' }, 'leads'), false);
     assert.equal(api.clientMatches({ status: 'archived' }, 'archived'), true);
-    assert.match(api.clientSearchText({ name: 'Example', status: 'proposal_sent', contact: 'Alex', email: 'alex@example.test', phone: '+41 22' }), /alex@example.test.*\+41 22.*proposal sent/);
+    assert.match(api.clientSearchText({ name: 'Example', status: 'proposal_sent', contact: 'Alex', email: 'alex@example.test', phone: '+41 22', source: 'referral' }), /alex@example.test.*\+41 22.*referral.*proposal sent/);
+});
+
+test('client edits update estimated_value_chf and source fields', async () => {
+    const { plugin, client, stored, writes } = fixture({ estimated_value_chf: 5000, source: 'referral' });
+    client.estimatedValue = 5000;
+    client.source = 'referral';
+    await plugin.updateClientDetails(client, { estimated_value_chf: 7500, source: 'linkedin' });
+    assert.deepEqual(writes, [['estimated_value_chf', 7500], ['source', 'linkedin']]);
+    assert.equal(stored.estimated_value_chf, 7500);
+    assert.equal(stored.source, 'linkedin');
 });
 
 test('client setup adds CRM fields without replacing existing contact values, field IDs, or the Prospects view ID', () => {

@@ -66,3 +66,54 @@ test('a project cannot link its Client property to an arbitrary project page',as
     await assert.rejects(plugin.createConfiguredRecord('Projects','Example',{client:'other-project'}),/Choose a client/);
     assert.equal(created,false);
 });
+
+
+test('projects validate and support budget_chf and fee_type fields', async () => {
+    const plugin = new Plugin();
+    const store = new Map();
+    const projects = {
+        getGuid: () => 'projects',
+        getName: () => 'Projects',
+        getConfiguration: () => ({
+            fields: [
+                { label: 'client', type: 'record', active: true },
+                { label: 'status', type: 'choice', choices: [{ label: 'in_progress', active: true }], active: true },
+                { label: 'priority', type: 'choice', choices: [{ label: 'medium', active: true }], active: true },
+                { label: 'budget_chf', type: 'number', active: true },
+                { label: 'fee_type', type: 'choice', choices: [{ label: 'fixed', active: true }, { label: 'hourly', active: true }], active: true }
+            ]
+        }),
+        createRecord: (name) => {
+            const guid = 'proj-123';
+            const rec = {
+                guid,
+                name,
+                prop: (label) => ({
+                    set: (val) => { rec[label] = val; return true; },
+                    setChoice: (val) => { rec[label] = val; return true; }
+                }),
+                getLineItems: async () => [],
+                createLineItem: async () => ({})
+            };
+            store.set(guid, rec);
+            return guid;
+        },
+        getAllRecords: async () => [...store.values()]
+    };
+    const clients = {
+        getGuid: () => 'clients',
+        getName: () => 'Clients',
+        getAllRecords: async () => [{ guid: 'real-client', getName: () => 'Client A' }]
+    };
+    plugin.data = { getAllCollections: async () => [projects, clients] };
+
+    const rec = await plugin.createConfiguredRecord('Projects', 'Website Redesign', {
+        client: 'real-client',
+        status: 'in_progress',
+        priority: 'medium',
+        budget_chf: 6000,
+        fee_type: 'fixed'
+    });
+    assert.equal(rec.budget_chf, 6000);
+    assert.equal(rec.fee_type, 'fixed');
+});
