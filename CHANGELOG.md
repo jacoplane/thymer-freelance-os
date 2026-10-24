@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.9.0 — 2026-10-25
+
+- Add comprehensive Page Archetypes across all core records (Clients, Projects, Invoices, Support Sessions) with clean section templates and live task rollups.
+- Add interactive in-document action pills (`linkbtn`) styled according to Thymer's native visual design system:
+  - Client: `+ Create project`, `+ Create invoice`, `+ Log support time`.
+  - Project: `+ Add task`, `+ Log time`, `+ Create invoice`, `+ Add review checkpoint`.
+  - Invoice: `+ Copy payment details`, `+ Record payment`, `+ Mark sent`, `+ Add deliverable`.
+  - Support Session: `+ Add follow-up task`, `+ Create invoice`, `+ Log time`.
+- Embed dynamic Menubar Header Actions directly into Thymer Desktop panels with contextual record preselection:
+  - Client panel: `+ Project`, `+ Invoice`, `+ Time`.
+  - Project panel: `+ Task`, `+ Invoice`, `+ Time`.
+  - Invoice panel: `+ Mark sent`, `+ Record payment`, `Copy details`, and `Settled` badge.
+  - Support Session panel: `+ Time`, `+ Task`, `+ Invoice`.
+- Add fast, keyboard-navigable modal dialogs with client/project context resolution and validation.
+- Add Swiss QR-bill and payment details clipboard copy action with fallback for restricted webview environments.
+- Add non-destructive archetype backfill scripts to upgrade existing workspace records safely without clobbering user notes.
+- Publish Freelance OS UI Design System & Style Guide (`docs/style-guide.md`).
+
 ## 1.8.0 — 2026-10-24
 
 - Add a dedicated Billing page with a compact summary, searchable invoice table, invoice filters, and maintenance-plan references.

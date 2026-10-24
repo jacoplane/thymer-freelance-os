@@ -16,7 +16,7 @@
   <a href="#everyday-requests">Everyday requests</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#the-desktop-dashboard">Desktop dashboard</a> ·
-  <a href="docs/README.md">Documentation</a>
+  <a href="#documentation">Documentation</a>
 </p>
 
 ---
@@ -111,8 +111,10 @@ Projects track agreed budgets (`budget_chf`) and contract types (`fixed`, `hourl
 ### 3. Closed-Loop Invoicing & Swiss QR-Bills
 Invoices link directly to projects for delivery attribution. When billing in Switzerland or Europe, Freelance OS pairs with the bundled [`swiss-invoicing`](.agents/skills/swiss-invoicing/SKILL.md) skill to compile official Typst-based Swiss QR-bill PDFs with validated QR-IBANs and payment slips.
 
-### 4. Standardized Page Archetypes
-The agent reads and maintains clean, consistent markdown structures within project and client bodies (`## Overview & Scope`, `## Deliverables & Tasks`, `## Waiting On Client`, `## Activity & Time Log`, and `## Notes & Decisions`), ensuring human and agent never conflict.
+### 4. Standardized Page Archetypes & Interactive Action Buttons
+Clients, projects, invoices, and support sessions maintain standardized markdown archetypes with dedicated sections, automated task rollups, and interactive action buttons:
+- **In-Document Action Pills (`linkbtn`):** Native clickable buttons embedded directly into the document canvas (`+ Create project`, `+ Add task`, `+ Add review checkpoint`, `+ Log time`, `+ Create invoice`, `+ Copy payment details`, `+ Add deliverable`, `+ Add follow-up task`).
+- **Panel Menubar Header Actions:** Context-aware action buttons pinned to Thymer's top panel menubar (`+ Project`, `+ Invoice`, `+ Time`, `+ Task`, `+ Record payment`, `+ Mark sent`, `Copy details`, `Settled` badge) that open pre-filled modal dialogs without losing document focus.
 
 ---
 
@@ -146,6 +148,8 @@ This repository includes two specialized agent skills in `.agents/skills/`:
 
 ---
 
+<a id="documentation"></a>
+
 ## Documentation
 
 * **[Setup & Installation Guide](docs/setup.md)** — Step-by-step fresh workspace setup and collection configuration.
@@ -153,6 +157,7 @@ This repository includes two specialized agent skills in `.agents/skills/`:
 * **[Collections & Field Reference](docs/collections.md)** — Complete schema specification for all native collections.
 * **[Billing Register](docs/billing.md)** — Invoice lifecycles, payment states, and retainer structures.
 * **[Client & Lead Tracking](docs/client-tracking.md)** — Status pipelines, migration from older boards, and MCP workflows.
+* **[UI Design System & Style Guide](docs/style-guide.md)** — Visual hierarchy, button tokens, archetype layouts, and panel action pills.
 * **[Development & Live Testing](docs/development.md)** — Bundle build, Node test suite, and Puppeteer live desktop verification loop.
 
 ---

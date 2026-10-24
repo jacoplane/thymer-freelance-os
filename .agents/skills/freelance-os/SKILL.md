@@ -74,78 +74,160 @@ Top-level projects (sub-pages are deliverables; native tasks live in page bodies
 
 ---
 
-## 4. Standardized Markdown Page Archetypes
+## 4. Standardized Markdown Page Archetypes & Action Pills
 
-When creating or modifying page content, maintain the following clean, consistent archetypes so both human and agent can read and maintain them without ambiguity:
+When creating or modifying page content, maintain the following clean, consistent archetypes. Each archetype features standardized section headings, automated task rollups, in-document action pills (`linkbtn`), and panel menubar header actions so both human and agent operate in total harmony.
 
 ### Project Page Archetype
+- **Panel Header Actions:** `[+ Task]` `[+ Invoice]` `[+ Time]`
 ```markdown
-## Overview & Scope
-[Concise summary of project objectives, scope boundaries, and agreed fee/budget structure.]
+## Project brief
+[Concise summary of project outcome, scope boundaries, and agreed fee structure.]
 
-## Deliverables & Tasks
-- [ ] Core milestone deliverable
-- [ ] Sub-task with deadline [date]
-*(Link briefs, deliverables and working files with `[[Title]]`, or create child sub-pages.)*
+## Next actions
+[+ Add task]
+- [ ] Core immediate next action
+*(Tasks added here automatically sync to the Freelance OS Today queue and Client dashboard rollup)*
 
-## Waiting On Client
-- [ ] Waiting on assets / API credentials from [Contact Name]
+## Deliverables & references
+- [[Deliverable Sub-page 1]]
+- [[Deliverable Sub-page 2]]
+### 🔗 Key Links & Repositories
+- Repository / Code: [GitHub / GitLab repo ↗]
+- Design & Figma: [Figma / Design link ↗]
+- Live / Staging: [Preview site ↗]
+- Shared Drive / Assets: [Folder link ↗]
 
-## Activity & Time Log
-- **YYYY-MM-DD** (X.Xh): Description of work delivered.
-*(Log work sessions with Command Palette → "Log Freelance OS support time", dashboard, or tell your agent: "Logged 1.5h on this project".)*
+## Activity & time log
+[+ Log time]
+*(Click above to log a work session, use + Time in the header, or tell your agent: "Logged 2h on this project".)*
 
-## Notes & Decisions
-- Key decisions, architectural choices, or meeting minutes.
+## 💳 Billing & Invoices
+[+ Create invoice]
+*(Click above, use + Invoice in the header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*
+- Billing Schedule: Milestone deposit (50%) / Final delivery (50%)
+- Payment Method: Bank Transfer / QR-bill (CHF)
+
+## Client review checkpoints
+[+ Add review checkpoint]
+Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.
+- [ ] Client review checkpoint
+
+## Decisions & updates
+- **YYYY-MM-DD**: Project initialized.
+*(Tip: record client feedback, scope modifications, and architectural decisions below)*
 ```
 
-### Client Page Archetype
+### Client Page Archetypes
+- **Panel Header Actions:** `[+ Project]` `[+ Invoice]` `[+ Time]`
+
+#### A. Acquired Client Archetype (`proposal_accepted`, `active`, `maintenance`)
 ```markdown
 ## Relationship & Context
-[Background on company, organizational structure, preferences, communication channels, billing terms.]
+[Background on company, organizational structure, preferences, communication channels.]
+### 🔗 Key Links & Deliverables
+- Website: https://...
+- Shared Drive / Assets: [Folder link ↗]
+- Design & Mockups: [Figma / Design link ↗]
+### 👥 Stakeholders & Roles
+- Primary Contact: [Contact Name] (email@...) — Decision maker
+- Billing Contact: factures@... (Net 30)
 
 ## Active Projects & Engagements
-*(No active projects in flight. Press `Ctrl/Cmd+K` → "Create Freelance OS project for active client", click "+ Project" in the dashboard, or tell your AI agent: "Start project [Name] for [Client]".)*
-- [Project Name](ref) · Active retainer or project scope
+[+ Create project]
+- [[Project 1]](ref) (in progress)
+- [[Project 2]](ref) (in review)
+
+## 💳 Invoices & Billing
+[+ Create invoice]
+*(No invoices issued yet. Click above, use + Invoice in the top header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*
+- Billing Terms: Monthly (1er du mois) / Net 30
+- Payment Method: Bank Transfer / QR-bill (CHF)
+
+## ⏱️ Support & Care Plan
+[+ Log support time]
+- Active Plan: Growth Plan (35 CHF / month)
+- Monthly Support Allowance: 2h / month included
+- Support Window: Mon–Fri, 09:00–18:00 CET
 
 ## 📋 Open Tasks & Actions
 ### Account & Relationship Tasks
-- [ ] Direct client action item (e.g. monthly billing, contract review, stakeholder follow-up)
+- [ ] Initial client kickoff / follow-up
 
 ### Active Project Tasks
-*(No active project tasks. Tasks created inside linked projects will automatically roll up here.)*
-- [Project Name](ref) Active deliverable or linked next action
+*(Tasks added to linked projects will automatically roll up here.)*
 
-## Communication & Decisions Log
-- **YYYY-MM-DD**: Brief log of important conversations, proposals, or status changes.
+## 📝 Communication & Decisions Log
+- **YYYY-MM-DD**: Client profile created.
+```
+
+#### B. Pipeline Lead Archetype (`prospect`, `contacted`, `discussing`, `proposal_sent`)
+```markdown
+## Relationship & Context
+[Prospect background, initial inquiry, and commercial context.]
+### 🔗 Key Links & References
+- Website: https://...
+- Pitch Deck / Scope Brief: [Shared link ↗]
+### 👥 Stakeholders & Roles
+- Primary Contact: [Lead Contact] (email@...) — Prospect
+- Decision Maker: Commercial sponsor
+
+## 🎯 Deal Qualification & Next Steps
+[+ Add task]
+- [ ] Discovery call: understand project goals and scope
+- [ ] Validate budget range and decision timeline
+- [ ] Prepare and deliver proposal / estimate
+
+## 📄 Commercial Estimate & Proposals
+[+ Create project]
+[+ Create invoice]
+- Estimated Pipeline Value: 12,000 CHF
+- Current Stage: Proposal sent
+*(Once the proposal is accepted, click "+ Create project" above to launch delivery or "+ Create invoice" to bill deposit)*
+
+## 📝 Communication & Meeting Debrief
+- **YYYY-MM-DD**: Lead record created.
 ```
 
 ### Invoice Page Archetype
+- **Panel Header Actions:** Dynamic by state: `[+ Mark sent]` `[+ Record payment]` `[Copy details]` or `[✓ Settled]`
 ```markdown
 ## Invoice Summary & Scope
-[Concise summary of deliverables, work sessions, or retainer coverage billed by this invoice.]
+[+ Add deliverable]
+Scope of work, deliverables, and services covered under this invoice for [Client Name].
 
 ## Commercial & Payment Details
-- **Client:** [Client Name](ref)
-- **Project:** [Project Name](ref)
-- **Amount & Currency:** [Amount] [Currency]
-- **Payment Terms:** Net due [YYYY-MM-DD]
-- **Payment Method:** Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)
+[+ Copy payment details]
+- QR-IBAN: CH44 0076 2011 6238 5295 8
+- Client: [[Client Name]]
+- Project: [[Project Name]]
+- Amount & Currency: 3,500 CHF
+- Payment Terms: Net due YYYY-MM-DD
+- Payment Method: Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)
 
 ## Delivery & Settlement Log
-- **YYYY-MM-DD**: Invoice generated ([draft/ready/sent]).
+[+ Record payment]
+- **YYYY-MM-DD**: Invoice sent to client.
 - **YYYY-MM-DD**: Payment confirmed received and settled.
 ```
 
 ### Support Session Page Archetype
+- **Panel Header Actions:** `[+ Time]` `[+ Task]` `[+ Invoice]`
 ```markdown
 ## Session Log & Delivered Work
-- **Date & Duration:** YYYY-MM-DD (X.X h)
-- **Client & Project:** [Client Name](ref) / [Project Name](ref)
-- **Summary:** [Detailed summary of support delivered, bugs diagnosed, or features shipped.]
+[+ Log time]
+- **Date & Duration:** YYYY-MM-DD (2.5 h)
+- **Client & Project:** [[Client Name]] / [[Project Name]]
+- **Summary:** Detailed summary of support delivered, bugs diagnosed, or features shipped.
 
 ## Client Follow-Up
+[+ Add follow-up task]
 - [ ] Send session summary or updates to client
+
+## Billing & Plan Allocation
+[+ Create invoice]
+- Care Plan: Growth Plan (2h included / month)
+- Overrun / Billed Status: Covered under monthly retainer / Invoiced separately
 ```
 
 ---

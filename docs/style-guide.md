@@ -71,20 +71,42 @@ Buttons follow a strict 3-tier hierarchy:
 
 ## 3. Archetype Structure & Conventions
 
-Client records follow a consistent four-section layout:
+Every primary entity in Freelance OS maintains a standardized markdown archetype designed for readability, friction-free editing, and automated bidirectional agent sync.
 
+### 3.1 Client Archetypes
+
+#### A. Acquired Client Archetype
 ```markdown
 ## Relationship & Context
-Background, commercial terms, and communication preferences.
+Organization background, commercial agreements, and communication preferences.
+### 🔗 Key Links & Deliverables
+• Website: https://...
+• Shared Drive / Assets: [Folder link ↗]
+• Design & Mockups: [Figma / Design link ↗]
+### 👥 Stakeholders & Roles
+• Primary Contact: Contact Name (email@...) — Decision maker
+• Billing Contact: factures@... (Net 30)
 
 ## Active Projects & Engagements
 [+ Create project]
 • [[Active Project 1]] (in progress)
 • [[Active Project 2]] (in progress)
 
+## 💳 Invoices & Billing
+[+ Create invoice]
+*(No invoices issued yet. Click above, use + Invoice in the top header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*
+• Billing Terms: Monthly (1er du mois) / Net 30
+• Payment Method: Bank Transfer / QR-bill (CHF)
+
+## ⏱️ Support & Care Plan
+[+ Log support time]
+• Active Plan: Growth Plan (35 CHF / month)
+• Monthly Support Allowance: 2h / month included
+• Support Window: Mon–Fri, 09:00–18:00 CET
+
 ## 📋 Open Tasks & Actions
 ### Account & Relationship Tasks
-[ ] Initial kickoff / account follow-up
+[ ] Initial client kickoff / follow-up
 
 ### Active Project Tasks
 *(Tasks added to linked projects automatically roll up here.)*
@@ -93,10 +115,142 @@ Background, commercial terms, and communication preferences.
 • 2026-10-24: Client profile created.
 ```
 
+#### B. Pipeline Lead Archetype (`prospect`, `contacted`, `discussing`, `proposal_sent`)
+```markdown
+## Relationship & Context
+Prospect background, initial inquiry, and commercial context.
+### 🔗 Key Links & References
+• Website: https://...
+• Pitch Deck / Scope Brief: [Shared link ↗]
+### 👥 Stakeholders & Roles
+• Primary Contact: Lead Contact (email@...) — Prospect
+• Decision Maker: Commercial sponsor
+
+## 🎯 Deal Qualification & Next Steps
+[+ Add task]
+[ ] Discovery call: understand project goals and scope
+[ ] Validate budget range and decision timeline
+[ ] Prepare and deliver proposal / estimate
+
+## 📄 Commercial Estimate & Proposals
+[+ Create project]
+[+ Create invoice]
+• Estimated Pipeline Value: 12,000 CHF
+• Current Stage: Proposal sent
+*(Once the proposal is accepted, click "+ Create project" above to launch delivery or "+ Create invoice" to bill deposit)*
+
+## 📝 Communication & Meeting Debrief
+• 2026-10-24: Lead record created.
+```
+
+---
+
+### 3.2 Project Archetype
+
+```markdown
+## Project brief
+Describe the outcome this project should achieve.
+Scope and success criteria: add what is included and how you will know it is done.
+
+## Next actions
+[+ Add task]
+[ ] Immediate next action
+*(Tasks added here automatically sync to the Freelance OS Today queue and Client dashboard rollup)*
+
+## Deliverables & references
+• [[Deliverable Sub-page 1]]
+• [[Deliverable Sub-page 2]]
+### 🔗 Key Links & Repositories
+• Repository / Code: [GitHub / GitLab repo ↗]
+• Design & Figma: [Figma / Design link ↗]
+• Live / Staging: [Preview site ↗]
+• Shared Drive / Assets: [Folder link ↗]
+
+## Activity & time log
+[+ Log time]
+*(Click above to log a work session, use + Time in the header, or tell your agent: "Logged 2h on this project".)*
+
+## 💳 Billing & Invoices
+[+ Create invoice]
+*(Click above, use + Invoice in the header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*
+• Billing Schedule: Milestone deposit (50%) / Final delivery (50%)
+• Payment Method: Bank Transfer / QR-bill (CHF)
+
+## Client review checkpoints
+[+ Add review checkpoint]
+Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.
+[ ] Client review checkpoint
+
+## Decisions & updates
+• 2026-10-24: Project initialized.
+*(Tip: record client feedback, scope modifications, and architectural decisions below)*
+```
+
+---
+
+### 3.3 Invoice Archetype
+
+```markdown
+## Invoice Summary & Scope
+[+ Add deliverable]
+Scope of work, deliverables, and services covered under this invoice for [Client Name].
+
+## Commercial & Payment Details
+[+ Copy payment details]
+• QR-IBAN: CH44 0076 2011 6238 5295 8
+• Client: [[Client Name]]
+• Project: [[Project Name]]
+• Amount & Currency: 3,500 CHF
+• Payment Terms: Net due YYYY-MM-DD
+• Payment Method: Swiss QR-bill / Bank Wire Transfer (Vermeulen Solutions)
+
+## Delivery & Settlement Log
+[+ Record payment]
+• YYYY-MM-DD: Invoice sent to client.
+• YYYY-MM-DD: Payment confirmed received and settled.
+```
+
+---
+
+### 3.4 Support Session Archetype
+
+```markdown
+## Session Log & Delivered Work
+[+ Log time]
+• Date & Duration: YYYY-MM-DD (2.5 h)
+• Client & Project: [[Client Name]] / [[Project Name]]
+• Summary: Detailed summary of support delivered, bugs diagnosed, or features shipped.
+
+## Client Follow-Up
+[+ Add follow-up task]
+[ ] Send session summary or updates to client
+
+## Billing & Plan Allocation
+[+ Create invoice]
+• Care Plan: Growth Plan (2h included / month)
+• Overrun / Billed Status: Covered under monthly retainer / Invoiced separately
+```
+
+---
+
+## 4. Panel Menubar Header Actions
+
+Thymer edit panels feature context-sensitive action buttons injected into the menubar (`.panel-menubar-buttons > .os-client-header-actions`):
+
+| Active Panel Type | Rendered Header Controls | Context Action |
+|---|---|---|
+| **Client** | `[+ Project]` `[+ Invoice]` `[+ Time]` | Launches project, invoice, or support dialog with client pre-selected. |
+| **Project** | `[+ Task]` `[+ Invoice]` `[+ Time]` | Launches task capture modal for this project, or invoice/support with client+project pre-selected. |
+| **Invoice (Draft / Ready)** | `[+ Mark sent]` `[+ Record payment]` `[Copy details]` | Opens state transition modal with issue date pre-filled; copies Swiss QR-bill data. |
+| **Invoice (Sent)** | `[+ Record payment]` `[Copy details]` | Opens full settlement modal with received date; copies payment details. |
+| **Invoice (Paid)** | `[✓ Settled]` `[Copy details]` | Visual confirmation badge of settlement; copies archival payment details. |
+| **Support Session** | `[+ Time]` `[+ Task]` `[+ Invoice]` | Logs follow-up time or converts session into task/invoice. |
+
 ### Archetype Consistency Rules:
-1. **Always-On Action:** The `[+ Create project]` in-document button is ALWAYS present under `Active Projects & Engagements` on every client, regardless of whether they have 0 or 10 active projects.
-2. **Predictable Placement:** The action button is placed immediately under the section heading so users never need to scroll past long project lists to initiate work.
-3. **Dual Entry Points:** Every client page provides two seamless ways to add work:
-   - **Document level:** The in-document `[+ Create project]` button.
-   - **Window level:** The persistent header menubar pill `[📁 + Project]`.
-4. **Context Pre-fill:** Any creation modal launched from a client page automatically pre-selects and locks in that client.
+1. **Always-On Action:** In-document action buttons (`+ Create project`, `+ Add task`, etc.) are ALWAYS present under their respective section headings on every record, regardless of whether children exist.
+2. **Predictable Placement:** Action buttons are placed immediately under the section heading so users never need to scroll past long lists to initiate work.
+3. **Dual Entry Points:** Every record provides two seamless ways to add work:
+   - **Document level:** The in-document action pill (`.listitem-linkbtn`).
+   - **Window level:** The persistent header menubar pill (`.os-header-action-btn`).
+4. **Context Pre-fill:** Any creation modal launched from an active page automatically pre-selects and locks in that client and project.
+5. **Non-Destructive Backfills:** Upgrades to existing records preserve all existing user notes, attachments, and customized task descriptions.
