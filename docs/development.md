@@ -5,7 +5,7 @@
 ```sh
 npm ci
 node build.mjs
-node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/projects.test.mjs test/starter.test.mjs test/live-safety.test.mjs
+node --test test/*.test.mjs
 node deploy.mjs --workspace YOUR_WORKSPACE_GUID
 ```
 
@@ -44,6 +44,6 @@ node scripts/seed-demo.mjs --workspace YOUR_DEMO_WORKSPACE_GUID --apply
 
 The seed command refuses collections that already contain records. It creates six fictional clients, six projects, seven invoices, native tasks and a service guide. Dates are relative to the seed day. Contacts use reserved `.example` domains. A local manifest is kept in the temporary directory under `freelance-os-demo`; set `OS_DEMO_STATE_DIR` to choose another location.
 
-The seed writes native records only. In Today, select one next action per project and up to three focus tasks. Add a waiting reason/follow-up for a sample task. In Weekly review, write sample wins and priorities. Next-action choices are native references stored under each project’s **Next actions** section; focus pins, waiting notes and unsaved review drafts are local state.
+The seed writes native records only. In Today, select one next action per project and up to three focus tasks. Add a waiting reason/follow-up for a sample task. In Weekly review, write sample wins and priorities. Next-action choices are native references stored under each project’s **Next actions** section. Saved waiting details sync in native task metadata; legacy waiting notes remain local until saved again. Focus pins and unsaved review drafts are local state.
 
 Before publishing images, verify the visible workspace is the demo workspace and that every client, task, project, invoice and note belongs to the fictional dataset. Keep account settings, workspace switchers, notifications, developer tools, and personal workspace tabs out of screenshots. Publish only deliberately selected images in `docs/images/`.

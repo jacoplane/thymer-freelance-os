@@ -63,7 +63,7 @@ Requires Node.js 22 or newer for the setup scripts. Development and live UI chec
 ```sh
 npm ci
 node build.mjs
-node --test test/finance.test.mjs test/collection-views.test.mjs test/workflow.test.mjs test/starter.test.mjs test/projects.test.mjs
+node --test test/*.test.mjs
 node deploy.mjs --workspace YOUR_WORKSPACE_GUID
 ```
 
