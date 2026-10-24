@@ -100,10 +100,17 @@ When creating or modifying page content, maintain the following clean, consisten
 ### Client Page Archetype
 ```markdown
 ## Relationship & Context
-[Background on company, organizational structure, preferences, communication channels.]
+[Background on company, organizational structure, preferences, communication channels, billing terms.]
 
 ## Active Projects & Engagements
 - Linked projects and ongoing retainer scope.
+
+## 📋 Open Tasks & Actions
+### Account & Relationship Tasks
+- [ ] Direct client action item (e.g. monthly billing, contract review, stakeholder follow-up)
+
+### Active Project Tasks
+- [Project Name](ref) Active deliverable or linked next action
 
 ## Communication & Decisions Log
 - **YYYY-MM-DD**: Brief log of important conversations, proposals, or status changes.
