@@ -132,7 +132,7 @@ async function run() {
 
         const toAdd = [];
         if (!headingTexts.some(h => h.includes('activity') || h.includes('timelog'))) {
-            toAdd.push(`## ⏱️ Activity & Time Log\n- **2026-10-24** (1.0h): Project audit and Freelance OS 1.9.0 alignment.`);
+            toAdd.push(`## ⏱️ Activity & Time Log\n- **2026-10-24** (1.0h): Project audit and Freelance OS alignment.`);
         }
         if (!headingTexts.some(h => h.includes('checkpoint') || h.includes('waiting'))) {
             toAdd.push(`## ⏳ Client Review Checkpoints\n- [ ] Awaiting next scheduled client review session`);

@@ -16,7 +16,7 @@ Open the native profile for notes, renaming, or additional contacts. The primary
 
 ## Upgrade an existing workspace
 
-Freelance OS 1.7.0 extends the existing Status choices and enhances the existing Status board, preserving its view ID and existing choice IDs. It uses the contact, email, phone, and website fields already available in 1.6.0. No new register or collection is required.
+Freelance OS extends the existing Status choices and enhances the existing Status board, preserving its view ID and existing choice IDs. It uses the contact, email, phone, and website fields already available in the starter schema. No new register or collection is required.
 
 Preview and then apply just the Clients collection update:
 
