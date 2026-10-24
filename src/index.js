@@ -360,8 +360,8 @@ function clientTemplateSections({ context = '', initialTask = '' } = {}) {
     return [
         { title: 'Relationship & Context', lines: [text(context || 'Record organization background, communication preferences, and key commercial terms.')] },
         { title: 'Active Projects & Engagements', lines: [
-            { type: 'linkbtn', segments: [{ type: 'text', text: '+ Create project for this client' }] },
-            text('*(No active projects in flight. Click above, use + Project in the top header, or press Ctrl/Cmd+K → "Create Freelance OS project for active client".)*')
+            text('*(No active projects in flight. Click below, use + Project in the top header, or press Ctrl/Cmd+K → "Create Freelance OS project for active client".)*'),
+            { type: 'linkbtn', segments: [{ type: 'text', text: '+ Create project' }] }
         ] },
         { title: '📋 Open Tasks & Actions', lines: [
             text('### Account & Relationship Tasks'),

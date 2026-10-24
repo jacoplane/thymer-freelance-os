@@ -1,11 +1,10 @@
 import { connectMcp } from './thymer-mcp.mjs';
 
 /**
- * Idempotent backport script for Client archetype empty states & interactive buttons.
- * - In-document button: Inserts native 'linkbtn' (+ Create project for this client)
- * - Active Projects: prompts Ctrl/Cmd+K, top header action, or dashboard + Project.
- * - Active Project Tasks: explains automatic roll up from linked projects.
- * Preserves all notes, commercial terms, pipeline opportunities, and existing links.
+ * Idempotent backport script for Client archetype action buttons.
+ * - Ensures EVERY client has an interactive [+ Create project] button under its Projects section.
+ * - Upgrades any overly wordy '+ Create project for this client' to '+ Create project'.
+ * - Preserves all notes, commercial terms, pipeline opportunities, and existing links.
  */
 async function backfillClientArchetypes() {
     const call = await connectMcp();
@@ -66,28 +65,40 @@ async function backfillClientArchetypes() {
                         updated = true;
                     }
                 }
+
+                // 3. Compact button text if previously wordy
+                if (item.type === 'linkbtn' && item.text === '+ Create project for this client') {
+                    await call('update_line_item', {
+                        workspace: ws.guid,
+                        line_item: item.guid,
+                        content: '+ Create project',
+                        type: 'linkbtn'
+                    });
+                    console.log(`  ✓ Compacted linkbtn text to "+ Create project" on [${title}]`);
+                    updated = true;
+                }
             }
 
-            // 3. Ensure in-document action button exists for empty clients
+            // 4. Ensure in-document action button exists for ALL clients
             rec = await call('get_record', { workspace: ws.guid, record: client.guid, format: 'structured' });
             const projectsHeading = (rec.items || []).find(i => i.type === 'heading' && (i.text?.includes('Active Projects') || i.text?.includes('Projects')));
             const hasLinkBtn = (rec.items || []).some(i => i.type === 'linkbtn');
-            const hasEmptyPrompt = (rec.items || []).some(i => i.text?.includes('No active projects'));
 
-            if (projectsHeading && !hasLinkBtn && hasEmptyPrompt) {
+            if (projectsHeading && !hasLinkBtn) {
+                // Find insertion position: after any project list items under this heading
                 await call('create_line_item', {
                     workspace: ws.guid,
                     record: client.guid,
                     parent: projectsHeading.guid,
                     type: 'linkbtn',
-                    content: '+ Create project for this client'
+                    content: '+ Create project'
                 });
-                console.log(`  ✓ Inserted interactive linkbtn action button into [${title}]`);
+                console.log(`  ✓ Inserted interactive linkbtn [+ Create project] into [${title}]`);
                 updated = true;
             }
 
             if (!updated) {
-                console.log(`  - [${title}] already up to date or has active projects linked.`);
+                console.log(`  - [${title}] already up to date.`);
             }
         }
     }
