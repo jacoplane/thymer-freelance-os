@@ -355,6 +355,21 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
     ];
 }
 
+function clientTemplateSections({ context = '', initialTask = '' } = {}) {
+    const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    return [
+        { title: 'Relationship & Context', lines: [text(context || 'Record organization background, communication preferences, and key commercial terms.')] },
+        { title: 'Active Projects & Engagements', lines: [text('Active projects linked to this client will appear here.')] },
+        { title: '📋 Open Tasks & Actions', lines: [
+            text('### Account & Relationship Tasks'),
+            { type: 'task', segments: initialTask ? [{ type: 'text', text: initialTask }] : [{ type: 'text', text: 'Initial client kickoff / follow-up' }] },
+            text('### Active Project Tasks'),
+            text('*(No active project tasks)*')
+        ] },
+        { title: '📝 Communication & Decisions Log', lines: [text(`- **${localDate()}**: Client profile created.`)] }
+    ];
+}
+
 export class Plugin extends AppPlugin {
     onUnload() {
         clearTimeout(this.refreshTimer);
@@ -1167,6 +1182,36 @@ export class Plugin extends AppPlugin {
         }
     }
 
+    async initializeClient(record, options = {}) {
+        if (typeof record?.getLineItems !== 'function' || typeof record?.createLineItem !== 'function') {
+            return { applied: false, reason: 'unsupported' };
+        }
+        const lines = await record.getLineItems(false);
+        const hasTemplate = lines.some(line => line.props?.freelance_os_template === 'client-v1');
+        if (hasTemplate) return { applied: false, reason: 'already-applied' };
+        const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
+        if (content.length > 0) return { applied: false, reason: 'has-content' };
+        const created = [];
+        try {
+            let previous = null;
+            for (const section of clientTemplateSections(options)) {
+                const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'client-v1' });
+                if (!heading) throw new Error('The client template could not be saved');
+                created.push(heading); previous = heading;
+                let priorLine = null;
+                for (const item of section.lines) {
+                    const line = await record.createLineItem(heading, priorLine, item.type, item.segments, item.props || null);
+                    if (!line) throw new Error('The client template could not be saved');
+                    created.push(line); priorLine = line;
+                }
+            }
+            return { applied: true };
+        } catch (error) {
+            for (const line of created.reverse()) await line.delete();
+            throw error;
+        }
+    }
+
     async applyProjectTemplateToActiveRecord() {
         try {
             const panel = this.ui.getActivePanel();
@@ -1311,6 +1356,7 @@ export class Plugin extends AppPlugin {
                 } else if (property.set(value) === false) throw new Error(`Could not set ${label}`);
             }
             if (role === 'Projects') await this.initializeProject(record, options);
+            if (role === 'Clients') await this.initializeClient(record, options);
             if (role === 'Invoices') {
                 const verified = (await collection.getAllRecords()).find(item => item.guid === guid);
                 for (const [label, value] of writes) {
