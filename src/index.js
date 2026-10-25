@@ -813,6 +813,32 @@ export class Plugin extends AppPlugin {
             icon: 'ti-template',
             onSelected: () => this.applyInvoiceTemplateToActiveRecord()
         });
+        this.ui.addCommandPaletteCommand({
+            label: 'Freelance OS: Check for updates',
+            icon: 'ti-refresh',
+            onSelected: () => this.checkForUpdates({ manual: true })
+        });
+        this.ui.addCommandPaletteCommand({
+            label: 'Freelance OS: Toggle automatic updates',
+            icon: 'ti-settings',
+            onSelected: () => {
+                const current = this.getUpdateConfig().autoUpdate;
+                this.setAutoUpdate(!current);
+                if (this.ui?.addToaster) {
+                    this.ui.addToaster({
+                        title: 'Auto-Update ' + (!current ? 'Enabled' : 'Disabled'),
+                        message: !current ? 'Freelance OS will now automatically update when new releases are published.' : 'Automatic updates disabled. You will be prompted when updates are available.',
+                        autoDestroyTime: 4000,
+                        dismissible: true
+                    });
+                }
+            }
+        });
+
+        // Background update check (non-blocking, deferred by 5s)
+        setTimeout(() => {
+            this.checkForUpdates?.({ manual: false });
+        }, 5000);
 
         // 5. Reactive Workspace Listeners
         if (this.events) {

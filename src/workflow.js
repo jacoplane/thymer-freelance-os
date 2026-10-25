@@ -2267,6 +2267,41 @@ const Workflow = {
             this.render(panel);
         };
         section.append(form, button);
+
+        // Plugin Updates Section
+        const updatesSection = document.createElement('div');
+        updatesSection.className = 'os-settings-updates';
+        updatesSection.style.cssText = 'margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-color, #e5e7eb);';
+        const updateConf = typeof this.getUpdateConfig === 'function' ? this.getUpdateConfig() : { version: '0.4.0', autoUpdate: false, repoUrl: 'https://github.com/jacoplane/thymer-freelance-os' };
+        updatesSection.innerHTML = `
+            <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">Plugin Updates</h3>
+            <p class="os-action-meta" style="margin-bottom: 12px;">Installed version: <strong>v${escapeHtml(updateConf.version)}</strong> · Tracked repository: <code>${escapeHtml(updateConf.repoUrl)}</code></p>
+            <div style="display: flex; gap: 12px; align-items: center; margin-bottom: 12px;">
+                <button class="os-button os-secondary os-check-updates-btn" style="cursor: pointer;">Check for updates</button>
+            </div>
+            <label style="display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; user-select: none;">
+                <input type="checkbox" class="os-auto-update-checkbox" ${updateConf.autoUpdate ? 'checked' : ''} style="cursor: pointer;">
+                <span>Automatically download and install new releases (silent background updates)</span>
+            </label>
+        `;
+
+        updatesSection.querySelector('.os-check-updates-btn').onclick = (e) => {
+            e.preventDefault();
+            this.checkForUpdates?.({ manual: true });
+        };
+        updatesSection.querySelector('.os-auto-update-checkbox').onchange = (e) => {
+            this.setAutoUpdate?.(e.target.checked);
+            if (this.ui?.addToaster) {
+                this.ui.addToaster({
+                    title: e.target.checked ? 'Auto-Update Enabled' : 'Auto-Update Disabled',
+                    message: e.target.checked ? 'Freelance OS will silently update when new releases are published.' : 'You will be prompted when updates are available.',
+                    autoDestroyTime: 3000,
+                    dismissible: true
+                });
+            }
+        };
+        section.append(updatesSection);
+
         return section;
     }
 };

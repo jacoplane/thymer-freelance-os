@@ -4,7 +4,8 @@
   "description": "Freelance OS dashboard for Thymer with native projects, client relationships and weekly reviews.",
   "main": "dist/plugin.js",
   "scripts": {
-    "build": "node build.mjs"
+    "build": "node build.mjs",
+    "release": "node scripts/release.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.25.0"
