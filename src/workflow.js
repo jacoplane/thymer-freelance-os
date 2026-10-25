@@ -46,6 +46,15 @@ function isActiveProject(project) {
     return ACTIVE_PROJECT_STATUSES.has(String(project?.status || '').toLowerCase());
 }
 
+function isUncategorizedProject(project) {
+    const s = String(project?.status || '').toLowerCase().trim();
+    return !s || s === 'none' || s === 'undefined';
+}
+
+function isTrackedProject(project) {
+    return isActiveProject(project) || (isUncategorizedProject(project) && !['backlog', 'completed', 'archived', 'cancelled'].includes(String(project?.status || '').toLowerCase().trim()));
+}
+
 function normalizeResumableStatus(value) {
     return RESUMABLE_TASK_STATUSES.has(value) ? value : 'none';
 }
@@ -245,14 +254,15 @@ async function workflowChildren(line, record) {
 
 function actionModel(projects, tasks, state, today = localDate(), complete = true) {
     const active = projects.filter(isActiveProject);
-    const activeIds = new Set(active.map(project => project.guid));
-    const open = tasks.filter(task => activeIds.has(task.projectGuid) && !isTerminalTask(task));
+    const trackedProjects = projects.filter(isTrackedProject);
+    const trackedIds = new Set(trackedProjects.map(project => project.guid));
+    const open = tasks.filter(task => trackedIds.has(task.projectGuid) && !isTerminalTask(task));
     const waiting = open.filter(isWaitingTask);
     const actions = open.filter(isActionableTask);
     const next = actions.filter(task => state.next[task.projectGuid] === task.guid);
     const selected = new Set(state.focus[today] || []);
     const focus = actions.filter(task => selected.has(task.guid));
-    const attention = active.flatMap(project => {
+    const attention = trackedProjects.flatMap(project => {
         const projectTasks = open.filter(task => task.projectGuid === project.guid);
         // Client review checkpoints get their own clearer deadline cue below.
         const overdueTasks = projectTasks.filter(task => !task.clientReview && task.date && task.date < today);
@@ -266,6 +276,9 @@ function actionModel(projects, tasks, state, today = localDate(), complete = tru
         const clientReviewDueSoon = clientReviewTasks.filter(task => task.date && task.date >= today && dateDay(task.date) <= dateDay(today) + 7);
         const clientReviewUndated = clientReviewTasks.filter(task => !task.date);
         const issues = [];
+        if (!isActiveProject(project)) {
+            issues.push('Project status not set');
+        }
         if (complete && !next.some(task => task.projectGuid === project.guid)) issues.push(projectTasks.some(isActionableTask) ? 'Choose a next action' : projectTasks.length ? 'All work is waiting' : 'Add a next action');
         if (dateDay(project.deadline) !== null && project.deadline < today) issues.push('Project deadline overdue');
         else if (dateDay(project.deadline) !== null && dateDay(project.deadline) <= dateDay(today) + 7) issues.push('Project deadline within 7 days');
@@ -587,7 +600,7 @@ function reconcileNativeNextActions(state, projects, tasks, markers, complete = 
     const remove = [];
     for (const project of projects) {
         const projectMarkers = markers.filter(marker => marker.recordGuid === project.guid);
-        if (!isActiveProject(project)) {
+        if (!isTrackedProject(project)) {
             delete state.next[project.guid];
             delete state.nextLabels[project.guid];
             delete state.nextRecovery?.[project.guid];
