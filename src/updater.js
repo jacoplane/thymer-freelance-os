@@ -3,7 +3,7 @@
  * Checks GitHub repository for new releases and updates gracefully.
  */
 
-export const Updater = {
+const Updater = {
     isRemoteVersionNewer(remoteVer, currentVer) {
         if (!remoteVer || !currentVer) return false;
         const clean = v => String(v).replace(/^v/i, '').trim();

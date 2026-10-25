@@ -36,7 +36,7 @@ const bundleJs = `/**
 
 const STYLES = ${JSON.stringify(cssSrc)};
 
-${jsSrc.replace(/^export\s+class\s+Plugin/m, 'class Plugin')}
+${jsSrc.replace(/^export\s+/gm, '')}
 `;
 
 writeIfChanged(path.join(distDir, 'plugin.js'), bundleJs);
