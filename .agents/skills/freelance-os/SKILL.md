@@ -28,9 +28,14 @@ Activate the relevant workflow whenever the user asks in natural language:
 
 ## 2. Workspace & MCP Tooling Foundation
 
-- **Discovery:** Discover the connected Thymer MCP tools.
+- **Discovery:** Discover the connected Thymer MCP tools (`http://127.0.0.1:13100/mcp`).
 - **Target Workspace:** Call `list_workspaces`. Target the user's active/focused workspace. Always supply explicit workspace and collection GUIDs.
-- **Collection Resolution:** Use `list_collections` and `get_collection_schema` to resolve GUIDs for `Clients`, `Projects`, `Invoices`, and `Journal`. Never hardcode collection or field GUIDs across workspaces.
+- **Collection Resolution:** Use `list_collections` and `get_collection_schema` to resolve GUIDs for `Clients`, `Projects`, `Invoices`, `Support Sessions`, and `Journal`. Never hardcode collection or field GUIDs across workspaces.
+- **Structured Properties Rule:** Thymer's dashboard widgets, cashflow meters, and kanban boards read **structured properties** from collections, not arbitrary markdown in note bodies. When logging support hours, creating invoices, or updating deal stages, always use MCP tools (`create_record`, `update_record_property`). Writing prose to a markdown note does not update UI widgets.
+- **Native Task Statuses (`set_task_status`):** When creating or updating a task waiting on a client, reply, or asset, never leave it as a plain checkbox (`taskstatus: none`). Always invoke `set_task_status(lineGuid, "waiting")` so it renders under "⏳ Waiting On Others" rather than active task queues.
+- **Language Boundary Rule (Strict):**
+  - **Internal Workspace:** All notes, page bodies, task descriptions, section headings, project briefs, and audit logs MUST be written in **English**.
+  - **External Communications:** Email drafts, chat replies, and client deliverables intended for French-speaking clients must be drafted in **French**.
 - **Crockford Base32 GUIDs:** All native Thymer records use 26-character Base32 GUIDs (`0-9`, `A-H`, `J-K`, `M-N`, `P-T`, `V-Z`, uppercase). Verify validity before writing linked references.
 - **Non-Destructive Operations:** Always read existing record properties or line items before editing to avoid clobbering unmentioned fields, contact information, or existing page content.
 
@@ -71,6 +76,19 @@ Top-level projects (sub-pages are deliverables; native tasks live in page bodies
 - `status`: Sending stage: `draft`, `ready`, `sent`.
 - `payment_status`: Settlement stage: `unpaid`, `unconfirmed`, `paid`.
 - `paid_date`: Date payment was settled.
+- **Settlement Rule:** When marking an invoice paid, always atomically update all three fields via MCP: `payment_status: 'paid'`, `status: 'sent'`, and `paid_date: 'YYYY-MM-DD'`.
+
+### D. Support Sessions Collection (`Support Sessions`)
+Structured time-tracking collection used directly by the Freelance OS dashboard "Support time" widget:
+- `title`: `[Client Name] · [X] h · [Summary]`
+- `client`: Record link to `Clients`.
+- `project`: (Optional) Record link to `Projects`.
+- `date`: Session date (`YYYY-MM-DD`).
+- `hours`: Decimal hours worked (e.g., `1.0`, `0.75`).
+- `description`: Text summary of the support delivered.
+- **Retainer vs. Milestone Allocation Rule:**
+  - Hours entered into `Support Sessions` roll up against the client's monthly retainer allowance (`included_hours`) in the dashboard widget.
+  - Fixed-price project delivery hours should be logged in the project's markdown `## Activity & time log` without creating a `Support Sessions` record (unless expressly billed against a retainer or hourly overrun).
 
 ---
 
@@ -289,22 +307,29 @@ Scope of work, deliverables, and services covered under this invoice for [Client
 ### Workflow C: Effort & Retainer Tracking
 *Trigger: "Logged 2 hours on Acme fixing auth", "Spent 45m on maintenance"*
 
-1. **Locate Target:** Match client and relevant project.
-2. **Append Activity Log:** In the project's page body, under `## Activity & Time Log`, append:
-   `- **YYYY-MM-DD** (X.Xh): [Description of work]`
-3. **Retainer Check:**
+1. **Locate Target:** Match client and relevant project (if applicable).
+2. **Create Support Session Record (Required for Dashboard Rollup):**
+   - The Freelance OS dashboard calculates "Support time" directly from the `Support Sessions` collection.
+   - Use Thymer MCP `create_record` in the `Support Sessions` collection:
+     - `title`: `[Client Name] · [X] h · [Short description]`
+     - `properties`: `{ client: clientGuid, project: projectGuid || null, date: 'YYYY-MM-DD', hours: Number(hours), description: '...' }`
+   - Use `insert_markdown` to apply the `Support Session Page Archetype` to the record body.
+3. **Update Note Context:**
+   - If work belongs to an active project: under `## Activity & Time Log` in the project note, append `- **YYYY-MM-DD** (X.Xh): [Description of work]`.
+   - If general client maintenance without a project: record under `## ⏱️ Support & Care Plan` in the client note.
+4. **Retainer Check:**
    - If client is on a care plan (`maintenance` with `included_hours` and `monthly_chf`):
    - Calculate total hours logged in the current calendar month.
    - Report remaining balance:
-     > *"Logged 2.0h for Acme. They have used **6.5 / 10.0 hours** this month (**3.5h remaining**)."*
+     > *"Logged 2.0h for Acme. They have used **2.0 / 2.0 hours** this month (**0.0h remaining**)."*
    - If within 1 hour of limit or exceeding cap, warn the user so out-of-scope work can be billed.
-4. **Project Budget Check:**
+5. **Project Budget Check:**
    - If project is `hourly` with a `budget_chf`, compare total time $\times$ implied rate against budget.
 
 ---
 
 ### Workflow D: Invoicing & Closed-Loop Billing
-*Trigger: "Invoice Acme for project X", "Bill monthly retainer", "Draft invoice"*
+*Trigger: "Invoice Acme for project X", "Bill monthly retainer", "Draft invoice", "1st of the month recurring billing"*
 
 1. **Verify Context:**
    - Determine client, linked project, and amount.
@@ -313,14 +338,18 @@ Scope of work, deliverables, and services covered under this invoice for [Client
 2. **Register Invoice in Thymer:**
    - Generate next sequential `invoice_id` (e.g. `INV-2026-043`).
    - Create record in `Invoices` linked to `client` and `project`, with `amount_chf`, `currency`, `issued: today`, `due: today + 30 days`, `status: draft` (or `ready`).
-3. **Official Swiss QR-Bill Generation (via `swiss-invoicing`):**
+3. **Monthly Retainer Batch Generation (1st of Month):**
+   - Query all clients where `status` is `maintenance` or `active` and `monthly_chf > 0`.
+   - Proactively stage the recurring invoices with consecutive IDs and due dates (+30 days).
+   - Flag them during the morning briefing for one-click approval.
+4. **Official Swiss QR-Bill Generation (via `swiss-invoicing`):**
    - If the user bills in Switzerland (CHF or EUR with QR-IBAN):
    - Seamlessly activate the [`swiss-invoicing`](file:///c:/Users/Jaap/Documents/Thymer/.agents/skills/swiss-invoicing/SKILL.md) skill to compile the official Typst PDF invoice with Swiss QR code.
    - Verify creditor, debtor, amount, and structured reference.
-4. **Client Communication Drafter:**
-   - Provide a concise, professional cover email ready to send with the invoice attached.
-5. **Settlement on Payment:**
-   - When the user confirms payment received: set `payment_status: paid`, record `paid_date`, and update the project's billed progress.
+5. **Client Communication Drafter:**
+   - Provide a concise, professional cover email (in French) ready to send with the invoice attached.
+6. **Settlement on Payment:**
+   - When the user confirms payment received: atomically set `payment_status: paid`, `status: sent`, and record `paid_date` via MCP.
 
 ---
 
@@ -328,14 +357,15 @@ Scope of work, deliverables, and services covered under this invoice for [Client
 *Trigger: "Let's do the weekly review", "Plan my week"*
 
 1. **Past Week Retrospective:**
-   - Review completed tasks across active projects.
+   - Review completed tasks across active projects via `get_line_items` or queries.
    - Check financial progress (invoices sent vs. paid).
-   - Check hours logged vs. retainer commitments.
+   - Check hours logged vs. retainer commitments in `Support Sessions`.
 2. **Identify Carryover & Friction:**
    - Surface uncompleted tasks from the current week. Ask if they should be scheduled, delegated, or dropped.
 3. **Set Next Week's 3-5 Big Rocks:**
    - Formulate top 3-5 priorities linked to specific active projects.
-   - Write or update the weekly review section in the user's `Journal` entry for the week.
+4. **Persist into Journal:**
+   - Write or update the weekly review block directly in the user's `Journal` record for the week (`YYYY-Www`) using MCP `add_to_journal` or `insert_markdown`.
 
 ---
 
