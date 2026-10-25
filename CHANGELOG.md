@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.4.2 — 2026-10-25
+
+- Fix: strip ES module `export` statements in `src/updater.js` and harden `build.mjs` to guarantee runtime compatibility with Thymer's dynamic plugin loader (`new Function`).
+- Feature: ensure uncategorized projects (with missing or unset `status`) are never silently dropped; index their tasks and flag them explicitly under Needs Attention with a `⚠️ Project status not set` badge.
+- Styling: add `.os-badge.status-none` badge styling in `src/styles.css`.
+- Dev & Diagnostics: add `npm run debug` launcher and CDP target resolver for automated Electron remote debugging.
+- Quality Assurance: complete end-to-end multi-persona verification suite across all 4 workflows (Lead ingestion, Retainer over-cap guardrails, Cashflow settlement, and Weekly Review journal persistence).
+- Documentation: update `freelance-os` and `freelance-os-plugin-dev` skills with typed property tuple unpacking (`val[1]`), `format: 'structured'` API contract, waiting task 3-step sequence, and native Journal MCP tools (`add_to_journal`, `get_journal_page`, `navigate_to_journal`).
+
 ## 0.4.1 — 2026-10-25
 
 - Add in-plugin update checker (`src/updater.js`) with background GitHub polling (every 4 hours).
