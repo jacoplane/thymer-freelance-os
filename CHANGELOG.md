@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.4.1 — 2026-10-25
+
+- Add in-plugin update checker (`src/updater.js`) with background GitHub polling (every 4 hours).
+- Add non-intrusive 1-click update prompt (`[Update now]`, `[Later]`) so users are never forced into unannounced updates.
+- Add opt-in silent background auto-updates toggle in Settings and via Command Palette (`Freelance OS: Toggle automatic updates`).
+- Add on-demand update check via Settings and Command Palette (`Freelance OS: Check for updates`).
+- Add `__source_repo` metadata for full tracking compatibility with Thymer's native Plugins Manager.
+- Add automated release pipeline (`npm run release`) supporting automated version bumping, building, tagging, and GitHub Release publishing via `gh` CLI.
+- Harden agent execution workflows against UI meter desync, native waiting task status routing, and atomic invoice settlement.
+
 ## 0.4.0 — 2026-10-25
 
 - Add comprehensive Page Archetypes across all core records (Clients, Projects, Invoices, Support Sessions) with clean section templates and live task rollups.
