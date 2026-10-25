@@ -48,10 +48,10 @@ async function main() {
 
     // Optional: Deploy locally if Thymer is running
     try {
-        console.log('\n🖥️ Deploying updated bundle to active Thymer workspace...');
-        execSync('node deploy.mjs --workspace WNN1JJG50ZQ6BE9S1T3HG85S57', { cwd: rootDir, stdio: 'inherit' });
+        console.log('\n🖥️ Deploying updated bundle to active Thymer workspaces...');
+        execSync('node scripts/deploy-bundle.mjs', { cwd: rootDir, stdio: 'inherit' });
     } catch (e) {
-        console.log('Local MCP deploy skipped (will apply on launch or check).');
+        console.log('Local MCP deploy skipped (will apply on launch or check):', e.message);
     }
 
     // 3. Git commit & tag
