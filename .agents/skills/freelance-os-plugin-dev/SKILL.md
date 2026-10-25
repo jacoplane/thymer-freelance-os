@@ -114,14 +114,28 @@ Always follow this cycle when developing features or fixing bugs in Freelance OS
 All commands run inside `C:\dev\thymer-freelance-os`:
 
 ```powershell
-# 1. Build plugin
+# 1. Build plugin bundle
 node build.mjs
 
 # 2. Deploy to Thymer Desktop via MCP
-node deploy.mjs
+node deploy.mjs --workspace WNN1JJG50ZQ6BE9S1T3HG85S57
 
-# 3. Commit & push
+# 3. Publish a new release (automated bump, build, commit, tag, push & GitHub release)
+npm run release # defaults to patch bump, or pass minor/major
+npm run release minor
+
+# 4. Manual commit & push
 git add src/ dist/ plugin.js plugin.css
 git commit -m "feat: description"
 git push origin main
 ```
+
+---
+
+## 5. In-Plugin Update & Release Architecture
+
+Freelance OS includes a built-in release checker (`src/updater.js`):
+- **Background Checks:** Runs every 4 hours against `raw.githubusercontent.com/jacoplane/thymer-freelance-os/main/dist/plugin.json`.
+- **Default User Experience:** Non-intrusive toaster notification with `[Update now]` and `[Later]` buttons. Users are never forced into unconsented updates.
+- **Opt-in Silent Updates:** Setting toggle in **Settings -> Plugin Updates** or via Command Palette (`Freelance OS: Toggle automatic updates`). When enabled, downloads and hot-reloads updates silently.
+- **Plugins Manager Compatibility:** Emits `__source_repo` in plugin metadata so Thymer's native Plugins Manager also detects updates.
