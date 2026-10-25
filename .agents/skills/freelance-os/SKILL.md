@@ -31,6 +31,14 @@ Activate the relevant workflow whenever the user asks in natural language:
 - **Discovery:** Discover the connected Thymer MCP tools (`http://127.0.0.1:13100/mcp`).
 - **Target Workspace:** Call `list_workspaces`. Target the user's active/focused workspace. Always supply explicit workspace and collection GUIDs.
 - **Collection Resolution:** Use `list_collections` and `get_collection_schema` to resolve GUIDs for `Clients`, `Projects`, `Invoices`, `Support Sessions`, and `Journal`. Never hardcode collection or field GUIDs across workspaces.
+- **MCP API Return Fields:** `create_record` and `create_line_item` return `{ created: true, guid: "...", ... }`. Always access `.guid` (never `.record_guid` or `.line_item_guid`).
+- **Reading Typed Property Tuples:** Property values returned by `get_record` and `get_record_properties` are structured as `[type, value]` (e.g. `["number", 1200]`, `["datetime", { d: "20261015" }]`, `["choice", "c..."]`). Always unpack `val[1]` (or `Number(val[1])`) rather than parsing the property object directly to prevent `NaN` arithmetic errors.
+- **Active Project Status Mandate:** When creating or activating a project, ALWAYS supply `status: 'in_progress'` in `properties`. Freelance OS action queues and waiting lists deliberately index tasks only from active projects (`in_progress` or `in_review`). Omitted or empty statuses treat the project as untracked.
+- **Waiting Task 3-Step Sequence:** To create a task waiting on external feedback or client delivery:
+  1. Write the document body including the task markdown (`- [ ] Wait for client assets...`) via `insert_markdown`.
+  2. Call `get_line_items(workspace, recordGuid)` to locate the task's parsed line item `guid`.
+  3. Call `set_task_status(workspace, lineGuid, "waiting")`.
+  *(Do not create disconnected line items before `insert_markdown`, as markdown insertion re-parses the note's block tree).*
 - **Structured Properties Rule:** Thymer's dashboard widgets, cashflow meters, and kanban boards read **structured properties** from collections, not arbitrary markdown in note bodies. When logging support hours, creating invoices, or updating deal stages, always use MCP tools (`create_record`, `update_record_property`). Writing prose to a markdown note does not update UI widgets.
 - **Native Task Statuses (`set_task_status`):** When creating or updating a task waiting on a client, reply, or asset, never leave it as a plain checkbox (`taskstatus: none`). Always invoke `set_task_status(lineGuid, "waiting")` so it renders under "⏳ Waiting On Others" rather than active task queues.
 - **Language Boundary Rule (Strict):**

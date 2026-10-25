@@ -1,0 +1,3 @@
+@echo off
+echo Starting Thymer Desktop with Electron CDP debugging on port 9444...
+start "" "%LOCALAPPDATA%\Programs\thymer\Thymer.exe" --remote-debugging-port=9444
