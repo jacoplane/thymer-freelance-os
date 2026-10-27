@@ -733,6 +733,7 @@ const Ai = {
                 });
             });
         });
+        this.enableTablistKeyboardNav(harnessSection.querySelector('.os-ai-tool-tabs'));
 
         harnessSection.querySelectorAll('.os-ai-copy-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {

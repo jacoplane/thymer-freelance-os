@@ -2633,6 +2633,7 @@ const Billing = {
         section.querySelector('.os-billing-add').onclick = () => this.showCreateInvoiceModal(panel, data);
         section.querySelector('.os-billing-register').onclick = () => this.openCollection(this.collectionGuid(this.billingTab === 'plans' ? 'Clients' : 'Invoices'), panel, this.billingTab === 'plans' ? 'care-plans' : this.invoiceFilter);
         section.querySelectorAll('[data-billing-tab]').forEach(button => { button.setAttribute('aria-selected', String(button.classList.contains('active'))); button.onclick = () => { this.billingTab = button.dataset.billingTab; this.billingSearch = ''; this.render(panel); }; });
+        this.enableTablistKeyboardNav(section.querySelector('.os-tabs'));
         const filters = section.querySelector('.os-billing-filters');
         for (const [key, label] of BILLING_FILTERS) {
             const button = document.createElement('button'); button.type = 'button'; button.className = `os-filter-pill ${this.invoiceFilter === key ? 'active' : ''}`; button.dataset.billingFilter = key; button.dataset.focusKey = `billing-filter-${key}`;
@@ -3440,6 +3441,7 @@ const Ai = {
                 });
             });
         });
+        this.enableTablistKeyboardNav(harnessSection.querySelector('.os-ai-tool-tabs'));
 
         harnessSection.querySelectorAll('.os-ai-copy-btn').forEach(btn => {
             btn.addEventListener('click', (e) => {
@@ -6013,6 +6015,11 @@ class Plugin extends AppPlugin {
         const close = () => { modal.remove(); priorFocus?.focus(); };
         modal.addEventListener('keydown', event => {
             if (event.key === 'Escape') { event.preventDefault(); close(); }
+            if (event.key === 'Tab') {
+                const controls = [...modal.querySelectorAll('button:not(:disabled), input, select')];
+                if (event.shiftKey && document.activeElement === controls[0]) { event.preventDefault(); controls.at(-1).focus(); }
+                else if (!event.shiftKey && document.activeElement === controls.at(-1)) { event.preventDefault(); controls[0].focus(); }
+            }
         });
         modal.querySelector('.os-modal-close').onclick = close;
         modal.querySelector('.btn-cancel').onclick = close;
@@ -6022,6 +6029,13 @@ class Plugin extends AppPlugin {
         const textInput = modal.querySelector('.input-task-text');
         const importantCheck = modal.querySelector('.input-task-important');
         const submitBtn = modal.querySelector('.btn-submit');
+
+        textInput.addEventListener('keydown', event => {
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                submitBtn.click();
+            }
+        });
 
         submitBtn.onclick = async () => {
             const project = projectSelect.value;
@@ -6626,6 +6640,14 @@ class Plugin extends AppPlugin {
         };
         clientSelect.onchange = refreshProjects;
         refreshProjects();
+        modal.querySelectorAll('.input-date, .input-hours').forEach(input => {
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    modal.querySelector('.btn-submit').click();
+                }
+            });
+        });
         modal.querySelector('.btn-submit').onclick = async () => {
             const client = clientSelect.value, project = projectSelect.value, date = modal.querySelector('.input-date').value;
             const hours = Number(modal.querySelector('.input-hours').value), description = modal.querySelector('.input-description').value.trim();
@@ -6757,10 +6779,21 @@ class Plugin extends AppPlugin {
         modal.querySelector('.btn-cancel').addEventListener('click', close);
         modal.addEventListener('click', (e) => { if (e.target === modal) close(); });
 
+        modal.querySelectorAll('.input-title, .input-deadline, .input-budget, .input-first-action').forEach(input => {
+            input.addEventListener('keydown', event => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    modal.querySelector('.btn-submit').click();
+                }
+            });
+        });
+
         modal.querySelector('.btn-submit').addEventListener('click', async () => {
-            const title = modal.querySelector('.input-title').value.trim();
+            const titleInput = modal.querySelector('.input-title');
+            const title = titleInput.value.trim();
             if (!title) {
-                alert('Please enter a project name.');
+                this.ui.addToaster({ title: 'Please enter a project name', dismissible: true });
+                titleInput.focus();
                 return;
             }
 
@@ -6936,6 +6969,33 @@ class Plugin extends AppPlugin {
         return this.showBillingInvoiceModal(panel, data, defaultClientGuid, defaultProjectGuid);
     }
 
+    enableTablistKeyboardNav(tablist) {
+        if (!tablist || typeof tablist.querySelectorAll !== 'function') return;
+        let tabs = [];
+        try { tabs = Array.from(tablist.querySelectorAll('[role="tab"], button') || []); } catch (e) { return; }
+        if (!tabs.length) return;
+        tabs.forEach((tab, index) => {
+            if (!tab || typeof tab.addEventListener !== 'function') return;
+            tab.addEventListener('keydown', (e) => {
+                let nextIndex = null;
+                if (e.key === 'ArrowRight' || e.key === 'ArrowDown') {
+                    nextIndex = (index + 1) % tabs.length;
+                } else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') {
+                    nextIndex = (index - 1 + tabs.length) % tabs.length;
+                } else if (e.key === 'Home') {
+                    nextIndex = 0;
+                } else if (e.key === 'End') {
+                    nextIndex = tabs.length - 1;
+                }
+                if (nextIndex !== null && tabs[nextIndex]) {
+                    e.preventDefault();
+                    if (typeof tabs[nextIndex].focus === 'function') tabs[nextIndex].focus();
+                    if (typeof tabs[nextIndex].click === 'function') tabs[nextIndex].click();
+                }
+            });
+        });
+    }
+
     async render(panel) {
         const container = panel.getElement ? panel.getElement() : null;
         if (!container) return;
@@ -7097,6 +7157,7 @@ class Plugin extends AppPlugin {
         modes.setAttribute('aria-label', 'Dashboard sections');
         modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['billing', 'Billing'], ['review', 'Weekly review'], ['ai', 'AI Agents'], ['settings', 'Settings']].map(([key, label]) => `<button type="button" role="tab" class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" data-focus-key="mode-${key}" aria-selected="${mode === key ? 'true' : 'false'}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
+        this.enableTablistKeyboardNav(modes);
         app.appendChild(modes);
         if (this.workflowStorageError) {
             const storageWarning = document.createElement('p');
@@ -7439,6 +7500,7 @@ class Plugin extends AppPlugin {
             this.currentTab = 'invoices';
             this.render(panel);
         });
+        this.enableTablistKeyboardNav(sectionHead.querySelector('.os-tabs'));
         sectionHead.querySelector('.os-view-all').addEventListener('click', () => {
             let col = this.collectionGuid('Projects');
             if (this.currentTab === 'clients') col = this.collectionGuid('Clients');
@@ -7677,6 +7739,7 @@ class Plugin extends AppPlugin {
         agenda.querySelector('.tab-overdue').addEventListener('click', () => { this.agendaTab = 'overdue'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
         agenda.querySelector('.tab-upcoming').addEventListener('click', () => { this.agendaTab = 'upcoming'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
         agenda.querySelector('.tab-inbox').addEventListener('click', () => { this.agendaTab = 'inbox'; this.agendaTabSetByUser = true; this.agendaLimit = 25; this.render(panel); });
+        this.enableTablistKeyboardNav(agenda.querySelector('.os-agenda-tabs'));
         agenda.querySelector('.link-capture').addEventListener('click', () => captureInput.focus());
         agenda.querySelector('.link-notes').addEventListener('click', () => this.openJournal(panel));
 

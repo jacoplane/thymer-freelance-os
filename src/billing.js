@@ -190,6 +190,7 @@ const Billing = {
         section.querySelector('.os-billing-add').onclick = () => this.showCreateInvoiceModal(panel, data);
         section.querySelector('.os-billing-register').onclick = () => this.openCollection(this.collectionGuid(this.billingTab === 'plans' ? 'Clients' : 'Invoices'), panel, this.billingTab === 'plans' ? 'care-plans' : this.invoiceFilter);
         section.querySelectorAll('[data-billing-tab]').forEach(button => { button.setAttribute('aria-selected', String(button.classList.contains('active'))); button.onclick = () => { this.billingTab = button.dataset.billingTab; this.billingSearch = ''; this.render(panel); }; });
+        this.enableTablistKeyboardNav(section.querySelector('.os-tabs'));
         const filters = section.querySelector('.os-billing-filters');
         for (const [key, label] of BILLING_FILTERS) {
             const button = document.createElement('button'); button.type = 'button'; button.className = `os-filter-pill ${this.invoiceFilter === key ? 'active' : ''}`; button.dataset.billingFilter = key; button.dataset.focusKey = `billing-filter-${key}`;
