@@ -6,26 +6,30 @@
 </p>
 
 <p align="center">
-  <a href="https://thymer.com/"><img src="https://img.shields.io/badge/Thymer-Desktop_Plugin-blue" alt="Thymer Desktop Plugin" /></a>
-  <a href=".agents/skills/freelance-os/SKILL.md"><img src="https://img.shields.io/badge/Agent--First-Ready-10b981" alt="Agent-First Ready" /></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-blue" alt="MIT license" /></a>
+  <a href="https://thymer.com/"><img src="https://img.shields.io/badge/Thymer-Desktop_Plugin-0f172a" alt="Thymer Desktop Plugin" /></a>
+  <a href=".agents/skills/freelance-os/SKILL.md"><img src="https://img.shields.io/badge/Agent--First-Ready-3aa89b" alt="Agent-First Ready" /></a>
+  <a href="CHANGELOG.md"><img src="https://img.shields.io/badge/Release-v0.5.4-blue" alt="Release v0.5.4" /></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/License-MIT-gray" alt="MIT license" /></a>
 </p>
 
 <p align="center">
   <a href="#quickstart">Quickstart</a> ·
+  <a href="#desktop-gallery">Desktop gallery</a> ·
   <a href="#everyday-requests">Everyday requests</a> ·
   <a href="#how-it-works">How it works</a> ·
-  <a href="#the-desktop-dashboard">Desktop dashboard</a> ·
+  <a href="#autonomous-operations-bench">Operations bench</a> ·
+  <a href="#modular-trade-packs">Trade packs</a> ·
+  <a href="#universal-coding-assistant-bridge">Coding harness bridge</a> ·
   <a href="#documentation">Documentation</a>
 </p>
 
 ---
 
-Freelance OS transforms [Thymer](https://thymer.com) into a complete, private operating system for your freelance business. Instead of spending hours doing manual data entry across disconnected CRMs, project trackers, and spreadsheets, you interact with your **AI assistant as an executive business partner**.
+Freelance OS turns [Thymer](https://thymer.com) into a private operating system for running a freelance business or solo consultancy. Rather than doing manual data entry across disparate CRMs, billing portals, and project management apps, you interact with your **AI coding assistant as an executive business partner**.
 
-Your assistant handles inbound email triage, scopes projects, tracks retainer budgets, manages deliverables, prepares invoices, and briefs you each morning. The **Thymer Desktop dashboard** serves as your real-time heads-up display.
+Your assistant handles inbound triage, scopes project deliverables, monitors retainer budget caps, registers invoices, alerts you to stale proposals, and briefs you each morning. The **Thymer Desktop dashboard** provides a live, zero-latency visual cockpit.
 
-![Freelance OS overview with fictional clients, projects and invoices](docs/images/overview.png)
+[![Freelance OS Overview Cockpit](docs/images/overview.png)](docs/images/overview.png)
 
 ---
 
@@ -33,26 +37,24 @@ Your assistant handles inbound email triage, scopes projects, tracks retainer bu
 
 ## Quickstart
 
-Run your freelance business through your AI assistant in two steps.
+Run your freelance business through your AI assistant in two steps:
 
 ### 1. Install the Plugin in Thymer
 
-Choose **one** of the two paths:
-
-* **Fresh Workspace:** Follow the [setup guide](docs/setup.md) to initialize the starter schema and collections (`Clients`, `Projects`, `Invoices`, `Support Sessions`).
-* **Existing Workspace:** In Thymer, open **Plugins Manager** and install using this repository URL:
+* **Existing Workspace:** In Thymer Desktop, open **Plugins Manager** and install using this repository URL:
   ```text
   https://github.com/jacoplane/thymer-freelance-os
   ```
   Then open **Freelance OS → Settings** to verify your collection mappings.
+* **Fresh Workspace:** Follow the [setup guide](docs/setup.md) to initialize the starter schema and collections (`Clients`, `Projects`, `Invoices`, `Support Sessions`, `Library`, `Journal`).
 
 ### 2. Connect Your Coding Assistant
 
-Freelance OS includes built-in agent skills that operate through Thymer's native Model Context Protocol (MCP) server.
+Freelance OS operates through Thymer's native Model Context Protocol (MCP) server.
 
 1. Enable the MCP server in Thymer Desktop (`Settings → Developers → MCP Server`).
-2. Point your AI coding assistant (Antigravity, Claude Code, Cursor, Codex, Gemini CLI) to your Thymer workspace.
-3. Paste the prompt below to initialize your assistant:
+2. Point your AI coding assistant (Antigravity, Claude Code, Cursor, Codex, OpenCode, OMP, or Gemini CLI) to your workspace.
+3. Paste the bootstrap prompt below:
 
 ```text
 You are my executive business partner running Freelance OS in Thymer.
@@ -65,11 +67,31 @@ Your assistant scans your records and presents your high-signal daily briefing.
 
 ---
 
+<a id="desktop-gallery"></a>
+
+## Desktop Gallery
+
+Click any preview below to open the full-resolution screenshot:
+
+| Dashboard View | Preview (Click for Full Size) | Highlights |
+| :--- | :---: | :--- |
+| **Overview Cockpit** | [![Overview Cockpit](docs/images/overview.png)](docs/images/overview.png) | Real-time heads-up display: MRR pulse metrics, cashflow collection rate, support hours allowance meter, active project cards, quick action buttons, and daily agenda. |
+| **Today's Focus & Queue** | [![Today's Focus](docs/images/today.png)](docs/images/today.png) | 3-rock daily focus planner, project action queue ranked by due date and project priority, and waiting-on-client dependency tracking. |
+| **Billing Register** | [![Billing Register](docs/images/billing.png)](docs/images/billing.png) | Multi-currency invoice register with separate sending and payment states, aging indicators, inline settlement actions, and recurring care plan terms. |
+| **Weekly Strategic Review** | [![Weekly Strategic Review](docs/images/weekly-review.png)](docs/images/weekly-review.png) | Guided 3-step review: clears carryover actions, surfaces completed deliverables, and formulates next week's big rocks directly into your native Journal. |
+| **Plan Next Week** | [![Plan Next Week](docs/images/plan-next-week.png)](docs/images/plan-next-week.png) | Carry forward uncompleted priorities, record weekly wins/observations, link outcomes to native project tasks, and commit to Journal. |
+| **AI Agents & MCP Bridge** | [![AI Agents & MCP Bridge](docs/images/ai-agents.png)](docs/images/ai-agents.png) | MCP server status, live telemetry, and instant setup commands across 7 supported coding harnesses (Antigravity, OpenCode, Codex, OMP, Claude Code, Cursor, and Other). |
+| **Operations Bench (11 Personas)** | [![Operations Bench](docs/images/ai-personas.png)](docs/images/ai-personas.png) | 11 specialized agent personas covering discovery, proposals, pricing, contract risk audits, task breakdown, kickoff, and collections. |
+| **Modular Trade Packs** | [![Modular Trade Packs](docs/images/trade-packs.png)](docs/images/trade-packs.png) | 11 domain overlays with tailored project blueprints, milestones, and dedicated skills across engineering, creative, marketing, and consulting trades. |
+| **Workspace Settings** | [![Workspace Settings](docs/images/settings.png)](docs/images/settings.png) | Collection mappings, base currency selection (CHF, EUR, USD, GBP, CAD, AUD), and in-plugin self-updater with background auto-updates. |
+
+---
+
 <a id="everyday-requests"></a>
 
 ## Everyday Requests (No Slash Commands Required)
 
-Work naturally with your assistant. No specialized syntax or slash commands are needed:
+Interact naturally with your assistant without specialized syntax:
 
 | What you want to do | What to say to your assistant | What happens behind the scenes |
 | :--- | :--- | :--- |
@@ -101,41 +123,30 @@ flowchart LR
 ```
 
 ### 1. Unified Client Lifecycle
-Leads, active clients, and maintenance retainers share a single lifecycle Status:
+Leads, active clients, and maintenance retainers share a single lifecycle status:
 $$\text{New lead} \longrightarrow \text{Contacted} \longrightarrow \text{Discussing} \longrightarrow \text{Proposal sent} \longrightarrow \text{Active client} \longrightarrow \text{Maintenance}$$
 The assistant tracks prospective deal values (`estimated_value_chf`) and acquisition sources (`source`), giving you a live pipeline view without a secondary sales CRM.
 
 ### 2. Project Budgets & Scope Protection
 Projects track agreed budgets (`budget_chf`) and contract types (`fixed`, `hourly`, `retainer`, `non_billable`). The assistant continuously compares billed amounts from linked invoices against contracted limits, warning you before out-of-scope work happens.
 
-### 3. Closed-Loop Invoicing & Swiss QR-Bills
-Invoices link directly to projects for delivery attribution. When billing in Switzerland or Europe, Freelance OS pairs with the bundled [`swiss-invoicing`](.agents/skills/swiss-invoicing/SKILL.md) skill to compile official Typst-based Swiss QR-bill PDFs with validated QR-IBANs and payment slips.
+### 3. Multi-Currency Support & Swiss QR-Bills
+Configure your primary base currency (`CHF`, `EUR`, `USD`, `GBP`, `CAD`, `AUD`) in Settings. Invoices in foreign currencies are tracked accurately in the billing register. When billing in Switzerland or Europe, Freelance OS pairs with the bundled [`swiss-invoicing`](.agents/skills/swiss-invoicing/SKILL.md) skill to compile official Typst-based Swiss QR-bill PDFs with validated QR-IBANs and payment slips.
 
-### 4. Standardized Page Archetypes & Interactive Action Buttons
-Clients, projects, invoices, and support sessions maintain standardized markdown archetypes with dedicated sections, automated task rollups, and interactive action buttons:
-- **In-Document Action Pills (`linkbtn`):** Native clickable buttons embedded directly into the document canvas (`+ Create project`, `+ Add task`, `+ Add review checkpoint`, `+ Log time`, `+ Create invoice`, `+ Copy payment details`, `+ Add deliverable`, `+ Add follow-up task`).
-- **Panel Menubar Header Actions:** Context-aware action buttons pinned to Thymer's top panel menubar (`+ Project`, `+ Invoice`, `+ Time`, `+ Task`, `+ Record payment`, `+ Mark sent`, `Copy details`, `Settled` badge) that open pre-filled modal dialogs without losing document focus.
+### 4. Automated Watchdog Safeguards
+The system continuously monitors your workspace for operational drift:
+- **Overdue Invoices:** Flags invoices past due by 7+ days with calibrated payment escalation suggestions.
+- **Budget Burn:** Flags projects where logged hours or billed amounts reach $\ge 90\%$ of contract limits.
+- **Stale Proposals:** Warns when proposals have been awaiting client response for $\ge 5$ days.
 
----
-
-<a id="the-desktop-dashboard"></a>
-
-## The Desktop Dashboard
-
-While your assistant does the heavy lifting, the desktop dashboard provides instant visual clarity whenever you open Thymer:
-
-* **Overview:** High-level cockpit showing monthly recurring revenue (MRR), total billed, cash collected, active projects, and daily agenda.
-* **Today:** Pin up to three daily focus tasks, manage your project action queue, and track tasks blocked on clients.
-* **Billing:** Searchable invoice register with distinct sending and payment states, currency indicators, and client care plan terms.
-* **Weekly Review:** Guided end-of-week reflection that surfaces completed work, overdue items, and saves your weekly plan into Journal.
-
-![Today’s focus and project action queue](docs/images/today.png)
-
-![A native project plan linked to its fictional client](docs/images/project-template.png)
-
-![Weekly review with overdue work and recently completed tasks](docs/images/weekly-review.png)
+### 5. In-Document Action Pills & Native Header Actions
+Clients, projects, invoices, and support sessions maintain standardized markdown archetypes with interactive actions:
+- **In-Document Action Pills (`linkbtn`):** Clickable buttons embedded directly into the document canvas (`+ Create project`, `+ Add task`, `+ Add review checkpoint`, `+ Log time`, `+ Create invoice`, `+ Copy payment details`, `+ Add deliverable`).
+- **Panel Menubar Header Actions:** Action buttons pinned to Thymer's panel menubar (`+ Project`, `+ Invoice`, `+ Time`, `+ Task`, `+ Record payment`, `+ Mark sent`) that open pre-filled modal dialogs without losing document focus.
 
 ---
+
+<a id="autonomous-operations-bench"></a>
 
 ## Autonomous Operations Bench (11 Core Personas)
 
@@ -157,6 +168,8 @@ Freelance OS equips your workspace with an autonomous bench of 11 business opera
 
 ---
 
+<a id="modular-trade-packs"></a>
+
 ## Modular Trade Packs (11 Specialized Craft Archetypes)
 
 Activate domain trade packs in the **AI Agents** tab to equip your workspace with specialized project templates, milestone structures, and craft agent skills:
@@ -177,6 +190,8 @@ Activate domain trade packs in the **AI Agents** tab to equip your workspace wit
 
 ---
 
+<a id="universal-coding-assistant-bridge"></a>
+
 ## Universal Coding Assistant Bridge
 
 Connect any agent harness to Thymer in 2 steps:
@@ -194,17 +209,7 @@ Thymer runs a local MCP server on port `13100`:
 * **OpenCode:** `opencode mcp add thymer http://127.0.0.1:13100/mcp`
 * **Codex:** `codex mcp add thymer http://127.0.0.1:13100/mcp`
 * **OMP:** `omp mcp add thymer http://127.0.0.1:13100/mcp`
-
----
-
-## Agent Skills Reference
-
-This repository includes two specialized agent skills in `.agents/skills/`:
-
-| Skill | Audience | Description |
-| :--- | :--- | :--- |
-| **[`freelance-os`](.agents/skills/freelance-os/SKILL.md)** | **End Users / Assistants** | Operational engine for running the freelance business: daily briefings, email triage, project scoping, retainer tracking, and invoicing. |
-| **[`freelance-os-plugin-dev`](.agents/skills/freelance-os-plugin-dev/SKILL.md)** | **Plugin Developers** | Autonomous runbook for developing, inspecting, styling, building, and live-verifying the Freelance OS dashboard plugin in Thymer Desktop. |
+* **Other Harnesses (DeepSeek Harness, Goose, Grok-Build, Hermes, Hotdog, Kilo Code, Pi, Qwen Code, StellaQ, ZCode):** Connect via SSE transport to `http://127.0.0.1:13100/mcp`.
 
 ---
 
@@ -219,6 +224,7 @@ This repository includes two specialized agent skills in `.agents/skills/`:
 * **[Client & Lead Tracking](docs/client-tracking.md)** — Status pipelines, migration from older boards, and MCP workflows.
 * **[UI Design System & Style Guide](docs/style-guide.md)** — Visual hierarchy, button tokens, archetype layouts, and panel action pills.
 * **[Development & Live Testing](docs/development.md)** — Bundle build, Node test suite, and Puppeteer live desktop verification loop.
+* **[Changelog](CHANGELOG.md)** — Complete release history and feature progression.
 
 ---
 
