@@ -23,7 +23,7 @@ const Updater = {
         const conf = typeof this.getConfiguration === 'function' ? this.getConfiguration() : {};
         const autoUpdate = conf?.custom?.autoUpdate === true || localStorage.getItem('fos_auto_update') === 'true';
         return {
-            version: conf?.version || '0.4.0',
+            version: conf?.version || '0.5.0',
             repoUrl: conf?.repository || conf?.__source_repo || 'https://github.com/jacoplane/thymer-freelance-os',
             autoUpdate
         };

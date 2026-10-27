@@ -1,0 +1,42 @@
+{
+  "id": "pack-software-dev",
+  "name": "Software & AI Engineering",
+  "version": "1.0.0",
+  "category": "Technology",
+  "icon": "💻",
+  "description": "Software & AI Engineering trade pack for Freelance OS.",
+  "roles": [
+    "Full-stack developer",
+    "Mobile app engineer",
+    "Backend engineer",
+    "DevOps specialist",
+    "AI automation consultant"
+  ],
+  "workflow": "Sprints, milestone delivery, technical retainers, staging sign-offs",
+  "skills": [
+    {
+      "id": "scope-ticket-translator",
+      "name": "Scope-to-Ticket Translator",
+      "description": "Translates functional specs into discrete 30-60m engineering tasks with acceptance criteria."
+    },
+    {
+      "id": "scope-creep-sentinel",
+      "name": "Scope Creep Sentinel",
+      "description": "Detects out-of-scope requests in client comms and drafts change-order quotes."
+    },
+    {
+      "id": "plain-english-release-notes",
+      "name": "Plain-English Release Generator",
+      "description": "Converts git commits and dev tickets into client-friendly release notes."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Discovery & Technical Architecture",
+      "Sprint 1 Core MVP",
+      "Staging QA & UAT",
+      "Production Deployment & Handoff"
+    ],
+    "projectType": "Engineering Sprint"
+  }
+}

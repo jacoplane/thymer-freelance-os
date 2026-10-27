@@ -1,5 +1,26 @@
 function workflowDefaults() {
-    return { version: 1, mappings: {}, journalOwners: {}, next: {}, nextLabels: {}, nextRecovery: {}, focus: {}, waiting: {}, drafts: {}, reviews: {} };
+    return {
+        version: 1,
+        dismissedOnboarding: false,
+        baseCurrency: 'CHF',
+        ai: {
+            clientLanguage: 'French',
+            pricingBuffer: 25,
+            watchdogProposals: true,
+            watchdogInvoices: true,
+            watchdogBudget: true
+        },
+        activePacks: [],
+        mappings: {},
+        journalOwners: {},
+        next: {},
+        nextLabels: {},
+        nextRecovery: {},
+        focus: {},
+        waiting: {},
+        drafts: {},
+        reviews: {}
+    };
 }
 
 const WORKFLOW_STORAGE_KEY = 'workflow-v1';
@@ -62,7 +83,20 @@ function normalizeResumableStatus(value) {
 function cloneWorkflowState(state) {
     const defaults = workflowDefaults();
     if (!isPlainObject(state)) return defaults;
-    try { return { ...defaults, ...JSON.parse(JSON.stringify(state)) }; }
+    try {
+        const parsed = JSON.parse(JSON.stringify(state));
+        return {
+            ...defaults,
+            ...parsed,
+            dismissedOnboarding: parsed.dismissedOnboarding === true,
+            baseCurrency: typeof parsed.baseCurrency === 'string' && parsed.baseCurrency.trim() ? parsed.baseCurrency.trim().toUpperCase() : defaults.baseCurrency,
+            ai: {
+                ...defaults.ai,
+                ...(isPlainObject(parsed.ai) ? parsed.ai : {})
+            },
+            activePacks: Array.isArray(parsed.activePacks) ? [...parsed.activePacks] : []
+        };
+    }
     catch { return { ...defaults }; }
 }
 
@@ -110,6 +144,10 @@ function normalizeWorkflowState(saved) {
             if (Object.keys(normalized).length) state.waiting[guid] = normalized;
         }
     }
+    state.activePacks = Array.isArray(saved.activePacks)
+        ? saved.activePacks.filter(p => typeof p === 'string' && p.trim())
+        : [];
+    state.dismissedOnboarding = saved.dismissedOnboarding === true;
     state.drafts = {};
     if (isPlainObject(saved.drafts)) {
         for (const [week, entry] of Object.entries(saved.drafts)) {
@@ -674,6 +712,9 @@ function weeklyReviewText(workflow, draft, state, today = localDate()) {
 }
 
 const Workflow = {
+    getBaseCurrency() {
+        return this.workflowState?.baseCurrency || 'CHF';
+    },
     workflowStorageAdapter() {
         if (typeof this.getLocalStorage === 'function' && typeof this.setLocalStorage === 'function') {
             return {
@@ -2244,6 +2285,14 @@ const Workflow = {
         const section = document.createElement('section'); section.className = 'os-workflow os-workflow-settings';
         section.innerHTML = '<h2>Workspace settings</h2><p>Choose the collections Freelance OS should use. Active projects use in_progress and in_review; waiting tasks use Thymer’s native waiting state.</p><p class="os-action-meta">Focus, collection mappings and unsaved review drafts are saved on this device. Project next actions, waiting details and reviews saved to Journal sync with your workspace. In a workspace with several active users, choose the Journal owner explicitly. Waiting notes saved before this version stay on this device until you save that waiting entry again. Changes from another device can arrive while this dashboard is open; refresh before resolving a conflict.</p>';
         const form = document.createElement('div'); form.className = 'os-settings-fields';
+
+        const currencyLabel = document.createElement('label'); currencyLabel.textContent = 'Base currency';
+        const currencySelect = document.createElement('select'); currencySelect.className = 'os-input'; currencySelect.dataset.role = 'baseCurrency';
+        currencySelect.innerHTML = ['CHF', 'EUR', 'USD', 'GBP', 'CAD', 'AUD'].map(c => `<option value="${c}">${c}</option>`).join('');
+        currencySelect.value = this.getBaseCurrency();
+        currencyLabel.appendChild(currencySelect);
+        form.appendChild(currencyLabel);
+
         for (const role of COLLECTION_ROLES) {
             const label = document.createElement('label'); label.textContent = role;
             const select = document.createElement('select'); select.className = 'os-input'; select.dataset.role = role;
@@ -2263,8 +2312,11 @@ const Workflow = {
             const note = document.createElement('p'); note.className = 'os-action-meta'; note.textContent = 'Map a Journal collection first, then choose its owner.';
             form.appendChild(note);
         }
-        const button = document.createElement('button'); button.className = 'os-button os-primary'; button.textContent = 'Save mappings';
+        const button = document.createElement('button'); button.className = 'os-button os-primary'; button.textContent = 'Save settings';
         button.onclick = () => {
+            if (currencySelect.value) {
+                this.workflowState.baseCurrency = currencySelect.value;
+            }
             form.querySelectorAll('select[data-role]').forEach(select => { if (select.value) this.workflowState.mappings[select.dataset.role] = select.value; else delete this.workflowState.mappings[select.dataset.role]; });
             if (ownerSelect) {
                 const selectedJournal = this.collectionGuid('Journal');
@@ -2276,8 +2328,11 @@ const Workflow = {
             this.reviewDiscovery = null;
             this.weeklyReviewDiscovery = null;
             this.previousReviewContext = null;
-            this.workflowMode = 'today';
+            this.workflowMode = 'settings';
             this.render(panel);
+            if (this.ui?.addToaster) {
+                this.ui.addToaster({ title: 'Settings saved', autoDestroyTime: 2000, dismissible: true });
+            }
         };
         section.append(form, button);
 
@@ -2285,7 +2340,7 @@ const Workflow = {
         const updatesSection = document.createElement('div');
         updatesSection.className = 'os-settings-updates';
         updatesSection.style.cssText = 'margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-color, #e5e7eb);';
-        const updateConf = typeof this.getUpdateConfig === 'function' ? this.getUpdateConfig() : { version: '0.4.0', autoUpdate: false, repoUrl: 'https://github.com/jacoplane/thymer-freelance-os' };
+        const updateConf = typeof this.getUpdateConfig === 'function' ? this.getUpdateConfig() : { version: '0.5.0', autoUpdate: false, repoUrl: 'https://github.com/jacoplane/thymer-freelance-os' };
         updatesSection.innerHTML = `
             <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">Plugin Updates</h3>
             <p class="os-action-meta" style="margin-bottom: 12px;">Installed version: <strong>v${escapeHtml(updateConf.version)}</strong> · Tracked repository: <code>${escapeHtml(updateConf.repoUrl)}</code></p>
@@ -2314,6 +2369,32 @@ const Workflow = {
             }
         };
         section.append(updatesSection);
+
+        // Onboarding / Guide Reset Section
+        const guideSection = document.createElement('div');
+        guideSection.className = 'os-settings-guide';
+        guideSection.style.cssText = 'margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color, #e5e7eb);';
+        guideSection.innerHTML = `
+            <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">Getting Started Guide</h3>
+            <p class="os-action-meta" style="margin-bottom: 12px;">Display the onboarding checklist card on the Overview dashboard.</p>
+            <button type="button" class="os-button os-secondary os-reset-guide-btn" style="cursor: pointer;">Show Getting Started guide on Overview</button>
+        `;
+        guideSection.querySelector('.os-reset-guide-btn').onclick = (e) => {
+            e.preventDefault();
+            this.workflowState.dismissedOnboarding = false;
+            this.persistWorkflow();
+            this.workflowMode = 'overview';
+            this.render(panel);
+            if (this.ui?.addToaster) {
+                this.ui.addToaster({
+                    title: 'Welcome guide enabled',
+                    message: 'The Getting Started checklist is now visible on your Overview dashboard.',
+                    autoDestroyTime: 2500,
+                    dismissible: true
+                });
+            }
+        };
+        section.append(guideSection);
 
         return section;
     }

@@ -1,0 +1,41 @@
+{
+  "id": "pack-accounting-cfo",
+  "name": "Accounting & Fractional CFO",
+  "version": "1.0.0",
+  "category": "Finance",
+  "icon": "📊",
+  "description": "Accounting & Fractional CFO trade pack for Freelance OS.",
+  "roles": [
+    "Solo bookkeeper",
+    "Fractional CFO",
+    "Financial advisor",
+    "Tax preparer"
+  ],
+  "workflow": "Monthly reconciliation close, payroll cutoffs, tax filing cycles",
+  "skills": [
+    {
+      "id": "missing-document-chaser",
+      "name": "Missing Document Chaser",
+      "description": "Identifies unattached bank transactions and drafts friendly receipt requests."
+    },
+    {
+      "id": "month-end-close-tracker",
+      "name": "Month-End Close Checklist",
+      "description": "Enforces immutable 12-point month-end close sequences with audit trails."
+    },
+    {
+      "id": "financial-health-narrative",
+      "name": "Financial Health Narrative Digest",
+      "description": "Translates P&L and balance sheet numbers into plain-English founder summaries."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Accounts Chart & Bank Integration Review",
+      "Month-End Close Cycle",
+      "Quarterly Tax Review & Projection",
+      "Annual Financial Pack"
+    ],
+    "projectType": "Financial Engagement"
+  }
+}

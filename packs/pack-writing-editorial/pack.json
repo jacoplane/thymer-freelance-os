@@ -1,0 +1,41 @@
+{
+  "id": "pack-writing-editorial",
+  "name": "Writing & Content Editorial",
+  "version": "1.0.0",
+  "category": "Creative",
+  "icon": "✍️",
+  "description": "Writing & Content Editorial trade pack for Freelance OS.",
+  "roles": [
+    "Direct-response copywriter",
+    "Content strategist",
+    "Ghostwriter",
+    "Technical writer"
+  ],
+  "workflow": "Editorial calendar, batch drafting, review cadences & publishing",
+  "skills": [
+    {
+      "id": "brief-voice-extractor",
+      "name": "Voice & Brief Extractor",
+      "description": "Extracts brand voice rules, target personas, and key messages from client input."
+    },
+    {
+      "id": "editorial-status-tracker",
+      "name": "Editorial Status Tracker",
+      "description": "Maintains multi-stage content pipelines from pitch through draft, review, and live."
+    },
+    {
+      "id": "publishing-package-builder",
+      "name": "Publishing Package Builder",
+      "description": "Formats final copy with SEO metadata, excerpts, OpenGraph tags, and slugs."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Content Strategy & Brief Alignment",
+      "Batch 1 First Drafts",
+      "Client Editorial Review",
+      "Publishing & Distribution Package"
+    ],
+    "projectType": "Editorial Sprint"
+  }
+}

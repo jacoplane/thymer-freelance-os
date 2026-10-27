@@ -2,8 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
-const source = fs.readFileSync(new URL('../src/workflow.js',import.meta.url),'utf8')+'\n'+fs.readFileSync(new URL('../src/index.js',import.meta.url),'utf8');
-const {Plugin, projectStatusLabel} = vm.runInNewContext(source.replace('export class Plugin','class Plugin')+';Object.assign(Plugin.prototype,Workflow);({Plugin,projectStatusLabel})',{AppPlugin:class{},console,Date,Intl});
+const source = fs.readFileSync(new URL('../src/workflow.js',import.meta.url),'utf8')+'\n'+fs.readFileSync(new URL('../src/ai.js',import.meta.url),'utf8')+'\n'+fs.readFileSync(new URL('../src/index.js',import.meta.url),'utf8');
+const {Plugin, projectStatusLabel} = vm.runInNewContext(source.replace('export class Plugin','class Plugin')+';Object.assign(Plugin.prototype,Workflow,Ai);({Plugin,projectStatusLabel})',{AppPlugin:class{},console,Date,Intl});
 
 function page(initial = [], failAt = Infinity) {
     const lines = [...initial];let writes=0;
@@ -121,4 +121,32 @@ test('projects validate and support budget_chf and fee_type fields', async () =>
     });
     assert.equal(rec.budget_chf, 6000);
     assert.equal(rec.fee_type, 'fixed');
+});
+
+test('Trade Pack template initializes custom milestones and tailored deliverables', async () => {
+    const plugin = new Plugin(), state = page();
+    const milestones = [
+        'Discovery & Technical Architecture',
+        'Sprint 1 Core MVP',
+        'Staging QA & UAT',
+        'Production Deployment & Handoff'
+    ];
+    await plugin.initializeProject(state.record, {
+        brief: 'Build client API portal',
+        packId: 'pack-software-dev',
+        projectType: 'Engineering Sprint',
+        milestones
+    });
+
+    // Verify milestones are created under Client review checkpoints
+    const reviewSection = state.lines.find(l => l.type === 'heading' && l.segments?.[0]?.text === 'Client review checkpoints');
+    assert.ok(reviewSection, 'Review checkpoints section must exist');
+
+    for (const milestone of milestones) {
+        assert.ok(state.lines.some(l => l.type === 'task' && l.segments?.[0]?.text === milestone), 'Milestone ' + milestone + ' must be generated as a task');
+    }
+
+    // Verify engineering-specific deliverables
+    assert.ok(state.lines.some(l => l.type === 'text' && l.segments?.[0]?.text?.includes('Engineering Repositories')));
+    assert.ok(state.lines.some(l => l.type === 'ulist' && l.segments?.[0]?.text?.includes('Staging QA Environment')));
 });

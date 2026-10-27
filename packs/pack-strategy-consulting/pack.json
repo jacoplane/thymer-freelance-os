@@ -1,0 +1,41 @@
+{
+  "id": "pack-strategy-consulting",
+  "name": "Management & Strategy Consulting",
+  "version": "1.0.0",
+  "category": "Strategy & Ops",
+  "icon": "🧭",
+  "description": "Management & Strategy Consulting trade pack for Freelance OS.",
+  "roles": [
+    "Fractional executive",
+    "Business strategist",
+    "Product consultant",
+    "Operations advisor"
+  ],
+  "workflow": "Phased advisory engagements, diagnostic audits, executive workshops",
+  "skills": [
+    {
+      "id": "stakeholder-insight-tagger",
+      "name": "Stakeholder Insight Tagger",
+      "description": "Categorizes qualitative stakeholder interview notes into key strategic themes."
+    },
+    {
+      "id": "slide-deck-narrative-outliner",
+      "name": "Slide Deck Narrative Outliner",
+      "description": "Structures executive advisory decks with pyramid-principle narrative arcs."
+    },
+    {
+      "id": "steering-committee-digest",
+      "name": "Steering Committee Milestone Digest",
+      "description": "Compiles concise governance briefs highlighting decisions, risks, and next steps."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Phase 1 Discovery & Diagnostic Audit",
+      "Phase 2 Strategy Formulation & Roadmap",
+      "Phase 3 Executive Presentation",
+      "Advisory Retainer"
+    ],
+    "projectType": "Advisory Engagement"
+  }
+}

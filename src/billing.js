@@ -16,8 +16,8 @@ function billingInvoices(invoices, filter, search = '') {
     return invoices.filter(invoice => invoiceMatches(invoice, filter) && (!query || [invoice.invoiceId, invoice.name, invoice.clientName, invoice.projectName, invoice.currency].filter(Boolean).join(' ').toLowerCase().includes(query)));
 }
 
-function billingSummary(invoices) {
-    return { ...summarizeInvoices(invoices), overdueCount: invoices.filter(invoice => invoiceMatches(invoice, 'overdue')).length, unconfirmedCount: invoices.filter(invoice => invoiceMatches(invoice, 'review')).length };
+function billingSummary(invoices, baseCurrency = 'CHF') {
+    return { ...summarizeInvoices(invoices, baseCurrency), overdueCount: invoices.filter(invoice => invoiceMatches(invoice, 'overdue')).length, unconfirmedCount: invoices.filter(invoice => invoiceMatches(invoice, 'review')).length };
 }
 
 const Billing = {
@@ -122,7 +122,9 @@ const Billing = {
 
     showBillingInvoiceModal(panel, data, defaultClientGuid = '', defaultProjectGuid = '') {
         const clients = data.clients;
-        const currencies = data.invoiceCurrencies || ['CHF', 'EUR', 'USD'];
+        const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
+        const rawCurrencies = data.invoiceCurrencies && data.invoiceCurrencies.length ? data.invoiceCurrencies : ['CHF', 'EUR', 'USD'];
+        const currencies = rawCurrencies.includes(baseCurrency) ? rawCurrencies : [baseCurrency, ...rawCurrencies];
         const initialClient = defaultClientGuid || '';
         const initialProject = defaultProjectGuid || '';
         const form = this.openBillingDialog(panel, {
@@ -132,7 +134,7 @@ const Billing = {
                 <div class="os-form-group"><label for="os-invoice-client">Client *</label><select id="os-invoice-client" class="os-select input-client" required><option value="">Choose a client…</option>${clients.map(client => `<option value="${client.guid}" ${client.guid === initialClient ? 'selected' : ''}>${escapeHtml(client.name)}</option>`).join('')}</select></div>
                 <div class="os-form-group"><label for="os-invoice-project">Project (optional)</label><select id="os-invoice-project" class="os-select input-project"><option value="">No project linked</option></select></div>
                 <div class="os-form-group"><label for="os-invoice-amount">Amount *</label><input id="os-invoice-amount" class="os-input input-amount" type="number" min="0.01" step="0.01" required /></div>
-                <div class="os-form-group"><label for="os-invoice-currency">Currency</label><select id="os-invoice-currency" class="os-select input-currency" required>${currencies.map(currency => `<option ${currency === 'CHF' ? 'selected' : ''}>${escapeHtml(currency)}</option>`).join('')}</select></div>
+                <div class="os-form-group"><label for="os-invoice-currency">Currency</label><select id="os-invoice-currency" class="os-select input-currency" required>${currencies.map(currency => `<option ${currency === baseCurrency ? 'selected' : ''}>${escapeHtml(currency)}</option>`).join('')}</select></div>
                 <div class="os-form-group"><label for="os-invoice-stage">Sending stage</label><select id="os-invoice-stage" class="os-select input-stage">${Object.entries(INVOICE_STAGES).map(([key, value]) => `<option value="${key}">${value}</option>`).join('')}</select></div>
                 <div class="os-form-group"><label for="os-invoice-payment">Payment state</label><select id="os-invoice-payment" class="os-select input-status">${Object.entries(INVOICE_PAYMENTS).map(([key, value]) => `<option value="${key}">${value}</option>`).join('')}</select></div>
                 <div class="os-form-group"><label for="os-invoice-issued">Issue date</label><input id="os-invoice-issued" class="os-input input-issued" type="date" max="${localDate()}" /></div>
@@ -177,10 +179,11 @@ const Billing = {
             section.querySelector('button').onclick = () => this.render(panel); return section;
         }
         const plans = data.clients.filter(client => client.status === 'maintenance' || (isRevenueClient(client) && client.mrr > 0));
-        const cash = billingSummary(data.invoices);
+        const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
+        const cash = billingSummary(data.invoices, baseCurrency);
         section.innerHTML = `<div class="os-billing-heading"><div><h2>Billing</h2><p>Invoices and maintenance plans</p></div><div class="os-billing-heading-actions"><button class="os-card-open os-billing-register">Native register ↗</button><button class="os-button os-primary os-billing-add">Add invoice</button></div></div>
-            <dl class="os-billing-summary"><div><dt>Outstanding</dt><dd>${money(cash.outstanding)} <span>CHF</span></dd></div><div><dt>Overdue · ${cash.overdueCount}</dt><dd>${money(cash.overdue)} <span>CHF</span></dd></div><div><dt>To confirm</dt><dd>${cash.unconfirmedCount} <span>invoice${cash.unconfirmedCount === 1 ? '' : 's'}</span></dd></div><div><dt>To send</dt><dd>${cash.toSend} <span>invoice${cash.toSend === 1 ? '' : 's'}</span></dd></div></dl>
-            <p class="os-billing-currency-note">Amounts use CHF invoices; counts cover all currencies.${cash.excludedCurrency ? ` ${cash.excludedCurrency} other-currency invoice${cash.excludedCurrency === 1 ? ' is' : 's are'} shown without conversion.` : ''}</p>
+            <dl class="os-billing-summary"><div><dt>Outstanding</dt><dd>${money(cash.outstanding)} <span>${escapeHtml(baseCurrency)}</span></dd></div><div><dt>Overdue · ${cash.overdueCount}</dt><dd>${money(cash.overdue)} <span>${escapeHtml(baseCurrency)}</span></dd></div><div><dt>To confirm</dt><dd>${cash.unconfirmedCount} <span>invoice${cash.unconfirmedCount === 1 ? '' : 's'}</span></dd></div><div><dt>To send</dt><dd>${cash.toSend} <span>invoice${cash.toSend === 1 ? '' : 's'}</span></dd></div></dl>
+            <p class="os-billing-currency-note">Amounts use ${escapeHtml(baseCurrency)} invoices; counts cover all currencies.${cash.excludedCurrency ? ` ${cash.excludedCurrency} other-currency invoice${cash.excludedCurrency === 1 ? ' is' : 's are'} shown without conversion.` : ''}</p>
             <p class="os-billing-message" role="status" ${this.billingMessage ? '' : 'hidden'}>${escapeHtml(this.billingMessage || '')}</p>
             <div class="os-billing-toolbar"><div class="os-tabs"><button class="os-tab ${this.billingTab !== 'plans' ? 'active' : ''}" data-billing-tab="invoices" data-focus-key="billing-tab-invoices">Invoices (${data.invoices.length})</button><button class="os-tab ${this.billingTab === 'plans' ? 'active' : ''}" data-billing-tab="plans" data-focus-key="billing-tab-plans">Maintenance plans (${plans.length})</button></div><input class="os-search-input os-billing-search" data-focus-key="billing-search" aria-label="Search ${this.billingTab === 'plans' ? 'maintenance plans' : 'invoices'}" placeholder="Search ${this.billingTab === 'plans' ? 'clients or services' : 'reference or client'}…" value="${escapeHtml(this.billingSearch || '')}" /></div>
             <div class="os-billing-filters os-filter-pills" aria-label="Filter invoices" ${this.billingTab === 'plans' ? 'hidden' : ''}></div><div class="os-billing-results"></div>`;
@@ -204,7 +207,7 @@ const Billing = {
             const wrap = document.createElement('div'); wrap.className = 'os-billing-table-wrap'; wrap.tabIndex = 0; wrap.setAttribute('aria-label', this.billingTab === 'plans' ? 'Maintenance plan register' : 'Invoice register');
             const table = document.createElement('table'); table.className = 'os-billing-table';
             if (this.billingTab === 'plans') {
-                table.innerHTML = `<caption class="os-billing-caption">Agreed plan references. Monthly amounts are normalized CHF values; no future charges are inferred.</caption><thead><tr><th scope="col">Client</th><th scope="col">Service</th><th scope="col">Monthly reference</th><th scope="col">Billing cycle</th><th scope="col">Included hours / mo</th></tr></thead><tbody>${rows.map(client => `<tr data-client="${client.guid}"><th scope="row"><button class="os-billing-client os-card-open">${escapeHtml(client.name)}</button></th><td>${escapeHtml(client.planValue || 'Not set')}</td><td class="os-billing-number">${money(client.mrr)} CHF</td><td>${escapeHtml(client.billingCycle || 'Not set')}</td><td class="os-billing-number">${client.includedHours || 0} h</td></tr>`).join('')}</tbody>`;
+                table.innerHTML = `<caption class="os-billing-caption">Agreed plan references. Monthly amounts are normalized ${escapeHtml(baseCurrency)} values; no future charges are inferred.</caption><thead><tr><th scope="col">Client</th><th scope="col">Service</th><th scope="col">Monthly reference</th><th scope="col">Billing cycle</th><th scope="col">Included hours / mo</th></tr></thead><tbody>${rows.map(client => `<tr data-client="${client.guid}"><th scope="row"><button class="os-billing-client os-card-open">${escapeHtml(client.name)}</button></th><td>${escapeHtml(client.planValue || 'Not set')}</td><td class="os-billing-number">${money(client.mrr)} ${escapeHtml(baseCurrency)}</td><td>${escapeHtml(client.billingCycle || 'Not set')}</td><td class="os-billing-number">${client.includedHours || 0} h</td></tr>`).join('')}</tbody>`;
                 table.querySelectorAll('.os-billing-client').forEach(button => { button.onclick = () => this.openRecord(button.closest('tr').dataset.client, panel); });
             } else {
                 table.innerHTML = `<caption class="os-billing-caption">${rows.length} invoice${rows.length === 1 ? '' : 's'} · Sending and payment are recorded separately.</caption><thead><tr><th scope="col">Invoice</th><th scope="col">Client</th><th scope="col">Amount</th><th scope="col">Due</th><th scope="col">Sending</th><th scope="col">Payment</th><th scope="col">Action</th></tr></thead><tbody>${rows.map(invoice => {

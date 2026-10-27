@@ -1,0 +1,40 @@
+{
+  "id": "pack-recruiting-talent",
+  "name": "HR & Technical Recruiting",
+  "version": "1.0.0",
+  "category": "Strategy & Ops",
+  "icon": "🤝",
+  "description": "HR & Technical Recruiting trade pack for Freelance OS.",
+  "roles": [
+    "Solo headhunter",
+    "Technical recruiter",
+    "Talent sourcing consultant"
+  ],
+  "workflow": "Job briefing -> Sourcing -> Screening -> Client interviews -> Offer & Ramp",
+  "skills": [
+    {
+      "id": "candidate-dossier-creator",
+      "name": "Candidate Submission Dossier",
+      "description": "Compiles standardized blind candidate profiles with scorecards and comp expectations."
+    },
+    {
+      "id": "hiring-manager-sla-tracker",
+      "name": "Hiring Manager SLA Monitor",
+      "description": "Flags candidates stuck in hiring manager review queues past the agreed SLA."
+    },
+    {
+      "id": "onboarding-ramp-checklist",
+      "name": "New Hire Onboarding Ramp Checklist",
+      "description": "Tracks 30-60-90 day milestone checklists and equipment/compliance provisioning."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Role Calibration & Sourcing Kickoff",
+      "Screening & Slate Presentation",
+      "Interview Rounds & Debrief",
+      "Offer Negotiation & Placement"
+    ],
+    "projectType": "Recruiting Search"
+  }
+}

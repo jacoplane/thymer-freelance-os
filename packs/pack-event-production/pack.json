@@ -1,0 +1,40 @@
+{
+  "id": "pack-event-production",
+  "name": "Event & Wedding Coordination",
+  "version": "1.0.0",
+  "category": "Services",
+  "icon": "💍",
+  "description": "Event & Wedding Coordination trade pack for Freelance OS.",
+  "roles": [
+    "Wedding planner",
+    "Corporate event producer",
+    "Conference coordinator"
+  ],
+  "workflow": "Procurement -> Vendor schedules -> Deposit milestones -> Day-of execution",
+  "skills": [
+    {
+      "id": "run-of-show-generator",
+      "name": "Master Run-of-Show Generator",
+      "description": "Generates minute-by-minute execution timelines tailored for vendors, crew, and clients."
+    },
+    {
+      "id": "deposit-coi-sentinel",
+      "name": "Deposit & COI Sentinel",
+      "description": "Tracks certificate of insurance (COI) deadlines and vendor payment deposits."
+    },
+    {
+      "id": "vendor-contract-terms-extractor",
+      "name": "Vendor Terms & Window Extractor",
+      "description": "Extracts load-in/load-out windows, overtime penalties, and power/AV requirements."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Venue Sourcing & Design Concept",
+      "Vendor Contracting & Deposit Schedule",
+      "Production Week & Run-of-Show Lock",
+      "Day-Of Execution & Strike"
+    ],
+    "projectType": "Event Production"
+  }
+}

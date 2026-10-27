@@ -1,0 +1,40 @@
+{
+  "id": "pack-executive-support",
+  "name": "Executive & Business Support",
+  "version": "1.0.0",
+  "category": "Strategy & Ops",
+  "icon": "🗂️",
+  "description": "Executive & Business Support trade pack for Freelance OS.",
+  "roles": [
+    "Executive assistant",
+    "Virtual assistant",
+    "Online business manager (OBM)",
+    "Operations coordinator"
+  ],
+  "workflow": "Asynchronous inbox triage, calendar defragmentation, travel logistics",
+  "skills": [
+    {
+      "id": "travel-dossier-builder",
+      "name": "Multi-Leg Travel Dossier Builder",
+      "description": "Assembles chronological travel itineraries with confirmation codes, maps, and contacts."
+    },
+    {
+      "id": "cross-calendar-coordinator",
+      "name": "Cross-Calendar Coordinator",
+      "description": "Resolves multi-party timezone conflicts and preserves deep-work focus blocks."
+    },
+    {
+      "id": "daily-action-urgency-queue",
+      "name": "Daily Action & Urgency Queue",
+      "description": "Triages cross-channel incoming requests into Urgent, Important, and Delegated queues."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Operations & Tool Access Onboarding",
+      "Weekly Support Retainer Cycle",
+      "Quarterly Systems Review"
+    ],
+    "projectType": "Support Retainer"
+  }
+}

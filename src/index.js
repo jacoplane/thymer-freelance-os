@@ -284,11 +284,12 @@ function invoiceMatches(invoice, filter) {
     return invoice.status === filter;
 }
 
-function summarizeInvoices(invoices) {
-    const summary = { invoiced: 0, collected: 0, outstanding: 0, overdue: 0, overdueCount: 0, unconfirmedCount: 0, toSend: 0, issuedCount: 0, excludedCurrency: 0, aging: [0, 0, 0], undated: 0 };
+function summarizeInvoices(invoices, baseCurrency = 'CHF') {
+    const summary = { invoiced: 0, collected: 0, outstanding: 0, overdue: 0, overdueCount: 0, unconfirmedCount: 0, toSend: 0, issuedCount: 0, excludedCurrency: 0, aging: [0, 0, 0], undated: 0, baseCurrency };
     for (const invoice of invoices) {
         if (invoice.stage === 'draft' || invoice.stage === 'ready') summary.toSend++;
-        if (invoice.currency !== 'CHF') { summary.excludedCurrency++; continue; }
+        const curr = (invoice.currency || baseCurrency).toUpperCase();
+        if (curr !== baseCurrency.toUpperCase()) { summary.excludedCurrency++; continue; }
         if (invoice.stage !== 'sent' && invoice.status !== 'paid') continue;
         summary.invoiced += invoice.amount;
         summary.issuedCount++;
@@ -325,8 +326,8 @@ function clientSearchText(client) {
     return [client.name, client.contact, client.email, client.phone, client.website, client.plan, client.source, CLIENT_STATUSES[clientStatus(client)]].filter(Boolean).join(' ').toLowerCase();
 }
 
-function clientSummary(client, projects, invoices) {
-    const linked = invoices.filter(i => i.clientGuid === client.guid && i.currency === 'CHF');
+function clientSummary(client, projects, invoices, baseCurrency = 'CHF') {
+    const linked = invoices.filter(i => i.clientGuid === client.guid && (i.currency || baseCurrency).toUpperCase() === baseCurrency.toUpperCase());
     return {
         activeProjects: projects.filter(p => p.clientGuid === client.guid && ['in_progress', 'in_review'].includes(p.status)).length,
         collected: linked.filter(i => i.status === 'paid').reduce((sum, i) => sum + i.amount, 0),
@@ -343,16 +344,140 @@ function projectStatusLabel(status) {
     return ({ in_progress: 'In Progress', in_review: 'In Review', backlog: 'Backlog', completed: 'Completed', archived: 'Archived', cancelled: 'Cancelled' })[status] || 'No status';
 }
 
-function projectTemplateSections({ brief = '', firstAction = '', deliverables = [], repoUrl = '', figmaUrl = '', liveUrl = '' } = {}) {
+function getPackDeliverables(packId, { repoUrl = '', figmaUrl = '', liveUrl = '' } = {}) {
+    const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
+    const ulist = value => ({ type: 'ulist', segments: [{ type: 'text', text: value }] });
+    switch (packId) {
+        case 'pack-software-dev':
+            return [
+                text('### 💻 Engineering Repositories & Environments'),
+                ulist(`Repository / Code: ${repoUrl || '[GitHub / GitLab repo ↗]'}`),
+                ulist(`Staging QA Environment: ${liveUrl || '[Staging preview URL ↗]'}`),
+                ulist('API Contracts & Documentation: [Postman / Swagger ↗]'),
+                ulist('Production URL: [Live site / app ↗]')
+            ];
+        case 'pack-design-creative':
+            return [
+                text('### 🎨 Design Canvas & Asset Links'),
+                ulist(`Figma Workspace: ${figmaUrl || '[Figma design file ↗]'}`),
+                ulist('Moodboard & Concept Board: [Miro / FigJam ↗]'),
+                ulist('Design Tokens & Brand Specs: [Style guide ↗]'),
+                ulist('Final Production Assets: [Vector SVG / PNG Export folder ↗]')
+            ];
+        case 'pack-writing-editorial':
+            return [
+                text('### ✍️ Editorial Queue & Copy Assets'),
+                ulist('Working Draft: [Google Doc / Notion ↗]'),
+                ulist('Content & Editorial Calendar: [Calendar view ↗]'),
+                ulist('Brand Voice Spec: [Tone of Voice guidelines ↗]'),
+                ulist('Publishing Package: [Final copy, slugs, meta descriptions ↗]')
+            ];
+        case 'pack-growth-marketing':
+            return [
+                text('### 📈 Campaign Portals & Dashboards'),
+                ulist('Performance Dashboard: [GA4 / Looker Studio ↗]'),
+                ulist('Ad Accounts & Audiences: [Meta / Google Ads Manager ↗]'),
+                ulist('Tracking Tags & Pixels: [Google Tag Manager container ↗]'),
+                ulist('Creative Asset Bank: [Drive / Figma ad creatives ↗]')
+            ];
+        case 'pack-strategy-consulting':
+            return [
+                text('### 🧭 Advisory Artifacts & Evidence'),
+                ulist('Stakeholder Interview Notes: [Interview synthesis ↗]'),
+                ulist('Diagnostic Findings Memo: [Executive brief ↗]'),
+                ulist('Advisory Deck Draft: [Keynote / Google Slides ↗]'),
+                ulist('Steering Committee Digest: [Milestone governance brief ↗]')
+            ];
+        case 'pack-accounting-cfo':
+            return [
+                text('### 📊 Financial Portals & Workbooks'),
+                ulist('Accounting System & Feeds: [Xero / QuickBooks / Bexio ↗]'),
+                ulist('Month-End Close Workbook: [Reconciliation sheet ↗]'),
+                ulist('Financial Health Digest: [P&L / Cashflow report ↗]'),
+                ulist('Tax & Compliance Vault: [Tax filings folder ↗]')
+            ];
+        case 'pack-executive-support':
+            return [
+                text('### 🗂️ Operations & Travel Dossiers'),
+                ulist('Master Travel Dossier: [Chronological itinerary & passes ↗]'),
+                ulist('Executive Calendar: [Timezone focus blocks ↗]'),
+                ulist('Daily Action Queue: [Triage board ↗]'),
+                ulist('Vendor & Access Contacts: [Secure 1Password share ↗]')
+            ];
+        case 'pack-media-production':
+            return [
+                text('### 🎬 Production & Review Hub'),
+                ulist('Video Review Portal: [Frame.io / Review link ↗]'),
+                ulist('Production Call Sheet: [Crew schedule & locations ↗]'),
+                ulist('Talent & Location Releases: [Signed release forms ↗]'),
+                ulist('Master Delivery Folder: [ProRes / High-res master ↗]')
+            ];
+        case 'pack-recruiting-talent':
+            return [
+                text('### 🤝 Talent Pipeline & Dossiers'),
+                ulist('Role Calibration Brief: [Job spec & scorecard ↗]'),
+                ulist('Candidate Submission Dossiers: [Blind profile slate ↗]'),
+                ulist('Hiring Manager Review Tracker: [SLA review log ↗]'),
+                ulist('New Hire Onboarding Plan: [30-60-90 ramp checklist ↗]')
+            ];
+        case 'pack-event-production':
+            return [
+                text('### 💍 Event Coordination & Vendor Hub'),
+                ulist('Master Run of Show: [Minute-by-minute execution timeline ↗]'),
+                ulist('Vendor Contract & Deposit Log: [Vendor SOWs ↗]'),
+                ulist('Insurance & COI Vault: [Certificates of Insurance ↗]'),
+                ulist('Floor Plan & Load-In Brief: [Venue access window ↗]')
+            ];
+        case 'pack-interior-design':
+            return [
+                text('### 🏡 Spatial Specs & Procurement Hub'),
+                ulist('FF&E Product Spec Sheet: [Trade margin & tear sheets ↗]'),
+                ulist('Floor Plans & Elevations: [CAD / Space plans ↗]'),
+                ulist('Freight & Lead-Time Tracker: [Shipping schedule ↗]'),
+                ulist('Contractor Punch List: [On-site room punch checklist ↗]')
+            ];
+        default:
+            return [
+                text('### 🔗 Key Links & Repositories'),
+                ulist(`Repository / Code: ${repoUrl || '[GitHub / GitLab repo ↗]'}`),
+                ulist(`Design & Figma: ${figmaUrl || '[Figma / Design link ↗]'}`),
+                ulist(`Live / Staging: ${liveUrl || '[Preview site ↗]'}`),
+                ulist('Shared Drive / Assets: [Folder link ↗]')
+            ];
+    }
+}
+
+function projectTemplateSections({ brief = '', firstAction = '', deliverables = [], repoUrl = '', figmaUrl = '', liveUrl = '', baseCurrency = 'CHF', packId = '', projectType = '', milestones = [] } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
     const ulist = value => ({ type: 'ulist', segments: [{ type: 'text', text: value }] });
     const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
+
+    const reviewLines = [
+        btn('+ Add review checkpoint'),
+        text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.')
+    ];
+
+    if (Array.isArray(milestones) && milestones.length) {
+        for (const m of milestones) {
+            reviewLines.push({
+                type: 'task',
+                segments: [{ type: 'text', text: String(m) }],
+                props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' }
+            });
+        }
+    } else {
+        reviewLines.push({ type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } });
+    }
+
+    const defaultBrief = projectType
+        ? `Describe the outcome this ${projectType.toLowerCase()} should achieve.`
+        : 'Describe the outcome this project should achieve.';
 
     return [
         {
             title: 'Project brief',
             lines: [
-                text(brief || 'Describe the outcome this project should achieve.'),
+                text(brief || defaultBrief),
                 text('Scope and success criteria: add what is included and how you will know it is done.')
             ]
         },
@@ -368,13 +493,7 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
             title: 'Deliverables & references',
             lines: deliverables.length
                 ? deliverables.map(item => ({ type: 'text', segments: [{ type: 'ref', text: { guid: item.guid } }] }))
-                : [
-                    text('### 🔗 Key Links & Repositories'),
-                    ulist(`Repository / Code: ${repoUrl || '[GitHub / GitLab repo ↗]'}`),
-                    ulist(`Design & Figma: ${figmaUrl || '[Figma / Design link ↗]'}`),
-                    ulist(`Live / Staging: ${liveUrl || '[Preview site ↗]'}`),
-                    ulist('Shared Drive / Assets: [Folder link ↗]')
-                ]
+                : getPackDeliverables(packId, { repoUrl, figmaUrl, liveUrl })
         },
         {
             title: 'Activity & time log',
@@ -389,28 +508,24 @@ function projectTemplateSections({ brief = '', firstAction = '', deliverables = 
                 btn('+ Create invoice'),
                 text('*(Click above, use + Invoice in the header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*'),
                 ulist('Billing Schedule: Milestone deposit (50%) / Final delivery (50%)'),
-                ulist('Payment Method: Bank Transfer / QR-bill (CHF)')
+                ulist(`Payment Method: Bank Transfer${baseCurrency === 'CHF' ? ' / QR-bill (CHF)' : ` (${baseCurrency})`}`)
             ]
         },
         {
             title: 'Client review checkpoints',
-            lines: [
-                btn('+ Add review checkpoint'),
-                text('Add one task per review. Name the deliverable, set the feedback due date, and mark it complete when the client replies.'),
-                { type: 'task', segments: [], props: { [CLIENT_REVIEW_CHECKPOINT_PROPERTY]: 'checkpoint-v1' } }
-            ]
+            lines: reviewLines
         },
         {
             title: 'Decisions & updates',
             lines: [
-                text(`- **${localDate()}**: Project initialized.`),
+                text(`- **${localDate()}**: Project initialized${projectType ? ` (${projectType})` : ''}.`),
                 text('*(Tip: record client feedback, scope modifications, and architectural decisions below)*')
             ]
         }
     ];
 }
 
-function clientTemplateSections({ context = '', initialTask = '', plan = '', monthlyChf = 0, website = '', contactName = '', email = '', isLead = false, status = '', leadStage = '', estimatedValue = 0 } = {}) {
+function clientTemplateSections({ context = '', initialTask = '', plan = '', monthlyChf = 0, website = '', contactName = '', email = '', isLead = false, status = '', leadStage = '', estimatedValue = 0, baseCurrency = 'CHF' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
     const ulist = value => ({ type: 'ulist', segments: [{ type: 'text', text: value }] });
     const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
@@ -419,7 +534,7 @@ function clientTemplateSections({ context = '', initialTask = '', plan = '', mon
 
     if (isLeadClient) {
         const stageLabel = leadStage || (status ? status.replace(/_/g, ' ') : 'Prospect');
-        const estStr = estimatedValue > 0 ? `${estimatedValue} CHF` : 'TBD';
+        const estStr = estimatedValue > 0 ? `${estimatedValue} ${baseCurrency}` : 'TBD';
         return [
             {
                 title: 'Relationship & Context',
@@ -462,7 +577,7 @@ function clientTemplateSections({ context = '', initialTask = '', plan = '', mon
         ];
     }
 
-    const planLabel = plan || (monthlyChf > 0 ? `${monthlyChf} CHF / month care plan` : 'Ad-hoc / on-demand support');
+    const planLabel = plan || (monthlyChf > 0 ? `${monthlyChf} ${baseCurrency} / month care plan` : 'Ad-hoc / on-demand support');
     const includedHours = monthlyChf >= 100 ? '4h / month included' : monthlyChf > 0 ? '2h / month included' : 'Billed hourly';
 
     return [
@@ -492,7 +607,7 @@ function clientTemplateSections({ context = '', initialTask = '', plan = '', mon
                 btn('+ Create invoice'),
                 text('*(No invoices issued yet. Click above, use + Invoice in the top header, or press Ctrl/Cmd+K → "Create Freelance OS invoice".)*'),
                 ulist('Billing Terms: Monthly (1er du mois) / Net 30'),
-                ulist('Payment Method: Bank Transfer / QR-bill (CHF)')
+                ulist(`Payment Method: Bank Transfer${baseCurrency === 'CHF' ? ' / QR-bill (CHF)' : ` (${baseCurrency})`}`)
             ]
         },
         {
@@ -523,10 +638,10 @@ function clientTemplateSections({ context = '', initialTask = '', plan = '', mon
     ];
 }
 
-function invoiceTemplateSections(values = {}, { clientName = '', projectName = '', summary = '' } = {}) {
+function invoiceTemplateSections(values = {}, { clientName = '', projectName = '', summary = '', baseCurrency = 'CHF' } = {}) {
     const text = value => ({ type: 'text', segments: [{ type: 'text', text: value }] });
     const btn = value => ({ type: 'linkbtn', segments: [{ type: 'text', text: value }] });
-    const amountStr = values.amount_chf ? `${values.amount_chf} ${values.currency || 'CHF'}` : 'Amount TBD';
+    const amountStr = values.amount_chf ? `${values.amount_chf} ${values.currency || baseCurrency || 'CHF'}` : 'Amount TBD';
     const clientStr = clientName || 'Client';
     const projectStr = projectName || 'General engagement';
     const issuedStr = values.issued || localDate();
@@ -697,7 +812,7 @@ export class Plugin extends AppPlugin {
                         guid: invoiceGuid || pageGuid,
                         invoiceId: 'Invoice',
                         amount: 0,
-                        currency: 'CHF'
+                        currency: this.getBaseCurrency?.() || 'CHF'
                     };
                     await this.copyInvoiceDetails(inv);
                 } else if (text.includes('Add deliverable') || text.includes('+ Deliverable')) {
@@ -1169,6 +1284,8 @@ export class Plugin extends AppPlugin {
             };
             // 1. Fetch Clients
             const clientRecords = await readCollection(this.collectionGuid('Clients'));
+            const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
+            data.baseCurrency = baseCurrency;
             let mrrSum = 0;
             let activeC = 0;
             let prospects = 0;
@@ -1204,7 +1321,7 @@ export class Plugin extends AppPlugin {
                     name,
                     status,
                     mrr: mrrVal,
-                    plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} CHF/mo` : 'Active'),
+                    plan: getProp(cr, 'plan') || (mrrVal > 0 ? `${mrrVal} ${baseCurrency}/mo` : 'Active'),
                     planValue: getProp(cr, 'plan') || '',
                     billingCycle: getProp(cr, 'billing_cycle') || '',
                     includedHours: Math.max(0, Number(getProp(cr, 'included_hours')) || 0),
@@ -1236,7 +1353,7 @@ export class Plugin extends AppPlugin {
                 const amt = Number.isFinite(rawAmount) ? rawAmount : 0;
                 const status = (getProp(ir, 'payment_status') || 'unpaid').toLowerCase();
                 const stage = (getProp(ir, 'status') || 'unknown').toLowerCase();
-                const currency = String(getProp(ir, 'currency') || 'CHF').toUpperCase();
+                const currency = String(getProp(ir, 'currency') || baseCurrency).toUpperCase();
                 const clientGuid = getClientGuid(ir);
 
                 let client = clientMap.get(clientGuid) || getProp(ir, 'client') || '';
@@ -1279,7 +1396,7 @@ export class Plugin extends AppPlugin {
             });
 
             data.invoices = invoiceList;
-            data.cashflow = summarizeInvoices(invoiceList);
+            data.cashflow = summarizeInvoices(invoiceList, baseCurrency);
 
             // 3. Fetch Projects (Separate top-level projects from sub-pages & deliverables)
             const projRecords = await readCollection(this.collectionGuid('Projects'));
@@ -1354,10 +1471,10 @@ export class Plugin extends AppPlugin {
                 const projectInvoices = invoiceList.filter(i => i.projectGuid === p.guid);
                 p.invoiceCount = projectInvoices.length;
                 p.totalBilledCHF = projectInvoices
-                    .filter(i => i.currency === 'CHF' && (i.stage === 'sent' || i.status === 'paid'))
+                    .filter(i => (i.currency || baseCurrency).toUpperCase() === baseCurrency.toUpperCase() && (i.stage === 'sent' || i.status === 'paid'))
                     .reduce((sum, i) => sum + i.amount, 0);
                 p.totalPaidCHF = projectInvoices
-                    .filter(i => i.currency === 'CHF' && i.status === 'paid')
+                    .filter(i => (i.currency || baseCurrency).toUpperCase() === baseCurrency.toUpperCase() && i.status === 'paid')
                     .reduce((sum, i) => sum + i.amount, 0);
             }
 
@@ -1365,7 +1482,7 @@ export class Plugin extends AppPlugin {
             for (const c of clientList) {
                 c.projectCount = parentList.filter(p => p.clientGuid === c.guid).length;
                 c.invoiceCount = invoiceList.filter(i => i.clientGuid === c.guid).length;
-                c.summary = clientSummary(c, parentList, invoiceList);
+                c.summary = clientSummary(c, parentList, invoiceList, baseCurrency);
             }
 
             // Sort: in_progress first, high priority first
@@ -1551,10 +1668,11 @@ export class Plugin extends AppPlugin {
         const content = lines.filter(line => !['document', 'br'].includes(line.type) && (extractLineText(line) || line.segments?.length || line.type !== 'text'));
         const placeholders = content.filter(line => line.type === 'text' && /^Project workspace migrated from Obsidian\.?$/i.test(extractLineText(line)));
         if (content.length !== placeholders.length) return { applied: false, reason: 'has-content' };
+        const baseCurrency = options.baseCurrency || (typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF'));
         const created = [];
         try {
             let previous = null;
-            for (const section of projectTemplateSections(options)) {
+            for (const section of projectTemplateSections({ ...options, baseCurrency })) {
                 const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'project-v1' });
                 if (!heading) throw new Error('The project template could not be saved');
                 created.push(heading); previous = heading;
@@ -1586,7 +1704,8 @@ export class Plugin extends AppPlugin {
         const leadStage = options.leadStage || getProp(record, 'lead_stage') || '';
         const estimatedValue = options.estimatedValue ?? (Number(getProp(record, 'estimated_value_chf')) || 0);
         const isLead = options.isLead ?? isLeadClient({ status });
-        const opts = { ...options, status, leadStage, estimatedValue, isLead };
+        const baseCurrency = options.baseCurrency || (typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF'));
+        const opts = { ...options, status, leadStage, estimatedValue, isLead, baseCurrency };
         const created = [];
         try {
             let previous = null;
@@ -1646,9 +1765,10 @@ export class Plugin extends AppPlugin {
             }
         } catch { /* ignore name lookup errors */ }
 
+        const baseCurrency = options.baseCurrency || (typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF'));
         const invoiceValues = {
             amount_chf: values.amount_chf ?? getProp(record, 'amount_chf'),
-            currency: values.currency || getProp(record, 'currency') || 'CHF',
+            currency: values.currency || getProp(record, 'currency') || baseCurrency,
             status: values.status || getProp(record, 'status') || 'draft',
             payment_status: values.payment_status || getProp(record, 'payment_status') || 'unpaid',
             issued: values.issued || (getProp(record, 'issued') ? String(getProp(record, 'issued')) : ''),
@@ -1659,7 +1779,7 @@ export class Plugin extends AppPlugin {
         const created = [];
         try {
             let previous = null;
-            for (const section of invoiceTemplateSections(invoiceValues, { ...options, clientName, projectName })) {
+            for (const section of invoiceTemplateSections(invoiceValues, { ...options, clientName, projectName, baseCurrency })) {
                 const heading = await record.createLineItem(null, previous, 'heading', [{ type: 'text', text: section.title }], { hsize: 2, freelance_os_template: 'invoice-v1' });
                 if (!heading) throw new Error('The invoice template could not be saved');
                 created.push(heading); previous = heading;
@@ -1990,10 +2110,11 @@ export class Plugin extends AppPlugin {
     }
 
     async copyInvoiceDetails(invoice) {
+        const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
         const text = [
             `Invoice: ${invoice.invoiceId || invoice.name}`,
             invoice.clientName ? `Client: ${invoice.clientName}` : '',
-            `Amount: ${invoice.amount} ${invoice.currency || 'CHF'}`,
+            `Amount: ${invoice.amount} ${invoice.currency || baseCurrency}`,
             invoice.dueDate ? `Due: ${invoice.dueDate}` : '',
             `Status: ${invoice.status === 'paid' ? 'Paid' : invoice.stage === 'sent' ? 'Sent (Unpaid)' : 'Draft'}`,
             '',
@@ -2233,6 +2354,8 @@ export class Plugin extends AppPlugin {
                     `;
                 }
 
+                const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
+
                 container.querySelector('.os-header-btn-paid')?.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const data = await this.loadData();
@@ -2241,7 +2364,7 @@ export class Plugin extends AppPlugin {
                         name: rec.name || invoiceId,
                         invoiceId,
                         amount: Number(getProp(rec, 'amount_chf')) || 0,
-                        currency: String(getProp(rec, 'currency') || 'CHF').toUpperCase(),
+                        currency: String(getProp(rec, 'currency') || baseCurrency).toUpperCase(),
                         status: paymentStatus,
                         stage,
                         issuedDate: getProp(rec, 'issued') || '',
@@ -2258,7 +2381,7 @@ export class Plugin extends AppPlugin {
                         name: rec.name || invoiceId,
                         invoiceId,
                         amount: Number(getProp(rec, 'amount_chf')) || 0,
-                        currency: String(getProp(rec, 'currency') || 'CHF').toUpperCase(),
+                        currency: String(getProp(rec, 'currency') || baseCurrency).toUpperCase(),
                         status: paymentStatus,
                         stage,
                         issuedDate: getProp(rec, 'issued') || '',
@@ -2275,7 +2398,7 @@ export class Plugin extends AppPlugin {
                         name: rec.name || invoiceId,
                         invoiceId,
                         amount: Number(getProp(rec, 'amount_chf')) || 0,
-                        currency: String(getProp(rec, 'currency') || 'CHF').toUpperCase(),
+                        currency: String(getProp(rec, 'currency') || baseCurrency).toUpperCase(),
                         dueDate: getProp(rec, 'due') || '',
                         status: paymentStatus,
                         stage,
@@ -2560,12 +2683,19 @@ export class Plugin extends AppPlugin {
         document.body.appendChild(modal); refreshProjects(); clientSelect.focus();
     }
 
-    showCreateProjectModal(panel, data, defaultClientGuid = '') {
+    showCreateProjectModal(panel, data, defaultClientGuid = '', defaultPackId = '') {
         const modal = document.createElement('div');
         modal.className = 'os-modal-backdrop';
 
+        const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (data?.baseCurrency || this.workflowState?.baseCurrency || 'CHF');
         const initialClient = defaultClientGuid || this.clientProjectGuid || '';
         const clientOptions = data.clients.map(c => `<option value="${c.guid}" ${c.guid === initialClient ? 'selected' : ''}>${escapeHtml(c.name)}</option>`).join('');
+
+        const activePackIds = typeof this.getActivePacks === 'function' ? this.getActivePacks() : (this.workflowState?.activePacks || []);
+        const activePacksList = (typeof TRADE_PACKS !== 'undefined' ? TRADE_PACKS : []).filter(p => activePackIds.includes(p.id));
+        const chosenPackId = defaultPackId || (activePacksList[0]?.id || '');
+        const chosenPack = activePacksList.find(p => p.id === chosenPackId);
+        const initialMilestones = chosenPack ? chosenPack.templates.milestones.join(' → ') : 'General review checkpoint';
 
         modal.innerHTML = `
             <div class="os-modal-card" role="dialog" aria-modal="true" aria-labelledby="os-project-dialog-title">
@@ -2578,6 +2708,22 @@ export class Plugin extends AppPlugin {
                         <label for="os-project-name">Project name *</label>
                         <input id="os-project-name" type="text" class="os-input input-title" placeholder="e.g. Website redesign" required autofocus />
                     </div>
+                    ${activePacksList.length ? `
+                        <div class="os-form-group">
+                            <label for="os-project-template">Project Archetype / Template</label>
+                            <select id="os-project-template" class="os-select input-template">
+                                ${activePacksList.map(pack => `
+                                    <option value="${escapeHtml(pack.id)}" ${pack.id === chosenPackId ? 'selected' : ''}>${pack.icon} ${escapeHtml(pack.name)} (${escapeHtml(pack.templates.projectType)})</option>
+                                `).join('')}
+                                <option value="" ${!chosenPackId ? 'selected' : ''}>Standard Project (General milestones)</option>
+                            </select>
+                            <div class="os-template-milestones-preview" style="font-size: 11px; color: var(--os-muted); margin-top: 4px;">
+                                Initial milestones: ${escapeHtml(initialMilestones)}
+                            </div>
+                        </div>
+                    ` : `
+                        <p class="os-form-hint" style="margin-top: -6px; margin-bottom: 12px;">Tip: Activate Trade Packs in the AI tab to unlock specialized project templates (e.g. Engineering Sprints, Design Sprints, Retainers).</p>
+                    `}
                     <div class="os-form-group">
                         <label for="os-project-client">Client</label>
                         <select id="os-project-client" class="os-select input-client">
@@ -2613,7 +2759,7 @@ export class Plugin extends AppPlugin {
                             </select>
                         </div>
                         <div class="os-form-group">
-                            <label for="os-project-budget">Budget (CHF)</label>
+                            <label for="os-project-budget">Budget (${escapeHtml(baseCurrency)})</label>
                             <input id="os-project-budget" type="number" min="0" step="100" class="os-input input-budget" placeholder="e.g. 5000" />
                         </div>
                     </div>
@@ -2668,7 +2814,17 @@ export class Plugin extends AppPlugin {
             const feeType = modal.querySelector('.input-fee-type')?.value || 'fixed';
             const submit = modal.querySelector('.btn-submit'); submit.disabled = true;
             try {
-                const record = await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline, ...(budget ? { budget_chf: budget } : {}), fee_type: feeType }, { brief: modal.querySelector('.input-brief').value.trim(), firstAction: modal.querySelector('.input-first-action').value.trim() });
+                const templateSelect = modal.querySelector('.input-template');
+                const selectedPackId = templateSelect ? templateSelect.value : '';
+                const selectedPack = (typeof TRADE_PACKS !== 'undefined' ? TRADE_PACKS : []).find(p => p.id === selectedPackId);
+                const templateOptions = {
+                    brief: modal.querySelector('.input-brief').value.trim(),
+                    firstAction: modal.querySelector('.input-first-action').value.trim(),
+                    packId: selectedPack?.id || '',
+                    projectType: selectedPack?.templates?.projectType || '',
+                    milestones: selectedPack?.templates?.milestones || []
+                };
+                const record = await this.createConfiguredRecord('Projects', title, { client: clientGuid, priority, status, deadline, ...(budget ? { budget_chf: budget } : {}), fee_type: feeType }, templateOptions);
                 this.ui.addToaster({ title: `✓ Created "${title}"`, autoDestroyTime: 2500, dismissible: true });
                 close();
                 this.scheduleRefresh();
@@ -2680,6 +2836,18 @@ export class Plugin extends AppPlugin {
         });
 
         document.body.appendChild(modal);
+        const templateSelect = modal.querySelector('.input-template');
+        const preview = modal.querySelector('.os-template-milestones-preview');
+        if (templateSelect && preview) {
+            templateSelect.addEventListener('change', () => {
+                const chosen = (typeof TRADE_PACKS !== 'undefined' ? TRADE_PACKS : []).find(p => p.id === templateSelect.value);
+                if (chosen) {
+                    preview.textContent = `Initial milestones: ${chosen.templates.milestones.join(' → ')}`;
+                } else {
+                    preview.textContent = 'Initial milestones: General review checkpoint';
+                }
+            });
+        }
         if (initialClient) modal.querySelector('.input-client').value = initialClient;
         modal.querySelector('.input-title').focus();
     }
@@ -2714,6 +2882,7 @@ export class Plugin extends AppPlugin {
         const editing = !!client;
         const status = client ? clientStatus(client) : initialStatus;
         const launchControl = document.activeElement;
+        const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
         let saving = false;
         const modal = document.createElement('div');
         modal.className = 'os-modal-backdrop';
@@ -2742,10 +2911,10 @@ export class Plugin extends AppPlugin {
                     </div>
                     <details class="os-client-care-plan"><summary>Care plan (optional)</summary><div class="os-client-form-grid">
                         <div class="os-form-group"><label for="os-client-plan">Service</label><input id="os-client-plan" class="os-input input-plan" value="${escapeHtml(client?.planValue ?? (client?.plan === 'Active' ? '' : client?.plan || ''))}" placeholder="e.g. Website maintenance" /></div>
-                        <div class="os-form-group"><label for="os-client-mrr">Monthly retainer (CHF)</label><input id="os-client-mrr" type="number" min="0" step="any" class="os-input input-mrr" value="${Number(client?.mrr) || ''}" /></div>
+                        <div class="os-form-group"><label for="os-client-mrr">Monthly retainer (${escapeHtml(baseCurrency)})</label><input id="os-client-mrr" type="number" min="0" step="any" class="os-input input-mrr" value="${Number(client?.mrr) || ''}" /></div>
                     </div></details>
                     <details class="os-client-lead-details" ${status === 'prospect' || isLeadClient({ status }) ? 'open' : ''}><summary>Deal & source (for leads)</summary><div class="os-client-form-grid">
-                        <div class="os-form-group"><label for="os-client-deal">Estimated deal (CHF)</label><input id="os-client-deal" type="number" min="0" step="100" class="os-input input-deal" value="${Number(client?.estimatedValue) || ''}" placeholder="e.g. 5000" /></div>
+                        <div class="os-form-group"><label for="os-client-deal">Estimated deal (${escapeHtml(baseCurrency)})</label><input id="os-client-deal" type="number" min="0" step="100" class="os-input input-deal" value="${Number(client?.estimatedValue) || ''}" placeholder="e.g. 5000" /></div>
                         <div class="os-form-group"><label for="os-client-source">Lead source</label><select id="os-client-source" class="os-select input-source">
                             <option value="">-- Not specified --</option>
                             ${['referral', 'website', 'linkedin', 'inbound', 'outbound', 'other'].map(src => `<option value="${src}" ${client?.source === src ? 'selected' : ''}>${src.charAt(0).toUpperCase() + src.slice(1)}</option>`).join('')}
@@ -2829,7 +2998,7 @@ export class Plugin extends AppPlugin {
 
         const renderVersion = this.renderVersion = (this.renderVersion || 0) + 1;
         const mode = this.workflowMode || 'overview';
-        const needsWorkflow = !['overview', 'billing'].includes(mode);
+        const needsWorkflow = !['overview', 'billing', 'ai', 'settings'].includes(mode);
         let workflow;
         if (needsWorkflow) {
             try { workflow = await this.loadWorkflowData({ expectedVersion: renderVersion, deferApply: true }); }
@@ -2966,7 +3135,7 @@ export class Plugin extends AppPlugin {
         const modes = document.createElement('nav');
         modes.className = 'os-workflow-modes';
         modes.setAttribute('aria-label', 'Dashboard sections');
-        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['billing', 'Billing'], ['review', 'Weekly review'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" data-focus-key="mode-${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
+        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['billing', 'Billing'], ['review', 'Weekly review'], ['ai', 'AI Agents'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" data-focus-key="mode-${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
         app.appendChild(modes);
         if (this.workflowStorageError) {
@@ -2983,29 +3152,135 @@ export class Plugin extends AppPlugin {
             app.appendChild(setup); this.mountWorkflowApp(container, app); return;
         }
         if (mode === 'billing') { app.appendChild(this.renderBilling(data, panel)); this.mountWorkflowApp(container, app); return; }
+        if (mode === 'ai') { app.appendChild(this.renderAiTab(panel, data)); this.mountWorkflowApp(container, app); return; }
         if (mode !== 'overview') {
             app.appendChild(mode === 'settings' ? this.renderWorkflowSettings(panel) : this.renderWorkflow(workflow, panel));
             this.mountWorkflowApp(container, app);
             return;
         }
 
+        // 1b. Getting Started / Onboarding Card (Shown until dismissed)
+        if (!data.loadError && this.workflowState?.dismissedOnboarding !== true) {
+            const missingCore = ['Clients', 'Projects', 'Invoices'].filter(role => !this.collectionGuid(role));
+            const hasClients = (data.clients?.length || 0) > 0;
+            const activePacksCount = typeof this.getActivePacks === 'function' ? this.getActivePacks().length : 0;
+            const onboarding = document.createElement('section');
+            onboarding.className = 'os-onboarding-card';
+            onboarding.innerHTML = `
+                <div class="os-onboarding-top">
+                    <div class="os-onboarding-title-group">
+                        <span class="os-onboarding-icon">👋</span>
+                        <div>
+                            <h3>Welcome to Freelance OS</h3>
+                            <p class="os-action-meta">Your autonomous business cockpit in Thymer. Quick steps to get up and running:</p>
+                        </div>
+                    </div>
+                    <button type="button" class="os-card-action-btn os-onboarding-dismiss" aria-label="Dismiss welcome guide">Dismiss ✕</button>
+                </div>
+                <div class="os-onboarding-steps">
+                    <div class="os-onboarding-step">
+                        <div class="os-onboarding-step-num">1</div>
+                        <div class="os-onboarding-step-body">
+                            <div class="os-onboarding-step-header">
+                                <strong>Workspace Collections</strong>
+                                ${missingCore.length === 0 ? `
+                                    <span class="os-badge status-done">✓ Ready (Clients, Projects & Invoices)</span>
+                                ` : `
+                                    <span class="os-badge status-alert">⚠️ Missing: ${missingCore.join(', ')}</span>
+                                `}
+                            </div>
+                            <p class="os-action-meta">Stores your clients, project deliveries, and billing records in native collections.</p>
+                            ${missingCore.length > 0 ? `
+                                <button type="button" class="os-card-action-btn os-onboarding-btn-settings">Configure collections →</button>
+                            ` : ''}
+                        </div>
+                    </div>
+
+                    <div class="os-onboarding-step">
+                        <div class="os-onboarding-step-num">2</div>
+                        <div class="os-onboarding-step-body">
+                            <div class="os-onboarding-step-header">
+                                <strong>Connect AI Assistant (MCP)</strong>
+                                <span class="os-badge badge-care-plan">Port 13100</span>
+                            </div>
+                            <p class="os-action-meta">Link Antigravity, Claude Code, Cursor, OpenCode, Codex or OMP to run autonomous briefings, proposals and reviews.</p>
+                            <button type="button" class="os-card-action-btn os-onboarding-btn-ai">View AI setup commands →</button>
+                        </div>
+                    </div>
+
+                    <div class="os-onboarding-step">
+                        <div class="os-onboarding-step-num">3</div>
+                        <div class="os-onboarding-step-body">
+                            <div class="os-onboarding-step-header">
+                                <strong>Modular Trade Packs</strong>
+                                <span class="os-badge ${activePacksCount ? 'badge-care-plan' : 'status-waiting'}">${activePacksCount ? `${activePacksCount} Active` : '11 Available'}</span>
+                            </div>
+                            <p class="os-action-meta">Activate craft overlays for Software Dev, Design, Marketing, Consulting, Accounting, and more.</p>
+                            <button type="button" class="os-card-action-btn os-onboarding-btn-packs">Browse trade packs →</button>
+                        </div>
+                    </div>
+
+                    <div class="os-onboarding-step">
+                        <div class="os-onboarding-step-num">4</div>
+                        <div class="os-onboarding-step-body">
+                            <div class="os-onboarding-step-header">
+                                <strong>Add Your First Client or Lead</strong>
+                                <span class="os-badge ${hasClients ? 'badge-care-plan' : 'status-waiting'}">${hasClients ? `${data.clients.length} Clients` : '0 Clients'}</span>
+                            </div>
+                            <p class="os-action-meta">Capture prospect deals, client relationships, and recurring Care Plan retainers.</p>
+                            <button type="button" class="os-card-action-btn os-primary os-onboarding-btn-client">+ Add Client</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+
+            onboarding.querySelector('.os-onboarding-dismiss')?.addEventListener('click', () => {
+                this.workflowState.dismissedOnboarding = true;
+                this.persistWorkflow();
+                onboarding.remove();
+                this.ui?.addToaster?.({ title: 'Welcome guide dismissed (can be reopened from Settings)', autoDestroyTime: 2500, dismissible: true });
+            });
+
+            onboarding.querySelector('.os-onboarding-btn-settings')?.addEventListener('click', () => {
+                this.workflowMode = 'settings';
+                this.render(panel);
+            });
+
+            onboarding.querySelector('.os-onboarding-btn-ai')?.addEventListener('click', () => {
+                this.workflowMode = 'ai';
+                this.render(panel);
+            });
+
+            onboarding.querySelector('.os-onboarding-btn-packs')?.addEventListener('click', () => {
+                this.workflowMode = 'ai';
+                this.render(panel);
+            });
+
+            onboarding.querySelector('.os-onboarding-btn-client')?.addEventListener('click', () => {
+                this.showCreateClientModal(panel);
+            });
+
+            app.appendChild(onboarding);
+        }
+
         // 2. Pulse / Metrics Bar
+        const baseCurrency = data.baseCurrency || (typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF'));
         const pulse = document.createElement('section');
         pulse.className = 'os-pulse';
         pulse.innerHTML = `
             <div class="os-metric metric-mrr" title="Click to view Clients & Care Plans">
                 <div class="os-metric-label">Recurring revenue</div>
-                <div class="os-metric-value">${money(data.mrr)} <span class="os-metric-unit">CHF / mo</span></div>
+                <div class="os-metric-value">${money(data.mrr)} <span class="os-metric-unit">${escapeHtml(baseCurrency)} / mo</span></div>
                 <div class="os-metric-footnote">${data.activeCarePlans} active care plans</div>
             </div>
             <div class="os-metric metric-inv" title="Click to view Invoices">
                 <div class="os-metric-label">Invoiced · all time</div>
-                <div class="os-metric-value">${money(cash.invoiced)} <span class="os-metric-unit">CHF</span></div>
+                <div class="os-metric-value">${money(cash.invoiced)} <span class="os-metric-unit">${escapeHtml(baseCurrency)}</span></div>
                 <div class="os-metric-footnote">${cash.issuedCount} issued · ${cash.toSend} to send</div>
             </div>
             <div class="os-metric metric-col" title="Click to view Invoices">
                 <div class="os-metric-label">Collected · all time</div>
-                <div class="os-metric-value">${money(cash.collected)} <span class="os-metric-unit">CHF</span></div>
+                <div class="os-metric-value">${money(cash.collected)} <span class="os-metric-unit">${escapeHtml(baseCurrency)}</span></div>
                 <div class="os-metric-footnote">${cash.unconfirmedCount} awaiting payment confirmation</div>
             </div>
             <div class="os-metric metric-clients" title="Click to view Clients">
@@ -3029,6 +3304,40 @@ export class Plugin extends AppPlugin {
 
         app.appendChild(pulse);
 
+        if (!data.loadError) {
+            const prefs = typeof this.getAiPreferences === 'function' ? this.getAiPreferences() : (this.workflowState?.ai || {});
+            const alerts = typeof computeWatchdogAlerts === 'function' ? computeWatchdogAlerts(data, prefs, localDate()) : [];
+            if (alerts.length > 0) {
+                const watchdogBar = document.createElement('section');
+                watchdogBar.className = 'os-ai-watchdog-bar';
+                watchdogBar.innerHTML = `
+                    <div class="os-ai-watchdog-header">
+                        <span class="os-ai-watchdog-badge">🛡️ AI Watchdogs (${alerts.length})</span>
+                        <span class="os-action-meta">Autonomous safeguards active</span>
+                    </div>
+                    <div class="os-ai-watchdog-list">
+                        ${alerts.map(a => `
+                            <div class="os-ai-watchdog-item ${a.severity}">
+                                <span class="os-ai-watchdog-icon">${a.icon}</span>
+                                <div class="os-ai-watchdog-content">
+                                    <strong>${escapeHtml(a.title)}:</strong>
+                                    <span>${escapeHtml(a.detail)}</span>
+                                </div>
+                                <button type="button" class="os-card-action-btn os-ai-watchdog-open" data-guid="${escapeHtml(a.guid)}">${escapeHtml(a.action)} ↗</button>
+                            </div>
+                        `).join('')}
+                    </div>
+                `;
+                watchdogBar.querySelectorAll('.os-ai-watchdog-open').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const guid = btn.getAttribute('data-guid');
+                        if (guid) this.openRecord(guid, panel);
+                    });
+                });
+                app.appendChild(watchdogBar);
+            }
+        }
+
         if (data.loadError) {
             pulse.remove();
             const error = document.createElement('div');
@@ -3040,15 +3349,15 @@ export class Plugin extends AppPlugin {
         } else {
             const cashflow = document.createElement('section');
             cashflow.className = 'os-cashflow';
-            cashflow.setAttribute('aria-label', 'Cashflow, CHF invoices, all time');
+            cashflow.setAttribute('aria-label', `Cashflow, ${escapeHtml(baseCurrency)} invoices, all time`);
             cashflow.innerHTML = `
                 <div class="os-collection-rate">
                     <div class="os-cash-heading"><h2>Cashflow</h2><span>${cash.collectionRate === null ? 'No issued invoices' : `${cash.collectionRate}% collected`}</span></div>
                     <progress max="100" value="${cash.collectionRate ?? 0}" aria-label="Invoice collection rate"></progress>
-                    <div class="os-cash-note">CHF invoices · all time${cash.excludedCurrency ? ` · ${cash.excludedCurrency} in other currencies excluded` : ''}</div>
+                    <div class="os-cash-note">${escapeHtml(baseCurrency)} invoices · all time${cash.excludedCurrency ? ` · ${cash.excludedCurrency} in other currencies excluded` : ''}</div>
                 </div>
-                <button class="os-cash-action" data-invoice-filter="outstanding"><span>Outstanding</span><strong>${money(cash.outstanding)} CHF</strong><small>${cash.undated} without a due date</small></button>
-                <button class="os-cash-action ${cash.overdueCount ? 'os-cash-warning' : ''}" data-invoice-filter="overdue"><span>Overdue (${cash.overdueCount})</span><strong>${money(cash.overdue)} CHF</strong><small>1–30d: ${money(cash.aging[0])} · 31–60d: ${money(cash.aging[1])} · 61+d: ${money(cash.aging[2])}</small></button>
+                <button class="os-cash-action" data-invoice-filter="outstanding"><span>Outstanding</span><strong>${money(cash.outstanding)} ${escapeHtml(baseCurrency)}</strong><small>${cash.undated} without a due date</small></button>
+                <button class="os-cash-action ${cash.overdueCount ? 'os-cash-warning' : ''}" data-invoice-filter="overdue"><span>Overdue (${cash.overdueCount})</span><strong>${money(cash.overdue)} ${escapeHtml(baseCurrency)}</strong><small>1–30d: ${money(cash.aging[0])} · 31–60d: ${money(cash.aging[1])} · 61+d: ${money(cash.aging[2])}</small></button>
                 <button class="os-cash-action" data-invoice-filter="review"><span>Confirm payments</span><strong>${cash.unconfirmedCount} to review</strong><small>Open invoices awaiting confirmation ↗</small></button>
             `;
             cashflow.querySelectorAll('[data-invoice-filter]').forEach(button => {
@@ -3211,7 +3520,7 @@ export class Plugin extends AppPlugin {
             if (this.clientFilter === 'leads' && data.pipelineValueCHF > 0) {
                 const pipelineBanner = document.createElement('div');
                 pipelineBanner.className = 'os-lead-pipeline-banner';
-                pipelineBanner.innerHTML = `<span>Estimated pipeline: <strong>${money(data.pipelineValueCHF)} CHF</strong></span><span>${data.clients.filter(c => isLeadClient(c) && c.status !== 'archived').length} active proposals & leads</span>`;
+                pipelineBanner.innerHTML = `<span>Estimated pipeline: <strong>${money(data.pipelineValueCHF)} ${escapeHtml(baseCurrency)}</strong></span><span>${data.clients.filter(c => isLeadClient(c) && c.status !== 'archived').length} active proposals & leads</span>`;
                 main.appendChild(pipelineBanner);
             }
         }
@@ -3424,6 +3733,7 @@ export class Plugin extends AppPlugin {
                 const nextGuid = workflowState.next[proj.guid];
                 const nextLabel = workflowState.nextLabels[proj.guid];
                 const activeProject = isActiveProject(proj);
+                const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
 
                 card.innerHTML = `
                     <div class="os-card-top">
@@ -3436,7 +3746,7 @@ export class Plugin extends AppPlugin {
                         <div class="os-project-financials">
                             <span class="os-project-fee-type">${proj.feeType ? escapeHtml(proj.feeType.replace('_', ' ')) : 'fixed'}</span>
                             <span class="os-project-budget-label">
-                                ${proj.budget > 0 ? `Billed ${money(proj.totalBilledCHF || 0)} / <strong>${money(proj.budget)} CHF</strong> (${Math.round(((proj.totalBilledCHF || 0) / proj.budget) * 100)}%)` : `Billed <strong>${money(proj.totalBilledCHF || 0)} CHF</strong>`}
+                                ${proj.budget > 0 ? `Billed ${money(proj.totalBilledCHF || 0)} / <strong>${money(proj.budget)} ${escapeHtml(baseCurrency)}</strong> (${Math.round(((proj.totalBilledCHF || 0) / proj.budget) * 100)}%)` : `Billed <strong>${money(proj.totalBilledCHF || 0)} ${escapeHtml(baseCurrency)}</strong>`}
                             </span>
                         </div>
                     ` : ''}
@@ -3565,7 +3875,7 @@ export class Plugin extends AppPlugin {
                         ${cli.mrr > 0 && isRevenueClient(cli) && currentStatus !== 'maintenance' ? '<span class="os-client-plan-label">Care plan</span>' : ''}
                     </div>
                     <button type="button" class="os-card-title">${escapeHtml(cli.name)}</button>
-                    ${cli.planValue || cli.mrr > 0 ? `<div class="os-card-client">${escapeHtml([cli.planValue, cli.mrr > 0 ? `${isRevenueClient(cli) ? '' : 'Proposed · '}${money(cli.mrr)} CHF / mo` : ''].filter(Boolean).join(' · '))}</div>` : ''}
+                    ${cli.planValue || cli.mrr > 0 ? `<div class="os-card-client">${escapeHtml([cli.planValue, cli.mrr > 0 ? `${isRevenueClient(cli) ? '' : 'Proposed · '}${money(cli.mrr)} ${escapeHtml(baseCurrency)} / mo` : ''].filter(Boolean).join(' · '))}</div>` : ''}
                     <div class="os-client-contact">
                         ${cli.contact ? `<span class="os-client-contact-name">${escapeHtml(cli.contact)}</span>` : ''}
                         ${cli.email ? `<a href="mailto:${encodeURIComponent(cli.email)}">${escapeHtml(cli.email)}</a>` : ''}
@@ -3577,11 +3887,11 @@ export class Plugin extends AppPlugin {
                         <span class="os-meta-tag">🧾 ${cli.invoiceCount || 0} invoices</span>
                     </div>
                     ${lead ? `<dl class="os-client-value">
-                        <div><dt>Estimated deal</dt><dd>${cli.estimatedValue ? `${money(cli.estimatedValue)} CHF` : 'Not set'}</dd></div>
+                        <div><dt>Estimated deal</dt><dd>${cli.estimatedValue ? `${money(cli.estimatedValue)} ${escapeHtml(baseCurrency)}` : 'Not set'}</dd></div>
                         <div><dt>Source</dt><dd>${cli.source ? escapeHtml(cli.source) : 'Not set'}</dd></div>
                     </dl>` : `<dl class="os-client-value">
-                        <div><dt>Collected · all time</dt><dd>${money(cli.summary.collected)} CHF</dd></div>
-                        <div><dt>Outstanding</dt><dd>${money(cli.summary.outstanding)} CHF${cli.summary.overdueCount ? ` · ${cli.summary.overdueCount} overdue` : ''}</dd></div>
+                        <div><dt>Collected · all time</dt><dd>${money(cli.summary.collected)} ${escapeHtml(baseCurrency)}</dd></div>
+                        <div><dt>Outstanding</dt><dd>${money(cli.summary.outstanding)} ${escapeHtml(baseCurrency)}${cli.summary.overdueCount ? ` · ${cli.summary.overdueCount} overdue` : ''}</dd></div>
                     </dl>`}
                     <div class="os-card-bottom">
                         <div class="os-card-actions">

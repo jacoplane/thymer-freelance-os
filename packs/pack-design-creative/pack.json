@@ -1,0 +1,41 @@
+{
+  "id": "pack-design-creative",
+  "name": "Design & Creative Direction",
+  "version": "1.0.0",
+  "category": "Creative",
+  "icon": "🎨",
+  "description": "Design & Creative Direction trade pack for Freelance OS.",
+  "roles": [
+    "UI/UX designer",
+    "Brand identity designer",
+    "Product designer",
+    "Illustrator"
+  ],
+  "workflow": "Discovery -> Wireframes -> Design systems & polished drafts -> Asset delivery",
+  "skills": [
+    {
+      "id": "revision-limit-tracker",
+      "name": "Revision Limit Tracker",
+      "description": "Enforces contractual revision rounds and flags scope creep before extra iterations."
+    },
+    {
+      "id": "feedback-consolidator",
+      "name": "Feedback Consolidator",
+      "description": "Aggregates scattered Figma/email/Slack comments into prioritized design revisions."
+    },
+    {
+      "id": "asset-handoff-checklist",
+      "name": "Asset Handoff Checklist",
+      "description": "Generates structured delivery manifests (SVG, PNG, design tokens, fonts, specs)."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Moodboards & Creative Concept",
+      "Wireframes & Information Architecture",
+      "High-Fidelity Components",
+      "Final Production Handoff"
+    ],
+    "projectType": "Design Sprint"
+  }
+}

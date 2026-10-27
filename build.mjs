@@ -20,7 +20,7 @@ if (!fs.existsSync(distDir)) {
     fs.mkdirSync(distDir, { recursive: true });
 }
 
-const jsSrc = readText(path.join(srcDir, 'support-time.js')) + '\n' + readText(path.join(srcDir, 'workflow.js')) + '\n' + readText(path.join(srcDir, 'billing.js')) + '\n' + readText(path.join(srcDir, 'updater.js')) + '\n' + readText(path.join(srcDir, 'index.js')) + '\nObject.assign(Plugin.prototype, Workflow, Billing, Updater);\n';
+const jsSrc = readText(path.join(srcDir, 'support-time.js')) + '\n' + readText(path.join(srcDir, 'workflow.js')) + '\n' + readText(path.join(srcDir, 'billing.js')) + '\n' + readText(path.join(srcDir, 'ai.js')) + '\n' + readText(path.join(srcDir, 'updater.js')) + '\n' + readText(path.join(srcDir, 'index.js')) + '\nObject.assign(Plugin.prototype, Workflow, Billing, Updater, Ai);\n';
 const cssSrc = readText(path.join(srcDir, 'styles.css'));
 const pluginJson = readText(path.join(__dirname, 'plugin.json'));
 

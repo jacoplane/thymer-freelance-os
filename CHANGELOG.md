@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0 — 2026-10-27
+
+- **Autonomous Operations Bench**: 11 dedicated AI specialist personas embedded with full operational directives and domain tools (`.agents/skills/`):
+  - `lead-gen-offer-architect`, `outbound-strategist`, `discovery-coach`, `proposal-strategist`, `pricing-analyst`, `contract-clause-guardian`, `client-onboarding-shepherd`, `project-manager-senior`, `reality-checker`, `meeting-notes-specialist`, `receivables-diplomat`.
+- **11 Modular Trade Packs (`packs/`)**: Craft-specific project templates, milestones, and 33 operational trade skills covering:
+  - Software Engineering & DevOps, UI/UX Design & Creative Direction, Writing & Content Editorial, Growth Marketing & Paid Acquisition, Strategy & Management Consulting, Fractional CFO & Accounting, Executive Assistance & Operations, Audio/Video Production & Motion, Recruiting & Talent Acquisition, Event & Conference Production, Interior & Spatial Design.
+- **AI Operations Cockpit (`src/ai.js`)**:
+  - Dedicated AI tab in the dashboard displaying real-time MCP bridge status (`localhost:13100`), quick-copy setup commands for 6 coding harnesses (Antigravity, Claude Code, Cursor, OpenCode, Codex, OMP), Persona directory, and 1-click Trade Pack catalog.
+  - Direct `+ New [ProjectType]` creation button on active Trade Pack cards preloading archetypes and milestones.
+  - Dynamic base currency (`baseCurrency`) integration and discovery hints in the project creation modal.
+- **AI Safeguard Watchdogs**:
+  - Live warning banner on Overview dashboard detecting overdue invoices ($\ge 7$d), budget burn ($\ge 90\%$), and stale proposals ($\ge 5$d) with direct 1-click inspection navigation.
+- **Onboarding Experience**:
+  - Lightweight, non-intrusive "Welcome to Freelance OS" checklist card on Overview with real-time collection health check badge, MCP connection status, Trade Pack counter, and 1-click first client creation.
+  - Persistent dismissal and Settings reset toggle ("Show Getting Started guide on Overview").
+- **Quality & Verification**:
+  - 161 unit tests passing cleanly across all modules and skills.
+  - Live CDP verification across all personas, trade packs, and onboarding flows.
+
 ## 0.4.2 — 2026-10-25
 
 - Fix: strip ES module `export` statements in `src/updater.js` and harden `build.mjs` to guarantee runtime compatibility with Thymer's dynamic plugin loader (`new Function`).

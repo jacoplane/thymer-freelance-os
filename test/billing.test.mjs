@@ -35,6 +35,20 @@ test('currency totals stay in CHF while invoice counts cover all currencies', ()
     assert.equal(summary.overdueCount, 2); assert.equal(summary.unconfirmedCount, 1); assert.equal(summary.excludedCurrency, 1);
 });
 
+test('billingSummary respects configured base currency', () => {
+    const invoices = [
+        { amount: 300, currency: 'EUR', stage: 'sent', status: 'unpaid', isOutstanding: true, daysOverdue: 1 },
+        { amount: 500, currency: 'CHF', stage: 'sent', status: 'unpaid', isOutstanding: true, daysOverdue: 2 },
+        { amount: 200, currency: 'EUR', stage: 'sent', status: 'unconfirmed', isOutstanding: true, daysOverdue: 0 }
+    ];
+    const summary = api.billingSummary(invoices, 'EUR');
+    assert.equal(summary.outstanding, 500);
+    assert.equal(summary.overdue, 300);
+    assert.equal(summary.overdueCount, 2);
+    assert.equal(summary.unconfirmedCount, 1);
+    assert.equal(summary.excludedCurrency, 1);
+});
+
 test('invoice search and filters operate together across reference and client', () => {
     const rows = [{ invoiceId: 'INV-001', clientName: 'Example Studio', isOutstanding: true }, { invoiceId: 'INV-002', clientName: 'Other', isOutstanding: false }];
     assert.equal(api.billingInvoices(rows, 'outstanding', 'studio').length, 1);

@@ -1,0 +1,41 @@
+{
+  "id": "pack-media-production",
+  "name": "Media & Video Production",
+  "version": "1.0.0",
+  "category": "Creative",
+  "icon": "🎬",
+  "description": "Media & Video Production trade pack for Freelance OS.",
+  "roles": [
+    "Video editor",
+    "Motion designer",
+    "Commercial photographer",
+    "Audio engineer"
+  ],
+  "workflow": "Pre-production -> Shoot/Record -> Post-production -> Final Master Delivery",
+  "skills": [
+    {
+      "id": "callsheet-schedule-assembler",
+      "name": "Production Call-Sheet Assembler",
+      "description": "Builds master crew call sheets with locations, talent schedules, weather, and gear."
+    },
+    {
+      "id": "timestamp-note-consolidator",
+      "name": "Timestamp Review Note Consolidator",
+      "description": "Parses Frame.io or email feedback into timestamp-indexed edit checklists."
+    },
+    {
+      "id": "talent-permit-tracker",
+      "name": "Talent & License Tracker",
+      "description": "Tracks signed release forms, music licensing rights, and location permits."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Pre-Production & Storyboarding",
+      "Production Shoot / Asset Ingestion",
+      "Rough Cut & Editorial Revision",
+      "Master Color/Sound & Export"
+    ],
+    "projectType": "Production Sprint"
+  }
+}

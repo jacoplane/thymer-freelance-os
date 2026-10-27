@@ -1,0 +1,40 @@
+{
+  "id": "pack-interior-design",
+  "name": "Interior Design & Home Staging",
+  "version": "1.0.0",
+  "category": "Services",
+  "icon": "🏡",
+  "description": "Interior Design & Home Staging trade pack for Freelance OS.",
+  "roles": [
+    "Residential interior designer",
+    "Commercial decorator",
+    "Home stager"
+  ],
+  "workflow": "Spatial concept -> FF&E procurement -> Contractor coordination -> Installation",
+  "skills": [
+    {
+      "id": "ffe-product-spec-builder",
+      "name": "FF&E Spec & Trade Margin Builder",
+      "description": "Builds furniture, fixtures & equipment tear sheets with trade discounts and client pricing."
+    },
+    {
+      "id": "freight-leadtime-monitor",
+      "name": "Freight Delivery & Lead-Time Monitor",
+      "description": "Monitors custom fabrication lead times, freight arrivals, and warehousing schedules."
+    },
+    {
+      "id": "contractor-punchlist-organizer",
+      "name": "Contractor Punch-List Organizer",
+      "description": "Organizes room-by-room punch list items with photo references for general contractors."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Schematic Design & Space Planning",
+      "Design Development & FF&E Selection",
+      "Procurement & Freight Tracking",
+      "Installation & Final Punch List"
+    ],
+    "projectType": "Interior Project"
+  }
+}

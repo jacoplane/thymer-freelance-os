@@ -1,0 +1,41 @@
+{
+  "id": "pack-growth-marketing",
+  "name": "Growth Marketing & Paid Media",
+  "version": "1.0.0",
+  "category": "Marketing",
+  "icon": "📈",
+  "description": "Growth Marketing & Paid Media trade pack for Freelance OS.",
+  "roles": [
+    "Media buyer",
+    "PPC specialist",
+    "SEO consultant",
+    "Lifecycle marketer"
+  ],
+  "workflow": "Monthly retainers, recurring optimization cycles, campaign launches",
+  "skills": [
+    {
+      "id": "client-roi-compiler",
+      "name": "Client ROI Compiler",
+      "description": "Synthesizes ad performance metrics into executive-ready ROI and ROAS digests."
+    },
+    {
+      "id": "retainer-burn-monitor",
+      "name": "Retainer Scope & Burn Monitor",
+      "description": "Tracks ad spend, advisory hours, and sprint budget burn rate to prevent overservicing."
+    },
+    {
+      "id": "campaign-preflight-checklist",
+      "name": "Campaign Pre-Flight Checklist",
+      "description": "Audits UTM tags, conversion pixels, landing page forms, and creative variants."
+    }
+  ],
+  "templates": {
+    "milestones": [
+      "Tracking & Tagging Audit",
+      "Campaign Architecture & Creative Testing",
+      "Monthly Retainer Cycle 1",
+      "Optimization & Performance Scaling"
+    ],
+    "projectType": "Growth Retainer"
+  }
+}

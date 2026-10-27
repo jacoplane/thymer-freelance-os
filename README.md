@@ -137,6 +137,66 @@ While your assistant does the heavy lifting, the desktop dashboard provides inst
 
 ---
 
+## Autonomous Operations Bench (11 Core Personas)
+
+Freelance OS equips your workspace with an autonomous bench of 11 business operations specialists in `.agents/skills/`, covering every phase of the client lifecycle:
+
+| Persona | Role | Core Directive | Trigger Prompt |
+| :--- | :--- | :--- | :--- |
+| 🎯 **Proposal Strategist** | Commercial proposals & SOWs | 3-tier proposals with win themes & out-of-scope boundaries | *"Draft a 3-tier proposal for [Client] based on our notes"* |
+| 💰 **Pricing Analyst** | Margin defense & Care Plans | Minimum viable price floors with contingency buffers | *"Review budget for [Project] and prepare a Care Plan pitch"* |
+| 🔍 **Reality Checker** | Scope skepticism & pre-flight | Stress-tests estimates & deliverables; zero fantasy tolerance | *"Stress-test this quote and project scope before I send it"* |
+| 💬 **Discovery Coach** | Sales discovery & qualification | Upfront contracts & situational pain/budget questions | *"Prep me for my discovery call with [Client]"* |
+| 📝 **Meeting Notes Specialist** | Call debriefs & decision logging | 4-section executive debrief (Decisions, Actions, Questions) | *"Turn these call notes into a structured 4-section debrief"* |
+| 📋 **Senior Project Manager** | Milestone & task breakdown | Converts briefs into 30–60m tasks with review checkpoints | *"Break down the project brief for [Project] into 30-60m tasks"* |
+| 🛡️ **Contract Clause Guardian** | MSA, SOW & legal risk auditor | Scans client contracts for toxic liability & IP terms | *"Scan this client agreement for toxic liability or IP clauses"* |
+| 🐑 **Client Onboarding Shepherd** | 48-hour client kickoff | Welcome packet, credential intake & kickoff agendas | *"Generate the 48-hour onboarding packet and intake checklist"* |
+| 📬 **Receivables Diplomat** | Calibrated invoice recovery | 3-tier escalation reminders that protect cashflow & relationships | *"Check overdue invoices and draft the calibrated reminder"* |
+| 🪝 **Lead Gen Offer Architect** | Diagnostic entry offers | Low-friction diagnostic entry audits (performance teardowns) | *"Design a low-friction diagnostic audit to offer prospects"* |
+| 📡 **Outbound Strategist** | Signal-based B2B outreach | Identifies hiring surges & tech migrations for 3-touch outreach | *"Draft a 3-touch outreach sequence for [Company] with this signal"* |
+
+---
+
+## Modular Trade Packs (11 Specialized Craft Archetypes)
+
+Activate domain trade packs in the **AI Agents** tab to equip your workspace with specialized project templates, milestone structures, and craft agent skills:
+
+| Trade Pack | Category | Target Roles | Project Archetype & Dedicated Skills |
+| :--- | :--- | :--- | :--- |
+| 💻 **Software & AI Engineering** | Technology | Full-stack, mobile, AI automation | **Engineering Sprint** (`scope-ticket-translator`, `scope-creep-sentinel`, `plain-english-release-notes`) |
+| 🎨 **Design & Creative Direction** | Creative | UI/UX, brand identity, product design | **Design Sprint** (`revision-limit-tracker`, `feedback-consolidator`, `asset-handoff-checklist`) |
+| ✍️ **Writing & Content Editorial** | Creative | Copywriters, ghostwriters, content strategists | **Editorial Sprint** (`brief-voice-extractor`, `editorial-status-tracker`, `publishing-package-builder`) |
+| 📈 **Growth Marketing & Paid Media** | Marketing | Media buyers, PPC specialists, SEO consultants | **Growth Retainer** (`client-roi-compiler`, `retainer-burn-monitor`, `campaign-preflight-checklist`) |
+| 🧭 **Strategy & Management Consulting** | Strategy & Ops | Fractional executives, business strategists | **Advisory Engagement** (`stakeholder-insight-tagger`, `slide-deck-narrative-outliner`, `steering-committee-digest`) |
+| 📊 **Accounting & Fractional CFO** | Finance | Bookkeepers, fractional CFOs, tax advisors | **Month-End Close** (`missing-document-chaser`, `month-end-close-tracker`, `financial-health-narrative`) |
+| 🗂️ **Executive & Business Support** | Strategy & Ops | Executive assistants, online business managers | **Support Retainer** (`travel-dossier-builder`, `cross-calendar-coordinator`, `daily-action-urgency-queue`) |
+| 🎬 **Media & Video Production** | Creative | Video editors, motion designers, videographers | **Production Sprint** (`callsheet-schedule-assembler`, `timestamp-note-consolidator`, `talent-permit-tracker`) |
+| 🤝 **HR & Technical Recruiting** | Strategy & Ops | Solo headhunters, talent sourcing consultants | **Recruiting Search** (`candidate-dossier-creator`, `hiring-manager-sla-tracker`, `onboarding-ramp-checklist`) |
+| 💍 **Event & Wedding Coordination** | Services | Event producers, wedding planners | **Event Production** (`run-of-show-generator`, `deposit-coi-sentinel`, `vendor-contract-terms-extractor`) |
+| 🏡 **Interior Design & Home Staging** | Services | Interior designers, home stagers | **Interior Project** (`ffe-product-spec-builder`, `freight-leadtime-monitor`, `contractor-punchlist-organizer`) |
+
+---
+
+## Universal Coding Assistant Bridge
+
+Connect any agent harness to Thymer in 2 steps:
+
+### 1. Download Workspace Skills
+```sh
+npx degit jacoplane/thymer-freelance-os/.agents .agents
+```
+
+### 2. Connect via MCP
+Thymer runs a local MCP server on port `13100`:
+* **Google Antigravity:** Add `"thymer": { "url": "http://127.0.0.1:13100/mcp" }` to `mcp_config.json`.
+* **Claude Code:** `claude mcp add --transport sse thymer http://127.0.0.1:13100/mcp`
+* **Cursor:** Add new SSE server with URL `http://127.0.0.1:13100/mcp`.
+* **OpenCode:** `opencode mcp add thymer http://127.0.0.1:13100/mcp`
+* **Codex:** `codex mcp add thymer http://127.0.0.1:13100/mcp`
+* **OMP:** `omp mcp add thymer http://127.0.0.1:13100/mcp`
+
+---
+
 ## Agent Skills Reference
 
 This repository includes two specialized agent skills in `.agents/skills/`:
