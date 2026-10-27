@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.5.3 — 2026-10-27
+
+- **In-Plugin Self-Updater Fix (`src/updater.js`)**:
+  - Fix "Update failed / Failed to fetch" error caused by attempting to reach local MCP via HTTP fetch from an HTTPS Electron renderer.
+  - Resolve plugin handle natively via `data.getPluginByGuid(myGuid)` and use Thymer's native `savePlugin(conf, code)` and `saveCSS(css)` SDK methods.
+  - Attach native `savePlugin()` and `saveCSS()` delegation helpers directly to `Plugin.prototype`.
+
 ## 0.5.2 — 2026-10-27
 
 - **AI Agent Setup & Universal Harness Overhaul (`src/ai.js`)**:

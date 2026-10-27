@@ -23,24 +23,61 @@ const Updater = {
         const conf = typeof this.getConfiguration === 'function' ? this.getConfiguration() : {};
         const autoUpdate = conf?.custom?.autoUpdate === true || localStorage.getItem('fos_auto_update') === 'true';
         return {
-            version: conf?.version || '0.5.1',
+            version: conf?.version || '0.5.2',
             repoUrl: conf?.repository || conf?.__source_repo || 'https://github.com/jacoplane/thymer-freelance-os',
             autoUpdate
         };
     },
 
+    getPluginHandle() {
+        try {
+            const myGuid = typeof this.getGuid === 'function' ? this.getGuid() : null;
+            if (myGuid && typeof this.data?.getPluginByGuid === 'function') {
+                const handle = this.data.getPluginByGuid(myGuid);
+                if (handle) return handle;
+            }
+        } catch (e) {
+            console.warn('[Freelance OS] Could not resolve plugin handle by GUID:', e);
+        }
+        return null;
+    },
+
+    async savePlugin(conf, code) {
+        const handle = this.getPluginHandle();
+        if (handle && typeof handle.savePlugin === 'function') {
+            return await handle.savePlugin(conf, code);
+        }
+        if (handle && typeof handle.saveCode === 'function') {
+            if (typeof handle.saveConfiguration === 'function') {
+                await handle.saveConfiguration(conf);
+            }
+            return await handle.saveCode(code);
+        }
+        throw new Error('Plugin save API not available on plugin handle.');
+    },
+
+    async saveCSS(css) {
+        const handle = this.getPluginHandle();
+        if (handle && typeof handle.saveCSS === 'function') {
+            return await handle.saveCSS(css);
+        }
+        return false;
+    },
+
     setAutoUpdate(enabled) {
         localStorage.setItem('fos_auto_update', enabled ? 'true' : 'false');
-        if (typeof this.getConfiguration === 'function' && typeof this.savePlugin === 'function') {
-            const conf = this.getConfiguration();
+        try {
+            const conf = typeof this.getConfiguration === 'function' ? this.getConfiguration() : {};
             conf.custom = conf.custom || {};
             conf.custom.autoUpdate = !!enabled;
-            // Best effort persist to config
-            try {
-                const code = this.getExistingCodeAndConfig?.()?.code;
+            const handle = this.getPluginHandle();
+            if (handle && typeof handle.saveConfiguration === 'function') {
+                handle.saveConfiguration(conf);
+            } else if (typeof this.savePlugin === 'function') {
+                const code = handle?.getExistingCodeAndConfig?.()?.code || this.getExistingCodeAndConfig?.()?.code;
                 if (code) this.savePlugin(conf, code);
-            } catch (e) { /* ignore */ }
-        }
+            }
+        } catch (e) { /* ignore */ }
     },
 
     async checkForUpdates({ manual = false } = {}) {
@@ -172,13 +209,31 @@ const Updater = {
             const remoteJs = await jsRes.text();
             const remoteCss = cssRes.ok ? await cssRes.text() : '';
 
-            // Apply CSS
-            if (remoteCss && typeof this.saveCSS === 'function') {
-                await this.saveCSS(remoteCss);
+            // 1. Resolve plugin handle via Thymer SDK DataAPI
+            let handle = this.getPluginHandle();
+            if (!handle && typeof this.data?.getAllGlobalPlugins === 'function') {
+                try {
+                    const globals = await this.data.getAllGlobalPlugins();
+                    const myGuid = typeof this.getGuid === 'function' ? this.getGuid() : null;
+                    handle = globals.find(p => (myGuid && p.guid === myGuid) || p.getName?.() === 'Freelance OS');
+                } catch (e) {
+                    console.warn('[Freelance OS] Could not search global plugins:', e);
+                }
             }
 
-            // Apply plugin configuration and code
-            const currentConf = typeof this.getConfiguration === 'function' ? this.getConfiguration() : {};
+            // 2. Apply CSS
+            if (remoteCss) {
+                if (handle && typeof handle.saveCSS === 'function') {
+                    await handle.saveCSS(remoteCss);
+                } else if (typeof this.saveCSS === 'function') {
+                    await this.saveCSS(remoteCss);
+                }
+            }
+
+            // 3. Apply plugin configuration and code
+            const currentConf = typeof this.getConfiguration === 'function' 
+                ? this.getConfiguration() 
+                : (handle?.getConfiguration?.() || {});
             const newConf = {
                 ...currentConf,
                 version: remoteManifest.version,
@@ -187,27 +242,23 @@ const Updater = {
                 __source_repo: currentConf.__source_repo || `https://github.com/${owner}/${repo}`
             };
 
-            if (typeof this.savePlugin === 'function') {
+            let updated = false;
+            if (handle && typeof handle.savePlugin === 'function') {
+                await handle.savePlugin(newConf, remoteJs);
+                updated = true;
+            } else if (typeof this.savePlugin === 'function') {
                 await this.savePlugin(newConf, remoteJs);
-            } else {
-                // Fallback: update via local MCP endpoint if running in an environment without savePlugin
-                await fetch('http://127.0.0.1:13100/mcp', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        jsonrpc: '2.0',
-                        id: Date.now(),
-                        method: 'tools/call',
-                        params: {
-                            name: 'update_plugin_code',
-                            arguments: {
-                                workspace: this.workspaceGuid || 'WNN1JJG50ZQ6BE9S1T3HG85S57',
-                                plugin: this.getGuid?.() || '198WZ858D9JC12CY5SWW9GSZFJ',
-                                code: remoteJs
-                            }
-                        }
-                    })
-                });
+                updated = true;
+            } else if (handle && typeof handle.saveCode === 'function') {
+                if (typeof handle.saveConfiguration === 'function') {
+                    await handle.saveConfiguration(newConf);
+                }
+                await handle.saveCode(remoteJs);
+                updated = true;
+            }
+
+            if (!updated) {
+                throw new Error('Plugin update API (savePlugin) was not found on this workspace handle.');
             }
 
             if (this.ui?.addToaster) {
