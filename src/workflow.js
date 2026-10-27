@@ -2339,7 +2339,7 @@ const Workflow = {
         // Plugin Updates Section
         const updatesSection = document.createElement('div');
         updatesSection.className = 'os-settings-updates';
-        updatesSection.style.cssText = 'margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-color, #e5e7eb);';
+        updatesSection.style.cssText = 'margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--os-border);';
         const updateConf = typeof this.getUpdateConfig === 'function' ? this.getUpdateConfig() : { version: '0.5.1', autoUpdate: false, repoUrl: 'https://github.com/jacoplane/thymer-freelance-os' };
         updatesSection.innerHTML = `
             <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">Plugin Updates</h3>
@@ -2373,7 +2373,7 @@ const Workflow = {
         // Onboarding / Guide Reset Section
         const guideSection = document.createElement('div');
         guideSection.className = 'os-settings-guide';
-        guideSection.style.cssText = 'margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--border-color, #e5e7eb);';
+        guideSection.style.cssText = 'margin-top: 24px; padding-top: 20px; border-top: 1px solid var(--os-border);';
         guideSection.innerHTML = `
             <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">Getting Started Guide</h3>
             <p class="os-action-meta" style="margin-bottom: 12px;">Display the onboarding checklist card on the Overview dashboard.</p>
