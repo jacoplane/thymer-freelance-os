@@ -6997,6 +6997,7 @@ class Plugin extends AppPlugin {
     }
 
     async render(panel) {
+        clearTimeout(this.workflowSearchTimer);
         const container = panel.getElement ? panel.getElement() : null;
         if (!container) return;
 
@@ -7746,11 +7747,10 @@ class Plugin extends AppPlugin {
         grid.appendChild(agenda);
         app.appendChild(grid);
 
-        container.innerHTML = '';
         const viewport = document.createElement('div');
         viewport.className = 'os-app';
         viewport.appendChild(app);
-        container.appendChild(viewport);
+        container.replaceChildren(viewport);
     }
 
     renderCards(cardsContainer, data, panel) {
