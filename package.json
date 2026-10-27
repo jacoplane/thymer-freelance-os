@@ -1,6 +1,6 @@
 {
   "name": "thymer-freelance-os",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Freelance OS dashboard for Thymer with native projects, client relationships and weekly reviews.",
   "main": "dist/plugin.js",
   "scripts": {
