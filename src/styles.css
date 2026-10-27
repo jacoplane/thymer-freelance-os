@@ -296,7 +296,7 @@
 @container osApp (max-width: 480px) { .os-start-here-row { align-items: flex-start; flex-direction: column; gap: 8px; } .os-start-here-reasons { gap: 2px 12px; } }
 @container osApp (max-width: 580px) { .os-support-time { grid-template-columns: 1fr; gap: 12px; } .os-support-actions { flex-direction: row; flex-wrap: wrap; min-width: 0; } }
 
-.os-grid { display: grid; grid-template-columns: 170px minmax(0, 1fr) 340px; gap: var(--os-gap); align-items: start; }
+.os-grid { display: grid; grid-template-columns: 170px minmax(0, 1fr) 380px; gap: var(--os-gap); align-items: start; }
 
 /* Rail (Column 1) */
 .os-rail h2 { font-size: 11px; font-weight: 600; color: var(--os-muted); margin: 0 0 8px; text-transform: uppercase; letter-spacing: .06em; }
@@ -479,14 +479,16 @@ button.os-badge { border: 0; font-family: inherit; line-height: inherit; }
 .os-agenda-footer a { color: var(--os-muted); text-decoration: none; cursor: pointer; }
 .os-agenda-footer a:hover { color: var(--os-accent); }
 
-.os-task-item { display: flex; align-items: center; gap: 8px; padding: 7px 10px; border-radius: 6px; background: var(--os-surface-hover); margin-bottom: 5px; cursor: pointer; transition: background .1s, border-color .1s; }
+.os-task-item { display: flex; align-items: flex-start; gap: 10px; padding: 8px 12px; border-radius: 7px; background: var(--os-surface-hover); margin-bottom: 5px; cursor: pointer; transition: background .1s, border-color .1s; }
 .os-task-item:hover { border-color: var(--os-accent); }
 .os-task-item.os-task-waiting { border-left: 2px solid var(--os-warning, #d29922); }
+.os-task-checkbox { width: 14px; height: 14px; margin-top: 2px; border-radius: 3px; border: 1px solid var(--os-muted); flex-shrink: 0; cursor: pointer; }
+.os-task-content { display: flex; flex-direction: column; gap: 3px; flex: 1 1 auto; min-width: 0; }
+.os-task-label { font-size: 13px; font-weight: 500; line-height: 1.35; color: var(--os-text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.os-task-meta { display: flex; align-items: center; gap: 8px; font-size: 11px; color: var(--os-muted); flex-wrap: wrap; }
+.os-task-project { color: var(--os-muted); max-width: 180px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .os-task-state { font-size: 11px; color: var(--os-warning, #d29922); flex-shrink: 0; }
-.os-task-checkbox { width: 14px; height: 14px; border-radius: 3px; border: 1px solid var(--os-muted); flex-shrink: 0; cursor: pointer; }
-.os-task-label { font-size: 12.5px; flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.os-task-date { font-size: 11px; color: #38bdf8; flex-shrink: 0; }
-.os-task-project { font-size: 11px; color: var(--os-muted); max-width: 100px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex-shrink: 0; }
+.os-task-date { font-size: 11px; color: #38bdf8; white-space: nowrap; }
 .os-suggest-project { border: 1px solid var(--os-border); border-radius: 4px; background: transparent; color: var(--os-accent); font: inherit; font-size: 11px; padding: 2px 6px; cursor: pointer; flex-shrink: 0; }
 .os-suggest-project:hover { border-color: var(--os-accent); }
 .os-project-suggestions { margin: 2px 0 8px; padding: 10px 12px; border: 1px solid var(--os-border); border-radius: 6px; background: var(--os-surface); display: grid; gap: 8px; }

@@ -3638,12 +3638,18 @@ export class Plugin extends AppPlugin {
                 const canSuggest = t.category === 'inbox' && t.projectCandidates?.length && !this.dismissedProjectSuggestions.has(t.guid);
                 item.innerHTML = `
                     <input type="checkbox" class="os-task-checkbox" />
-                    <span class="os-task-label" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</span>
-                    ${t.projectName ? `<span class="os-task-project" title="Linked project">${escapeHtml(t.projectName)}</span>` : ''}
-                    ${t.waiting ? '<span class="os-task-state">Waiting</span>' : ''}
-                    ${t.important ? '<span class="os-task-state">Important</span>' : ''}
-                    ${t.date ? `<span class="os-task-date">${t.date}</span>` : ''}
-                    ${canSuggest ? '<button type="button" class="os-suggest-project" aria-expanded="false">Link project</button>' : ''}
+                    <div class="os-task-content">
+                        <span class="os-task-label" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</span>
+                        ${(t.projectName || t.waiting || t.important || t.date || canSuggest) ? `
+                            <div class="os-task-meta">
+                                ${t.projectName ? `<span class="os-task-project" title="Linked project">📁 ${escapeHtml(t.projectName)}</span>` : ''}
+                                ${t.waiting ? '<span class="os-task-state">Waiting</span>' : ''}
+                                ${t.important ? '<span class="os-task-state">Important</span>' : ''}
+                                ${t.date ? `<span class="os-task-date">📅 ${t.date}</span>` : ''}
+                                ${canSuggest ? '<button type="button" class="os-suggest-project" aria-expanded="false">Link project</button>' : ''}
+                            </div>
+                        ` : ''}
+                    </div>
                 `;
 
                 const chk = item.querySelector('.os-task-checkbox');
