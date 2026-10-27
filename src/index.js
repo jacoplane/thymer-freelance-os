@@ -3632,10 +3632,14 @@ export class Plugin extends AppPlugin {
             ` : `
                 <div class="os-empty-state">
                     <div class="os-empty-icon">✓</div>
-                    <div class="os-empty-title">No tasks in this section</div>
-                    <div class="os-empty-desc">You are all caught up! Use quick capture above to add new tasks.</div>
+                    <div class="os-empty-title">All caught up!</div>
+                    <div class="os-empty-desc">No tasks in this section. Use quick capture above to add new tasks.</div>
+                    <button type="button" class="os-button os-agenda-empty-capture" style="margin-top: 10px;">+ Capture task</button>
                 </div>
             `;
+            agendaContent.querySelector('.os-agenda-empty-capture')?.addEventListener('click', () => {
+                captureInput.focus();
+            });
         } else {
             for (const t of shownTasks.slice(0, agendaLimit)) {
                 const item = document.createElement('div');
@@ -3730,6 +3734,7 @@ export class Plugin extends AppPlugin {
     renderCards(cardsContainer, data, panel) {
         cardsContainer.innerHTML = '';
         const q = (this.searchQuery || '').toLowerCase();
+        const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (data?.baseCurrency || this.workflowState?.baseCurrency || 'CHF');
 
         if (this.currentTab === 'projects') {
             let list = data.projects;
@@ -3742,7 +3747,30 @@ export class Plugin extends AppPlugin {
             }
 
             if (list.length === 0) {
-                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No matching projects found.</div>';
+                const isFiltered = !!q || this.projectFilter !== 'all';
+                const empty = document.createElement('div');
+                empty.className = 'os-empty-placeholder';
+                if (isFiltered) {
+                    empty.innerHTML = `
+                        <div class="os-empty-title">No matching projects</div>
+                        <p>${q ? `No projects match "${escapeHtml(q)}".` : 'No projects in this status filter.'}</p>
+                        <button type="button" class="os-button">Clear filter</button>
+                    `;
+                    empty.querySelector('button').onclick = () => {
+                        this.searchQuery = '';
+                        this.projectFilter = 'all';
+                        this.render(panel);
+                    };
+                } else {
+                    empty.innerHTML = `
+                        <div class="os-empty-icon" style="font-size: 26px; margin-bottom: 2px;">📁</div>
+                        <div class="os-empty-title">No projects yet</div>
+                        <p>Track your deliverables, milestones, and client tasks in one place.</p>
+                        <button type="button" class="os-button os-primary">Create your first project</button>
+                    `;
+                    empty.querySelector('button').onclick = () => this.showCreateProjectModal(panel, data);
+                }
+                cardsContainer.appendChild(empty);
                 return;
             }
 
@@ -3756,7 +3784,6 @@ export class Plugin extends AppPlugin {
                 const nextGuid = workflowState.next[proj.guid];
                 const nextLabel = workflowState.nextLabels[proj.guid];
                 const activeProject = isActiveProject(proj);
-                const baseCurrency = typeof this.getBaseCurrency === 'function' ? this.getBaseCurrency() : (this.workflowState?.baseCurrency || 'CHF');
 
                 card.innerHTML = `
                     <div class="os-card-top">
@@ -3876,12 +3903,31 @@ export class Plugin extends AppPlugin {
             }
 
             if (list.length === 0) {
-                const message = q ? 'No matching clients or leads. Try a name, contact, email or phone number.' : this.clientFilter === 'leads' ? 'No leads yet. Add a prospect to start tracking new work.' : this.clientFilter === 'archived' ? 'No archived clients or leads.' : 'No clients in this view yet.';
-                const empty = document.createElement('div'); empty.className = 'os-empty-placeholder';
-                const description = document.createElement('p'); description.textContent = message; empty.appendChild(description);
-                if (!q && this.clientFilter !== 'archived') {
-                    const add = document.createElement('button'); add.type = 'button'; add.className = 'os-button'; add.textContent = this.clientFilter === 'leads' ? 'Add lead' : 'Add client';
-                    add.onclick = () => this.showCreateClientModal(panel, null, this.clientFilter === 'leads' ? 'prospect' : 'active'); empty.appendChild(add);
+                const isFiltered = !!q;
+                const empty = document.createElement('div');
+                empty.className = 'os-empty-placeholder';
+                if (isFiltered) {
+                    empty.innerHTML = `
+                        <div class="os-empty-title">No matching clients</div>
+                        <p>No clients or leads match "${escapeHtml(q)}".</p>
+                        <button type="button" class="os-button">Clear search</button>
+                    `;
+                    empty.querySelector('button').onclick = () => {
+                        this.searchQuery = '';
+                        this.render(panel);
+                    };
+                } else {
+                    const title = this.clientFilter === 'leads' ? 'No leads yet' : this.clientFilter === 'archived' ? 'No archived clients' : 'No clients yet';
+                    const desc = this.clientFilter === 'leads' ? 'Add a prospect to start tracking proposals, estimated values, and conversion milestones.' : this.clientFilter === 'archived' ? 'No archived clients or past relationships in this workspace.' : 'Add your clients to track active contracts, care plans, and contact details.';
+                    empty.innerHTML = `
+                        <div class="os-empty-icon" style="font-size: 26px; margin-bottom: 2px;">👥</div>
+                        <div class="os-empty-title">${title}</div>
+                        <p>${desc}</p>
+                        ${this.clientFilter !== 'archived' ? `<button type="button" class="os-button os-primary">${this.clientFilter === 'leads' ? 'Add your first lead' : 'Add your first client'}</button>` : ''}
+                    `;
+                    if (this.clientFilter !== 'archived') {
+                        empty.querySelector('button').onclick = () => this.showCreateClientModal(panel, null, this.clientFilter === 'leads' ? 'prospect' : 'active');
+                    }
                 }
                 cardsContainer.appendChild(empty);
                 return;
@@ -3959,7 +4005,30 @@ export class Plugin extends AppPlugin {
             }
 
             if (list.length === 0) {
-                cardsContainer.innerHTML = '<div class="os-empty-placeholder">No invoices in this view. Choose All or clear the search to see more.</div>';
+                const isFiltered = !!q || this.invoiceFilter !== 'all';
+                const empty = document.createElement('div');
+                empty.className = 'os-empty-placeholder';
+                if (isFiltered) {
+                    empty.innerHTML = `
+                        <div class="os-empty-title">No matching invoices</div>
+                        <p>${q ? `No invoices match "${escapeHtml(q)}".` : 'No invoices in this status filter.'}</p>
+                        <button type="button" class="os-button">Clear filter</button>
+                    `;
+                    empty.querySelector('button').onclick = () => {
+                        this.searchQuery = '';
+                        this.invoiceFilter = 'all';
+                        this.render(panel);
+                    };
+                } else {
+                    empty.innerHTML = `
+                        <div class="os-empty-icon" style="font-size: 26px; margin-bottom: 2px;">🧾</div>
+                        <div class="os-empty-title">No invoices yet</div>
+                        <p>Issue invoices with payment tracking, overdue reminders, and Swiss QR-bill integration.</p>
+                        <button type="button" class="os-button os-primary">Create your first invoice</button>
+                    `;
+                    empty.querySelector('button').onclick = () => this.showCreateInvoiceModal(panel, data);
+                }
+                cardsContainer.appendChild(empty);
                 return;
             }
 

@@ -14,8 +14,7 @@ async function deploy() {
 
     const call = await connectMcp();
     const plugins = [
-        { workspace: 'W8JXPTMKY8DEDMGB3JZ6ARRHJ2', plugin: '1Y01APTHH8RZN3BRYVHQT0YXQP', name: 'Freelance OS' },
-        { workspace: 'WNN1JJG50ZQ6BE9S1T3HG85S57', plugin: '198WZ858D9JC12CY5SWW9GSZFJ', name: 'jacoplane' }
+        { workspace: 'W8JXPTMKY8DEDMGB3JZ6ARRHJ2', plugin: '1Y01APTHH8RZN3BRYVHQT0YXQP', name: 'Freelance OS Sandbox' }
     ];
 
     for (const p of plugins) {

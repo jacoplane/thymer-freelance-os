@@ -202,7 +202,38 @@ const Billing = {
             const rows = this.billingTab === 'plans' ? plans.filter(client => clientSearchText(client).includes((this.billingSearch || '').toLowerCase())) : invoices;
             results.replaceChildren();
             if (!rows.length) {
-                const empty = document.createElement('p'); empty.className = 'os-empty-placeholder'; empty.textContent = this.billingSearch ? 'No matches. Try another reference or client name.' : this.billingTab === 'plans' ? 'No maintenance plans recorded. Set a client’s status to On maintenance or record an active client’s monthly care-plan amount.' : 'No invoices in this view. Choose another filter or add an invoice.'; results.appendChild(empty); return;
+                const empty = document.createElement('div');
+                empty.className = 'os-empty-placeholder';
+                if (this.billingSearch) {
+                    empty.innerHTML = `
+                        <div class="os-empty-title">No matching records</div>
+                        <p>No matches for “${escapeHtml(this.billingSearch)}”.</p>
+                        <button type="button" class="os-button">Clear search</button>
+                    `;
+                    empty.querySelector('button').onclick = () => { this.billingSearch = ''; this.render(panel); };
+                } else if (this.billingTab === 'plans') {
+                    empty.innerHTML = `
+                        <div class="os-empty-icon" style="font-size: 26px; margin-bottom: 2px;">📚</div>
+                        <div class="os-empty-title">No maintenance plans recorded</div>
+                        <p>Maintenance plans track recurring monthly care agreements. Set a client’s status to On maintenance or record an active client’s monthly care-plan amount.</p>
+                        <button type="button" class="os-button">View clients</button>
+                    `;
+                    empty.querySelector('button').onclick = () => { this.workflowMode = 'overview'; this.currentTab = 'clients'; this.render(panel); };
+                } else {
+                    const isFiltered = this.invoiceFilter !== 'all';
+                    empty.innerHTML = `
+                        <div class="os-empty-icon" style="font-size: 26px; margin-bottom: 2px;">🧾</div>
+                        <div class="os-empty-title">${isFiltered ? 'No invoices in this view' : 'No invoices yet'}</div>
+                        <p>${isFiltered ? 'No invoices match the selected status filter.' : 'Create invoices with payment tracking, overdue notices, and Swiss QR-bill integration.'}</p>
+                        <button type="button" class="os-button ${isFiltered ? '' : 'os-primary'}">${isFiltered ? 'Show all invoices' : 'Create your first invoice'}</button>
+                    `;
+                    empty.querySelector('button').onclick = () => {
+                        if (isFiltered) { this.invoiceFilter = 'all'; this.render(panel); }
+                        else { this.showCreateInvoiceModal(panel, data); }
+                    };
+                }
+                results.appendChild(empty);
+                return;
             }
             const wrap = document.createElement('div'); wrap.className = 'os-billing-table-wrap'; wrap.tabIndex = 0; wrap.setAttribute('aria-label', this.billingTab === 'plans' ? 'Maintenance plan register' : 'Invoice register');
             const table = document.createElement('table'); table.className = 'os-billing-table';

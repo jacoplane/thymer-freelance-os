@@ -357,7 +357,29 @@
 .os-filter-pill.active { background: var(--os-surface-hover); color: var(--os-accent); border-color: var(--os-accent); font-weight: 600; }
 
 .os-cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(285px, 1fr)); gap: 14px; }
-.os-empty-placeholder { opacity: 0.6; padding: 28px 16px; grid-column: 1 / -1; text-align: center; font-size: 13px; color: var(--os-muted); }
+.os-empty-placeholder {
+  padding: 36px 20px;
+  grid-column: 1 / -1;
+  text-align: center;
+  font-size: 13px;
+  color: var(--os-muted);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  background: var(--os-surface);
+  border: 1px dashed var(--os-border);
+  border-radius: var(--os-radius);
+}
+.os-empty-placeholder p {
+  margin: 0;
+  max-width: 380px;
+  line-height: 1.45;
+}
+.os-empty-placeholder .os-button {
+  margin-top: 6px;
+}
 
 .os-project-card { display: flex; flex-direction: column; gap: 8px; padding: 14px 16px; border: 1px solid var(--os-border); border-radius: 9px; background: var(--os-surface); transition: transform .1s, border-color .15s; min-width: 0; }
 .os-project-card:hover { border-color: var(--os-accent); transform: translateY(-1px); }
@@ -504,8 +526,8 @@ button.os-badge { border: 0; font-family: inherit; line-height: inherit; }
 .os-agenda-note { font-size: 12px; color: color-mix(in srgb, var(--os-muted) 75%, var(--os-text)); margin: 0 0 8px; line-height: 1.4; }
 .os-agenda-more { margin-top: 8px; width: 100%; }
 .os-empty-state { display: flex; flex-direction: column; align-items: center; justify-content: center; padding: 24px 12px; text-align: center; color: var(--os-muted); }
-.os-empty-icon { font-size: 24px; color: #4ade80; margin-bottom: 4px; }
-.os-empty-title { font-size: 12px; font-weight: 600; color: var(--os-text); margin-bottom: 2px; }
+.os-empty-icon { font-size: 24px; color: var(--os-success); margin-bottom: 4px; }
+.os-empty-title { font-size: 13px; font-weight: 600; color: var(--os-text); margin-bottom: 2px; }
 .os-empty-desc { font-size: 12px; line-height: 1.4; }
 .os-agenda-footer { display: flex; justify-content: space-between; margin-top: 14px; padding-top: 10px; border-top: 1px solid var(--os-border); font-size: 11px; color: var(--os-muted); }
 .os-agenda-footer a, .os-agenda-footer button { appearance: none; border: 0; background: transparent; padding: 0; font-family: inherit; font-size: 11px; color: var(--os-muted); text-decoration: none; cursor: pointer; }
