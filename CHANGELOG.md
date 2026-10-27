@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.5.4 — 2026-10-27
+
+- **Cold-Start Collection Sync & Settings Route Fix (`src/index.js`)**:
+  - Add cold-start retry in `loadData()` to prevent false-positive "Missing collections" prompt when Thymer Desktop is initializing collections from backend workers after update/reload.
+  - Fix settings routing gate in `render()` so clicking "Settings" or "Choose collections" always opens Workspace Settings and collection dropdowns.
+
 ## 0.5.3 — 2026-10-27
 
 - **In-Plugin Self-Updater Fix (`src/updater.js`)**:

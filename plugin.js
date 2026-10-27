@@ -5324,7 +5324,12 @@ class Plugin extends AppPlugin {
         };
 
         try {
-            const collections = await this.data.getAllCollections();
+            let collections = await this.data.getAllCollections();
+            if ((!collections || collections.length === 0) && !this.collectionRetryAttempted) {
+                this.collectionRetryAttempted = true;
+                await new Promise(r => setTimeout(r, 400));
+                collections = await this.data.getAllCollections();
+            }
             this.workflowCollections = collections;
             data.missingCollections = ['Clients', 'Invoices', 'Projects'].filter(role => !this.collectionGuid(role, collections));
             if (data.missingCollections.length) { data.loadError = true; return data; }
@@ -7257,7 +7262,7 @@ class Plugin extends AppPlugin {
             storageWarning.textContent = this.workflowStorageError;
             app.appendChild(storageWarning);
         }
-        if (!needsWorkflow && data.missingCollections?.length) {
+        if (mode !== 'settings' && !needsWorkflow && data.missingCollections?.length) {
             const setup = document.createElement('section'); setup.className = 'os-workflow os-workflow-settings';
             setup.innerHTML = `<h2>Set up your workspace</h2><p>Freelance OS needs Clients, Projects and Invoices collections with its starter fields.</p><p>Missing collections: ${data.missingCollections.map(escapeHtml).join(', ')}. Create them using the setup guide, or map your existing collections in Settings.</p><button class="os-button os-primary">Choose collections</button>`;
             setup.querySelector('button').onclick = () => { this.workflowMode = 'settings'; this.render(panel); };
