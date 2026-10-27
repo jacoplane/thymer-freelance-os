@@ -152,9 +152,18 @@ test('Plugin Trade Pack activation toggles and state helpers', () => {
     assert.equal(plugin.getActivePacks().length, 0);
 });
 
-test('HARNESS_TOOLS contains exactly 6 coding harnesses with complete setup steps', () => {
-    assert.equal(api.HARNESS_TOOLS.length, 6);
-    const expectedToolIds = ['antigravity', 'opencode', 'codex', 'omp', 'claude-code', 'cursor'];
+test('HARNESS_TOOLS contains exactly 7 coding harnesses with complete setup steps', () => {
+    assert.equal(api.HARNESS_TOOLS.length, 7);
+    const expectedToolIds = ['antigravity', 'opencode', 'codex', 'omp', 'claude-code', 'cursor', 'other'];
+
+    const antigravity = api.HARNESS_TOOLS.find(t => t.id === 'antigravity');
+    assert.equal(antigravity.name, 'Antigravity');
+
+    const codex = api.HARNESS_TOOLS.find(t => t.id === 'codex');
+    assert.equal(codex.name, 'Codex');
+
+    const other = api.HARNESS_TOOLS.find(t => t.id === 'other');
+    assert.equal(other.name, 'Other');
 
     for (const id of expectedToolIds) {
         const tool = api.HARNESS_TOOLS.find(t => t.id === id);

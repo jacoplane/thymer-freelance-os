@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.5.2 — 2026-10-27
+
+- **AI Agent Setup & Universal Harness Overhaul (`src/ai.js`)**:
+  - Streamline tool naming and remove obsolete labels: renamed to "Antigravity" (`agy` CLI & harness guidance) and "Codex" (Desktop & CLI harness guidance).
+  - Add new **"Other" Universal Agent Setup** tab with generic MCP configuration instructions and a 1-click universal bootstrap system prompt.
+  - Surface community and emerging agent harness tags: DeepSeek Harness (`dsh`), Goose, Grok-Build, Hermes, Hotdog, Kilo Code, OMP, OpenClaw, OpenCode, Pi, Qwen Code, StellaQ, and ZCode.
+- **Quality & Polish Sweeps**:
+  - **Responsiveness**: Expanded agenda column minmax bounds (`minmax(320px, 1.15fr)`) and implemented 2-line title/meta task layouts to prevent text clipping across multi-breakpoint widths.
+  - **Accessibility (a11y)**: Added ARIA tablist/tab semantics, arrow-key cycling across all tabs (`ArrowRight`, `ArrowLeft`, `Home`, `End`), modal focus trapping, Escape key dismissals, accessible checkbox labels, and single-line `Enter` form submissions.
+  - **Design System & Color Unification**: Replaced divergent sky-blue tokens with host teal (`hsl(175, 45%, 42%)` / `#3aa89b`), eliminating visual clashes and fixing white-on-light-teal contrast in AI settings.
+  - **Zero-Data & Empty States**: Added rich empty state placeholders with primary creation CTAs (+ Create project, + Add client / lead, + Create invoice) and clear-filter buttons for zero-match queries. Fixed `ReferenceError: baseCurrency` card-rendering bug.
+  - **Performance & Re-renders**: Replaced `innerHTML = ''` mounts with atomic `replaceChildren()`, cleaned up debounce timers on re-render, and verified 0 detached DOM node leaks across rapid view switching.
+  - **Microcopy & Formatting**: Standardized `money()` with NaN guards and fixed 2-decimal formatting (`en-CH`), unified navigation rails and filter pills to sentence case.
+
 ## 0.5.1 — 2026-10-27
 
 - **Responsive Cockpit & Card Spacing**:

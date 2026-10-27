@@ -3001,9 +3001,9 @@ const TRADE_PACKS = [
 const HARNESS_TOOLS = [
     {
         id: 'antigravity',
-        name: 'Google Antigravity',
+        name: 'Antigravity',
         icon: '⚡',
-        subtitle: 'Agentic IDE',
+        subtitle: 'agy CLI & Agent Harness',
         steps: [
             {
                 title: 'Sync Agent Skills',
@@ -3057,9 +3057,9 @@ const HARNESS_TOOLS = [
     },
     {
         id: 'codex',
-        name: 'Codex CLI',
+        name: 'Codex',
         icon: '🤖',
-        subtitle: 'OpenAI Terminal Agent',
+        subtitle: 'Desktop & CLI Harness',
         steps: [
             {
                 title: 'Sync Agent Skills',
@@ -3165,6 +3165,34 @@ const HARNESS_TOOLS = [
             '✓ MCP SSE endpoint: http://127.0.0.1:13100/mcp',
             '✓ Project config support via .cursor/mcp.json',
             '✓ @-mention skill integration in chat & Composer'
+        ]
+    },
+    {
+        id: 'other',
+        name: 'Other',
+        icon: '🌐',
+        subtitle: 'Universal Agent Setup & MCP',
+        steps: [
+            {
+                title: 'Sync Agent Skills',
+                desc: 'Download the 11 Core personas and modular trade skills into your workspace root:',
+                code: 'npx degit jacoplane/thymer-freelance-os/.agents .agents'
+            },
+            {
+                title: 'Connect Native Thymer MCP',
+                desc: 'Register the native Thymer MCP endpoint in your harness configuration (HTTP/SSE transport):',
+                code: 'http://127.0.0.1:13100/mcp'
+            },
+            {
+                title: 'Universal Bootstrap Prompt',
+                desc: 'Copy this system/bootstrap prompt into your agent to immediately bridge it with Freelance OS:',
+                code: 'You are connected to Thymer via Model Context Protocol (http://127.0.0.1:13100/mcp) and have access to Freelance OS agency skills in .agents/skills/. Audit active client projects, verify overdue invoices, and run my daily freelance standup.'
+            }
+        ],
+        checklist: [
+            '✓ Compatible with DeepSeek Harness (dsh), Goose, Grok-Build, Hermes, Hotdog, Kilo Code, OpenClaw, Pi, Qwen, StellaQ, ZCode & any MCP client',
+            '✓ Discovers skills from standard .agents/skills/ directory',
+            '✓ Zero-lockin Model Context Protocol (MCP) endpoint'
         ]
     }
 ];
@@ -3321,7 +3349,7 @@ const Ai = {
         heading.className = 'os-ai-heading';
         heading.innerHTML = `
             <h2>🤖 AI Agents & MCP Bridge</h2>
-            <p>Supercharge Freelance OS with autonomous agent workflows and modular Trade Packs. Connect your favorite coding assistant (Antigravity, Claude Code, Cursor, OpenCode, Codex) to manage proposals, time tracking, clients, and invoicing.</p>
+            <p>Supercharge Freelance OS with autonomous agent workflows and modular Trade Packs. Connect your favorite coding assistant (Antigravity, Claude Code, Cursor, OpenCode, Codex, or other emerging harnesses) to manage proposals, time tracking, clients, and invoicing.</p>
         `;
         section.appendChild(heading);
 
@@ -3396,6 +3424,16 @@ const Ai = {
                                 <h4>${escapeHtml(tool.name)} <span style="font-size: 13px; font-weight: normal; color: var(--os-muted);">— ${escapeHtml(tool.subtitle || '')}</span></h4>
                             </div>
                         </div>
+                        ${tool.id === 'other' ? `
+                            <div class="os-ai-other-banner" style="margin: 8px 0 16px; padding: 10px 14px; border: 1px solid var(--os-border); border-radius: 6px; background: var(--os-surface);">
+                                <div style="font-size: 12px; font-weight: 600; color: var(--os-text); margin-bottom: 6px;">Supported emerging & alternative agent harnesses:</div>
+                                <div style="display: flex; flex-wrap: wrap; gap: 6px;">
+                                    ${['DeepSeek Harness (dsh)', 'Goose', 'Grok-Build', 'Hermes', 'Hotdog', 'Kilo Code', 'OMP', 'OpenClaw', 'OpenCode', 'Pi', 'Qwen', 'StellaQ', 'ZCode'].map(name => `
+                                        <span class="os-preset" style="cursor: default; pointer-events: none; font-size: 11px; padding: 2px 8px;">${escapeHtml(name)}</span>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        ` : ''}
                         <div class="os-ai-tool-steps-grid">
                             ${tool.steps.map((step, sIdx) => `
                                 <div class="os-ai-step-card">
