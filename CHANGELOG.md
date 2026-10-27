@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.1 — 2026-10-27
+
+- **Responsive Cockpit & Card Spacing**:
+  - Rebalance 3-column dashboard proportions: allocate `170px` to actions rail, assign flexible `1fr` to the main portfolio area, and cap the Agenda sidebar at a focused `340px`. Prevents the Agenda from consuming 45%+ of wide monitors and expands main portfolio width by up to +390px.
+  - Increase project & client card minimum width from `220px` to `285px` (`repeat(auto-fill, minmax(285px, 1fr))`) with `14px` gap, eliminating the cramped 4-column squish on laptop and desktop displays.
+  - Refine card internal breathing room: increase card padding to `14px 16px`, gap to `8px`, border-radius to `9px`, and title font-size to `13.5px` with `1.4` line-height.
+  - Optimize card action footer: streamline action buttons to `+ Invoice`, `+ Time`, and `Open ↗` (or `Profile ↗`), allowing target date and action buttons to align cleanly on a single row without awkward line wraps.
+  - Overhaul multi-panel container query breakpoints (`@container osApp`):
+    - Multi-panel split ($\le 1120$px): cleanly folds Agenda below Main, displaying 2 generous columns (320px–380px) instead of 3 cramped 240px columns.
+    - Narrow split ($\le 740$px): transitions rail to horizontal top bar, maintaining 2 spacious 330px columns down to 560px before single-column collapse.
+
 ## 0.5.0 — 2026-10-27
 
 - **Autonomous Operations Bench**: 11 dedicated AI specialist personas embedded with full operational directives and domain tools (`.agents/skills/`):

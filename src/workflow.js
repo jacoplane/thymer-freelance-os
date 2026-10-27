@@ -2340,7 +2340,7 @@ const Workflow = {
         const updatesSection = document.createElement('div');
         updatesSection.className = 'os-settings-updates';
         updatesSection.style.cssText = 'margin-top: 28px; padding-top: 20px; border-top: 1px solid var(--border-color, #e5e7eb);';
-        const updateConf = typeof this.getUpdateConfig === 'function' ? this.getUpdateConfig() : { version: '0.5.0', autoUpdate: false, repoUrl: 'https://github.com/jacoplane/thymer-freelance-os' };
+        const updateConf = typeof this.getUpdateConfig === 'function' ? this.getUpdateConfig() : { version: '0.5.1', autoUpdate: false, repoUrl: 'https://github.com/jacoplane/thymer-freelance-os' };
         updatesSection.innerHTML = `
             <h3 style="margin: 0 0 8px 0; font-size: 15px; font-weight: 600;">Plugin Updates</h3>
             <p class="os-action-meta" style="margin-bottom: 12px;">Installed version: <strong>v${escapeHtml(updateConf.version)}</strong> · Tracked repository: <code>${escapeHtml(updateConf.repoUrl)}</code></p>

@@ -3779,7 +3779,7 @@ export class Plugin extends AppPlugin {
                         <div class="os-card-actions">
                             <button type="button" class="os-card-action-btn os-project-invoice" title="Create an invoice for this project">+ Invoice</button>
                             <button type="button" class="os-card-action-btn os-project-support" title="Log support time for this project">+ Time</button>
-                            <button type="button" class="os-card-open os-open-project">Open project ↗</button>
+                            <button type="button" class="os-card-open os-open-project">Open ↗</button>
                         </div>
                     </div>
                 `;
@@ -3899,7 +3899,7 @@ export class Plugin extends AppPlugin {
                             <button type="button" class="os-card-action-btn os-add-invoice" title="Create a new invoice for ${escapeHtml(cli.name)}">+ Invoice</button>
                             <button type="button" class="os-card-open os-edit-client">Edit</button>
                         </div>
-                        <button type="button" class="os-card-open os-open-profile">Open profile ↗</button>
+                        <button type="button" class="os-card-open os-open-profile">Profile ↗</button>
                     </div>
                 `;
 
