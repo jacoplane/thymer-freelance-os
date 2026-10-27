@@ -272,7 +272,8 @@ function dateDay(value) {
 }
 
 function money(value) {
-    return new Intl.NumberFormat('en-CH', { maximumFractionDigits: 2 }).format(value);
+    const num = Number.isFinite(Number(value)) ? Number(value) : 0;
+    return new Intl.NumberFormat('en-CH', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
 }
 
 function invoiceMatches(invoice, filter) {
@@ -2799,7 +2800,7 @@ export class Plugin extends AppPlugin {
                 </div>
                 <div class="os-modal-footer">
                     <button class="os-button btn-cancel" type="button">Cancel</button>
-                    <button class="os-button os-primary btn-submit" type="button">Create Project</button>
+                    <button class="os-button os-primary btn-submit" type="button">Create project</button>
                 </div>
             </div>
         `;
@@ -3483,11 +3484,11 @@ export class Plugin extends AppPlugin {
                 </button>
             </div>
             <nav class="os-navigation">
-                <button type="button" class="os-nav-link nav-projects">📁 All Projects</button>
-                <button type="button" class="os-nav-link nav-clients">👥 All Clients</button>
-                <button type="button" class="os-nav-link nav-invoices">🧾 All Invoices</button>
-                <button type="button" class="os-nav-link nav-library">📚 Care Plans</button>
-                <button type="button" class="os-nav-link nav-support">⏱ Support Sessions</button>
+                <button type="button" class="os-nav-link nav-projects">📁 All projects</button>
+                <button type="button" class="os-nav-link nav-clients">👥 All clients</button>
+                <button type="button" class="os-nav-link nav-invoices">🧾 All invoices</button>
+                <button type="button" class="os-nav-link nav-library">📚 Care plans</button>
+                <button type="button" class="os-nav-link nav-support">⏱ Support sessions</button>
             </nav>
         `;
 
@@ -3615,7 +3616,7 @@ export class Plugin extends AppPlugin {
             filterBar.setAttribute('aria-label', 'Filter projects');
             filterBar.innerHTML = `
                 <button type="button" class="os-filter-pill ${this.projectFilter === 'all' ? 'active' : ''} pill-all" aria-pressed="${this.projectFilter === 'all'}">All (${scopedProjects.length})</button>
-                <button type="button" class="os-filter-pill ${this.projectFilter === 'in_progress' ? 'active' : ''} pill-prog" aria-pressed="${this.projectFilter === 'in_progress'}">In Progress (${inProgCount})</button>
+                <button type="button" class="os-filter-pill ${this.projectFilter === 'in_progress' ? 'active' : ''} pill-prog" aria-pressed="${this.projectFilter === 'in_progress'}">In progress (${inProgCount})</button>
                 <button type="button" class="os-filter-pill ${this.projectFilter === 'backlog' ? 'active' : ''} pill-back" aria-pressed="${this.projectFilter === 'backlog'}">Backlog (${backlogCount})</button>
                 <button type="button" class="os-filter-pill ${this.projectFilter === 'completed' ? 'active' : ''} pill-comp" aria-pressed="${this.projectFilter === 'completed'}">Completed (${completedCount})</button>
             `;
@@ -3673,7 +3674,7 @@ export class Plugin extends AppPlugin {
             ${agendaIncomplete ? '<p class="os-agenda-note" role="status">Task counts show loaded results only; more may exist.</p>' : ''}
             <div class="os-agenda-content"></div>
             <div class="os-agenda-footer">
-                <button type="button" class="link-capture">+ Capture Task</button>
+                <button type="button" class="link-capture">+ Capture task</button>
                 <button type="button" class="link-notes">View Journal ↗</button>
             </div>
         `;
