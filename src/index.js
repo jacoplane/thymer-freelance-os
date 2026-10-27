@@ -3134,8 +3134,9 @@ export class Plugin extends AppPlugin {
 
         const modes = document.createElement('nav');
         modes.className = 'os-workflow-modes';
+        modes.setAttribute('role', 'tablist');
         modes.setAttribute('aria-label', 'Dashboard sections');
-        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['billing', 'Billing'], ['review', 'Weekly review'], ['ai', 'AI Agents'], ['settings', 'Settings']].map(([key, label]) => `<button class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" data-focus-key="mode-${key}" aria-pressed="${mode === key}">${label}</button>`).join('');
+        modes.innerHTML = [['overview', 'Overview'], ['today', 'Today'], ['billing', 'Billing'], ['review', 'Weekly review'], ['ai', 'AI Agents'], ['settings', 'Settings']].map(([key, label]) => `<button type="button" role="tab" class="os-tab ${mode === key ? 'active' : ''}" data-mode="${key}" data-focus-key="mode-${key}" aria-selected="${mode === key ? 'true' : 'false'}">${label}</button>`).join('');
         modes.querySelectorAll('button').forEach(button => { button.onclick = () => { this.workflowMode = button.dataset.mode; this.workflowMessage = ''; this.render(panel); }; });
         app.appendChild(modes);
         if (this.workflowStorageError) {
@@ -3422,11 +3423,11 @@ export class Plugin extends AppPlugin {
                 </button>
             </div>
             <nav class="os-navigation">
-                <a class="os-nav-link nav-projects">📁 All Projects</a>
-                <a class="os-nav-link nav-clients">👥 All Clients</a>
-                <a class="os-nav-link nav-invoices">🧾 All Invoices</a>
-                <a class="os-nav-link nav-library">📚 Care Plans</a>
-                <a class="os-nav-link nav-support">⏱ Support Sessions</a>
+                <button type="button" class="os-nav-link nav-projects">📁 All Projects</button>
+                <button type="button" class="os-nav-link nav-clients">👥 All Clients</button>
+                <button type="button" class="os-nav-link nav-invoices">🧾 All Invoices</button>
+                <button type="button" class="os-nav-link nav-library">📚 Care Plans</button>
+                <button type="button" class="os-nav-link nav-support">⏱ Support Sessions</button>
             </nav>
         `;
 
@@ -3453,15 +3454,15 @@ export class Plugin extends AppPlugin {
         sectionHead.className = 'os-section-head';
         sectionHead.innerHTML = `
             <div class="os-section-toolbar">
-                <div class="os-tabs">
-                    <button class="os-tab ${this.currentTab === 'projects' ? 'active' : ''} tab-proj">Projects (${data.projects.length})</button>
-                    <button class="os-tab ${this.currentTab === 'clients' ? 'active' : ''} tab-cli">Clients & leads (${data.clients.length})</button>
-                    <button class="os-tab ${this.currentTab === 'invoices' ? 'active' : ''} tab-inv">Invoices (${data.invoices.length})</button>
+                <div class="os-tabs" role="tablist" aria-label="Portfolio collections">
+                    <button type="button" role="tab" aria-selected="${this.currentTab === 'projects' ? 'true' : 'false'}" class="os-tab ${this.currentTab === 'projects' ? 'active' : ''} tab-proj">Projects (${data.projects.length})</button>
+                    <button type="button" role="tab" aria-selected="${this.currentTab === 'clients' ? 'true' : 'false'}" class="os-tab ${this.currentTab === 'clients' ? 'active' : ''} tab-cli">Clients & leads (${data.clients.length})</button>
+                    <button type="button" role="tab" aria-selected="${this.currentTab === 'invoices' ? 'true' : 'false'}" class="os-tab ${this.currentTab === 'invoices' ? 'active' : ''} tab-inv">Invoices (${data.invoices.length})</button>
                 </div>
                 <div class="os-filter-search">
                     <input type="text" class="os-search-input" aria-label="Filter ${this.currentTab}" placeholder="Filter ${this.currentTab}..." value="${escapeHtml(this.searchQuery)}" />
                     ${this.currentTab === 'clients' ? '<button type="button" class="os-card-open os-client-board-link">Status board ↗</button>' : ''}
-                    <a class="os-view-all">View collection ↗</a>
+                    <button type="button" class="os-view-all">View collection ↗</button>
                 </div>
             </div>
         `;
@@ -3507,6 +3508,7 @@ export class Plugin extends AppPlugin {
         // Project filter pills (if on projects tab)
         if (this.currentTab === 'clients') {
             const filterBar = document.createElement('div'); filterBar.className = 'os-filter-pills';
+            filterBar.setAttribute('role', 'toolbar');
             filterBar.setAttribute('aria-label', 'Filter clients and leads');
             for (const [key, label] of [['all', 'All'], ['active', 'Clients'], ['leads', 'Leads'], ['archived', 'Archived']]) {
                 const button = document.createElement('button'); button.type = 'button';
@@ -3528,6 +3530,7 @@ export class Plugin extends AppPlugin {
             const filters = [['all', 'All'], ['outstanding', 'Outstanding'], ['overdue', 'Overdue'], ['review', 'To confirm'], ['to-send', 'To send'], ['paid', 'Paid']];
             const filterBar = document.createElement('div');
             filterBar.className = 'os-filter-pills';
+            filterBar.setAttribute('role', 'toolbar');
             filterBar.setAttribute('aria-label', 'Filter invoices');
             for (const [key, label] of filters) {
                 const button = document.createElement('button');
@@ -3547,11 +3550,13 @@ export class Plugin extends AppPlugin {
 
             const filterBar = document.createElement('div');
             filterBar.className = 'os-filter-pills';
+            filterBar.setAttribute('role', 'toolbar');
+            filterBar.setAttribute('aria-label', 'Filter projects');
             filterBar.innerHTML = `
-                <button class="os-filter-pill ${this.projectFilter === 'all' ? 'active' : ''} pill-all">All (${scopedProjects.length})</button>
-                <button class="os-filter-pill ${this.projectFilter === 'in_progress' ? 'active' : ''} pill-prog">In Progress (${inProgCount})</button>
-                <button class="os-filter-pill ${this.projectFilter === 'backlog' ? 'active' : ''} pill-back">Backlog (${backlogCount})</button>
-                <button class="os-filter-pill ${this.projectFilter === 'completed' ? 'active' : ''} pill-comp">Completed (${completedCount})</button>
+                <button type="button" class="os-filter-pill ${this.projectFilter === 'all' ? 'active' : ''} pill-all" aria-pressed="${this.projectFilter === 'all'}">All (${scopedProjects.length})</button>
+                <button type="button" class="os-filter-pill ${this.projectFilter === 'in_progress' ? 'active' : ''} pill-prog" aria-pressed="${this.projectFilter === 'in_progress'}">In Progress (${inProgCount})</button>
+                <button type="button" class="os-filter-pill ${this.projectFilter === 'backlog' ? 'active' : ''} pill-back" aria-pressed="${this.projectFilter === 'backlog'}">Backlog (${backlogCount})</button>
+                <button type="button" class="os-filter-pill ${this.projectFilter === 'completed' ? 'active' : ''} pill-comp" aria-pressed="${this.projectFilter === 'completed'}">Completed (${completedCount})</button>
             `;
 
             filterBar.querySelector('.pill-all').addEventListener('click', () => { this.projectFilter = 'all'; this.render(panel); });
@@ -3596,19 +3601,19 @@ export class Plugin extends AppPlugin {
         agenda.innerHTML = `
             <div class="os-agenda-header">
                 <h2>Agenda & Tasks</h2>
-                <a class="os-view-all">All tasks ↗</a>
+                <button type="button" class="os-view-all">All tasks ↗</button>
             </div>
-            <div class="os-agenda-tabs">
-                <span class="os-agenda-tab ${this.agendaTab === 'today' ? 'active' : ''} tab-today">Today (${agendaCount(todayTasks.length)})</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'overdue' ? 'active' : ''} tab-overdue">Overdue (${agendaCount(overdueTasks.length)})</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'upcoming' ? 'active' : ''} tab-upcoming">Next 7d (${agendaCount(upcomingTasks.length)})</span>
-                <span class="os-agenda-tab ${this.agendaTab === 'inbox' ? 'active' : ''} tab-inbox">Inbox (${agendaCount(inboxTasks.length)})</span>
+            <div class="os-agenda-tabs" role="tablist" aria-label="Task filters">
+                <button type="button" role="tab" aria-selected="${this.agendaTab === 'today' ? 'true' : 'false'}" class="os-agenda-tab ${this.agendaTab === 'today' ? 'active' : ''} tab-today">Today (${agendaCount(todayTasks.length)})</button>
+                <button type="button" role="tab" aria-selected="${this.agendaTab === 'overdue' ? 'true' : 'false'}" class="os-agenda-tab ${this.agendaTab === 'overdue' ? 'active' : ''} tab-overdue">Overdue (${agendaCount(overdueTasks.length)})</button>
+                <button type="button" role="tab" aria-selected="${this.agendaTab === 'upcoming' ? 'true' : 'false'}" class="os-agenda-tab ${this.agendaTab === 'upcoming' ? 'active' : ''} tab-upcoming">Next 7d (${agendaCount(upcomingTasks.length)})</button>
+                <button type="button" role="tab" aria-selected="${this.agendaTab === 'inbox' ? 'true' : 'false'}" class="os-agenda-tab ${this.agendaTab === 'inbox' ? 'active' : ''} tab-inbox">Inbox (${agendaCount(inboxTasks.length)})</button>
             </div>
             ${agendaIncomplete ? '<p class="os-agenda-note" role="status">Task counts show loaded results only; more may exist.</p>' : ''}
             <div class="os-agenda-content"></div>
             <div class="os-agenda-footer">
-                <a class="link-capture">+ Capture Task</a>
-                <a class="link-notes">View Journal ↗</a>
+                <button type="button" class="link-capture">+ Capture Task</button>
+                <button type="button" class="link-notes">View Journal ↗</button>
             </div>
         `;
 
@@ -3635,9 +3640,12 @@ export class Plugin extends AppPlugin {
             for (const t of shownTasks.slice(0, agendaLimit)) {
                 const item = document.createElement('div');
                 item.className = `os-task-item${t.waiting ? ' os-task-waiting' : ''}`;
+                item.setAttribute('role', 'button');
+                item.setAttribute('tabindex', '0');
+                item.setAttribute('aria-label', `Open task: ${t.text}`);
                 const canSuggest = t.category === 'inbox' && t.projectCandidates?.length && !this.dismissedProjectSuggestions.has(t.guid);
                 item.innerHTML = `
-                    <input type="checkbox" class="os-task-checkbox" />
+                    <input type="checkbox" class="os-task-checkbox" aria-label="Mark task done: ${escapeHtml(t.text)}" />
                     <div class="os-task-content">
                         <span class="os-task-label" title="${escapeHtml(t.text)}">${escapeHtml(t.text)}</span>
                         ${(t.projectName || t.waiting || t.important || t.date || canSuggest) ? `
@@ -3675,6 +3683,15 @@ export class Plugin extends AppPlugin {
 
                 item.addEventListener('click', () => {
                     this.openItem(t.guid, t.recordGuid, panel);
+                });
+
+                item.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        if (e.target === item) {
+                            e.preventDefault();
+                            this.openItem(t.guid, t.recordGuid, panel);
+                        }
+                    }
                 });
 
                 item.querySelector('.os-suggest-project')?.addEventListener('click', event => {
@@ -3791,7 +3808,7 @@ export class Plugin extends AppPlugin {
                 `;
 
                 // Quick status toggle
-                card.querySelector('.os-badge').addEventListener('click', async (e) => {
+                card.querySelector('button.os-badge')?.addEventListener('click', async (e) => {
                     e.stopPropagation();
                     const nextStatus = proj.status === 'in_progress' ? 'completed' : (proj.status === 'completed' ? 'backlog' : 'in_progress');
                     try {
@@ -3954,11 +3971,11 @@ export class Plugin extends AppPlugin {
                         <span class="os-badge status-${escapeHtml(inv.status)}">${escapeHtml(inv.status.toUpperCase())}</span>
                         <span class="os-invoice-timing ${inv.daysOverdue ? 'os-cash-warning' : ''}">${inv.daysOverdue ? `${inv.daysOverdue}d overdue` : escapeHtml(inv.stage)}</span>
                     </div>
-                    <div class="os-card-title">${escapeHtml(inv.name)}</div>
+                    <button type="button" class="os-card-title">${escapeHtml(inv.name)}</button>
                     ${inv.clientName ? `<div class="os-card-client">${escapeHtml(inv.clientName)}</div>` : ''}
                     <div class="os-card-bottom">
                         <span>${money(inv.amount)} ${escapeHtml(inv.currency)} · ${inv.dueDate || 'No due date'}</span>
-                        <span class="os-card-open">Open invoice ↗</span>
+                        <button type="button" class="os-card-open">Open invoice ↗</button>
                     </div>
                 `;
 

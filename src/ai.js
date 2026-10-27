@@ -671,9 +671,9 @@ const Ai = {
                 <h3>⚡ Connect Your AI Coding Harness</h3>
                 <p class="os-action-meta">External users: connect your local AI coding harness to Thymer in 60 seconds. All tools share the universal <code>.agents/skills/</code> directory and connect to Thymer's native local MCP server.</p>
             </div>
-            <div class="os-ai-tool-tabs">
+            <div class="os-ai-tool-tabs" role="tablist" aria-label="AI tool guides">
                 ${HARNESS_TOOLS.map((tool, idx) => `
-                    <button type="button" class="os-ai-tool-tab ${idx === 0 ? 'active' : ''}" data-tool-id="${escapeHtml(tool.id)}">
+                    <button type="button" role="tab" aria-selected="${idx === 0 ? 'true' : 'false'}" class="os-ai-tool-tab ${idx === 0 ? 'active' : ''}" data-tool-id="${escapeHtml(tool.id)}">
                         <span>${tool.icon}</span>
                         <span>${escapeHtml(tool.name)}</span>
                     </button>
@@ -681,7 +681,7 @@ const Ai = {
             </div>
             <div class="os-ai-tool-panes">
                 ${HARNESS_TOOLS.map((tool, idx) => `
-                    <div class="os-ai-tool-pane" data-tool-pane="${escapeHtml(tool.id)}" style="${idx === 0 ? '' : 'display: none;'}">
+                    <div class="os-ai-tool-pane" role="tabpanel" data-tool-pane="${escapeHtml(tool.id)}" style="${idx === 0 ? '' : 'display: none;'}">
                         <div class="os-ai-tool-header">
                             <div class="os-ai-tool-title-group">
                                 <span style="font-size: 18px;">${tool.icon}</span>
@@ -718,8 +718,12 @@ const Ai = {
         harnessSection.querySelectorAll('.os-ai-tool-tab').forEach(tab => {
             tab.addEventListener('click', () => {
                 const toolId = tab.getAttribute('data-tool-id');
-                harnessSection.querySelectorAll('.os-ai-tool-tab').forEach(t => t.classList.remove('active'));
+                harnessSection.querySelectorAll('.os-ai-tool-tab').forEach(t => {
+                    t.classList.remove('active');
+                    t.setAttribute('aria-selected', 'false');
+                });
                 tab.classList.add('active');
+                tab.setAttribute('aria-selected', 'true');
                 harnessSection.querySelectorAll('.os-ai-tool-pane').forEach(pane => {
                     if (pane.getAttribute('data-tool-pane') === toolId) {
                         pane.style.display = '';
@@ -795,14 +799,14 @@ const Ai = {
                     <p class="os-action-meta">Activate trade packs to customize Freelance OS for your craft. Each pack equips your workspace with domain project templates, milestones, and dedicated agent skills.</p>
                 </div>
             </div>
-            <div class="os-ai-filter-bar">
-                <button type="button" class="os-ai-filter-btn active" data-category="all">All Packs (${TRADE_PACKS.length})</button>
-                <button type="button" class="os-ai-filter-btn" data-category="Technology">Technology</button>
-                <button type="button" class="os-ai-filter-btn" data-category="Creative">Creative</button>
-                <button type="button" class="os-ai-filter-btn" data-category="Marketing">Marketing</button>
-                <button type="button" class="os-ai-filter-btn" data-category="Finance">Finance</button>
-                <button type="button" class="os-ai-filter-btn" data-category="Strategy & Ops">Strategy & Ops</button>
-                <button type="button" class="os-ai-filter-btn" data-category="Services">Services</button>
+            <div class="os-ai-filter-bar" role="toolbar" aria-label="Filter trade packs">
+                <button type="button" class="os-ai-filter-btn active" data-category="all" aria-pressed="true">All Packs (${TRADE_PACKS.length})</button>
+                <button type="button" class="os-ai-filter-btn" data-category="Technology" aria-pressed="false">Technology</button>
+                <button type="button" class="os-ai-filter-btn" data-category="Creative" aria-pressed="false">Creative</button>
+                <button type="button" class="os-ai-filter-btn" data-category="Marketing" aria-pressed="false">Marketing</button>
+                <button type="button" class="os-ai-filter-btn" data-category="Finance" aria-pressed="false">Finance</button>
+                <button type="button" class="os-ai-filter-btn" data-category="Strategy & Ops" aria-pressed="false">Strategy & Ops</button>
+                <button type="button" class="os-ai-filter-btn" data-category="Services" aria-pressed="false">Services</button>
             </div>
             <div class="os-ai-packs-grid">
                 ${TRADE_PACKS.map(pack => {
@@ -862,8 +866,12 @@ const Ai = {
         // Filter button handlers
         packsSection.querySelectorAll('.os-ai-filter-btn').forEach(btn => {
             btn.addEventListener('click', () => {
-                packsSection.querySelectorAll('.os-ai-filter-btn').forEach(b => b.classList.remove('active'));
+                packsSection.querySelectorAll('.os-ai-filter-btn').forEach(b => {
+                    b.classList.remove('active');
+                    b.setAttribute('aria-pressed', 'false');
+                });
                 btn.classList.add('active');
+                btn.setAttribute('aria-pressed', 'true');
                 const cat = btn.getAttribute('data-category');
                 packsSection.querySelectorAll('.os-ai-pack-card').forEach(card => {
                     const cardCat = card.getAttribute('data-category');
