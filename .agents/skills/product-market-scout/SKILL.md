@@ -25,6 +25,8 @@ Your job is to **kill weak product bets early or sharpen strong ones with eviden
 
 ## 2. Inputs
 
+Before asking, search `Projects` and `Library` for the product and read the existing record. Verify the current release state from the registry, npm, or repository metadata rather than trusting a project note; notes lag. Ask only for what the workspace does not answer.
+
 Before researching, establish:
 
 1. **Product** — one sentence on what it does.

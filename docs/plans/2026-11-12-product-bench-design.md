@@ -1,6 +1,6 @@
 # Product Bench — design
 
-Status: slice 1 implemented 2026-11-12; dogfood run pending.
+Status: slice 1 implemented and dogfooded 2026-11-12. The Eventual assessment is in Thymer; the 90-day validation gate is now the decision point for later slices.
 
 ## Problem
 
@@ -113,6 +113,15 @@ Comparisons use early-stage analogues (WordPress in 2005, early Shopify app stor
 - Full unit test suite passing.
 - AI tab renders both benches, including the Product badge and copy-prompt action.
 - One real dogfood run on the EmDash events plugin produces an actionable Platform Bet Assessment rather than an empty competitor table.
+
+## Dogfood result — Eventual, 2026-11-12
+
+- **Input found without asking:** the jacoplane workspace held the Eventual suite, its five subprojects, stage, model, and release runbook. The scout read the project record first; the only missing inputs were the buyer and wedge.
+- **Output:** a `Competitive Teardown — Eventual — 2026-11-12` Library note, linked under a new Market evidence section, plus four dated validation tasks with kill criteria.
+- **What the run caught:** the project note still said "zero npm/registry publish" after Core 0.17.0 had been listed on 7 Nov. Registry verification corrected it.
+- **What changed the verdict:** the category is not empty. semics Events is a credible competitor with about 1,978 npm downloads in 30 days and Pro pricing of USD 79 per site, USD 129 for the suite, and USD 349 for the agency plan. The verdict stayed Probe, but the pricing context shifted: USD 30 is a deliberate penetration price, not a ceiling.
+- **Skill change:** Inputs now require reading the existing product record and verifying release state from the registry, npm, or GitHub before asking the user.
+- **Gate:** later slices start only after the 90-day validation gate (2027-02-10) or an explicit decision to proceed earlier.
 
 ## Later slices
 
