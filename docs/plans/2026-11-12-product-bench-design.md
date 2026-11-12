@@ -1,6 +1,6 @@
 # Product Bench — design
 
-Status: slice 1 implemented and dogfooded 2026-11-12. The Eventual assessment is in Thymer; the 90-day validation gate is now the decision point for later slices.
+Status: slices 1 and 2 implemented 2026-11-12; slice 1 dogfooded on Eventual. The 90-day validation gate now governs product investment, not bench scope.
 
 ## Problem
 
@@ -27,10 +27,10 @@ The product bench therefore must treat absence of competitors as expected, and s
 ## Decisions
 
 1. **Separate bench.** Add `PRODUCT_AGENTS` alongside `CORE_AGENTS` in `src/ai.js`. The existing 11 agency personas and the `CORE_AGENTS.length === 11` invariant stay untouched.
-2. **Slice 1 ships one persona:** `product-market-scout`. No speculative license or marketing personas until the scout has been dogfooded on the EmDash events plugin.
+2. **Slice 1 shipped `product-market-scout` first.** It was dogfooded on the EmDash events plugin before the other two were written.
 3. **Early-platform mode switch.** When the direct field is thin (fewer than three credible products) or the marketplace is immature, the scout runs a Platform Bet Assessment instead of a competitor teardown.
 4. **No schema change.** Product work uses a clientless Project (`client` unset, `fee_type: non_billable`, `status: in_progress`). Research lives in a Library note linked to that project.
-5. **Later slices:** `product-license-architect` (commercialize) and `product-marketer` (distribute). Pricing placement stays open: a `product-pricing-strategist` or a supplier mode on `pricing-analyst`.
+5. **Slice 2 shipped on 2026-11-12 at the owner's request:** `product-license-architect` (commercialize) and `product-marketer` (distribute). Pricing placement stays open: a `product-pricing-strategist` or a supplier mode on `pricing-analyst`.
 
 ## Product Market Scout
 
@@ -68,6 +68,44 @@ Comparisons use early-stage analogues (WordPress in 2005, early Shopify app stor
 
 **Guardrails:** cite prices and claims with source and date; label inference separately from fact; say "marketplace data unavailable" instead of guessing; never invent install or revenue numbers.
 
+## Product License Architect
+
+**Directive:** turn the free/paid boundary into a coherent licence, terms of sale, and distribution wrapper. Draft and issue-spot; do not certify.
+
+**Inputs:** product, buyer type, jurisdictions, distribution channel, free/paid boundary, price basis, what the buyer receives, open-source components, personal-data flows, and any existing terms. Read the repository `LICENSE`, licence facts, and website terms before asking.
+
+**Workflow:**
+
+1. Choose the licence architecture: open core, source-available, proprietary, free plus paid services, or usage-based.
+2. Record the grant, restrictions, updates, support, fees, refunds, acceptance, termination, IP, privacy, liability, and governing law.
+3. Check marketplace rules: SPDX value, listing price, permissions, security contact, and whether the marketplace handles payment at all.
+4. Separate tax, privacy, and consumer-law questions; never invent a VAT fact.
+5. Choose the lightest enforcement that fits the price: terms only, offline key, online activation, or private distribution.
+6. Produce a lawyer brief with the exact questions and clause numbers.
+
+**Output:** a `License & Commercial Model — <product> — <date>` Library note with the decision, terms map, obligations, legal-review brief, publish checklist, and open questions. Link it to the product project and add only the tasks the owner wants.
+
+**Guardrails:** not legal advice; require a qualified local lawyer before terms are in force; do not copy another vendor's terms; never promise enforceability; keep a lapsed licence from breaking live orders or data.
+
+## Product Marketer
+
+**Directive:** make the product legible to one buyer and get it in front of them through channels a solo founder can sustain. Position first; distribute second.
+
+**Inputs:** product, buyer, current alternative, differentiator, proof, price, stage, and the founder's time and language constraints. Read the product project, registry listing, website, and prior research before asking.
+
+**Workflow:**
+
+1. Write one positioning sentence: buyer, job, category, differentiator, alternative, proof.
+2. Build the message hierarchy: category, promise, three proof pillars, three objections, and who it is not for.
+3. Choose at most three channels for 90 days: owned, earned, partner, or paid.
+4. Plan pre-launch, launch week, and the first 30–90 days.
+5. Produce the asset checklist: registry copy, hero, proof bullets, comparison page, demo script, launch posts, partner one-pager, FAQ.
+6. Define the metric and kill criterion for each channel before starting.
+
+**Output:** a `Go-to-Market — <product> — <date>` Library note with positioning, channels, launch sequence, assets, measurement, and open questions. Link it to the product project and add only the launch tasks the owner wants.
+
+**Guardrails:** no invented proof or urgency; no spam; disclose that you are the maker; say what the product does today; escalate legal, privacy, and security claims to the license architect.
+
 ## Placement and UI
 
 - `src/ai.js` exports `PRODUCT_AGENTS` with the same metadata shape as `CORE_AGENTS` plus `stage` (`validate` / `commercialize` / `distribute`).
@@ -85,7 +123,7 @@ Comparisons use early-stage analogues (WordPress in 2005, early Shopify app stor
 4. **Internal product convention:** document clientless projects (`client: null`, `fee_type: non_billable`, `status: in_progress`) and the Library research note.
 5. **Internal product project archetype:** Product thesis, Market evidence, License & pricing, Release log, Next actions — with no client review checkpoints.
 6. **Revenue boundary:** product sales must not be booked as client Invoices; product revenue tracking is out of scope until a Products collection exists.
-7. **Watchdogs:** defer product-specific nudges until the later personas exist.
+7. **Watchdogs:** product-specific nudges are still deferred. The three personas cover validation, licensing, and marketing; none of them runs automatically yet.
 
 ## Data flow and failure handling
 
@@ -98,7 +136,9 @@ Comparisons use early-stage analogues (WordPress in 2005, early Shopify app stor
 - **Prior teardown:** create a new dated note and link the old one; never overwrite.
 - **Idempotency:** reuse the existing clientless product project rather than creating duplicates.
 
-## Slice 1 file list
+## Implementation file list
+
+**Slice 1:**
 
 - `.agents/skills/product-market-scout/SKILL.md` (new)
 - `.agents/skills/freelance-os/SKILL.md` (updates above)
@@ -106,6 +146,14 @@ Comparisons use early-stage analogues (WordPress in 2005, early Shopify app stor
 - `test/ai.test.mjs` (contract and folder checks)
 - `README.md`, `CHANGELOG.md`
 - this document
+
+**Slice 2:**
+
+- `.agents/skills/product-license-architect/SKILL.md` (new)
+- `.agents/skills/product-marketer/SKILL.md` (new)
+- `src/ai.js` (`PRODUCT_AGENTS` entries)
+- `test/ai.test.mjs` (three-persona contract and render assertions)
+- `README.md`, `CHANGELOG.md`, this document
 
 ## Definition of done
 
@@ -121,11 +169,9 @@ Comparisons use early-stage analogues (WordPress in 2005, early Shopify app stor
 - **What the run caught:** the project note still said "zero npm/registry publish" after Core 0.17.0 had been listed on 7 Nov. Registry verification corrected it.
 - **What changed the verdict:** the category is not empty. semics Events is a credible competitor with about 1,978 npm downloads in 30 days and Pro pricing of USD 79 per site, USD 129 for the suite, and USD 349 for the agency plan. The verdict stayed Probe, but the pricing context shifted: USD 30 is a deliberate penetration price, not a ceiling.
 - **Skill change:** Inputs now require reading the existing product record and verifying release state from the registry, npm, or GitHub before asking the user.
-- **Gate:** later slices start only after the 90-day validation gate (2027-02-10) or an explicit decision to proceed earlier.
+- **Gate:** later slices were released from the gate by the owner's 2026-11-12 decision. The 90-day validation still governs product investment, not the bench scope.
 
 ## Later slices
 
-- `product-license-architect` — EULA, marketplace terms, IP ownership, refunds, support policy.
-- `product-marketer` — positioning, listing copy, launch channels, demo assets.
-- Pricing — new persona or supplier mode, decided after the first two prove useful.
+- Pricing — new persona or supplier mode, decided when the product bench has real pricing work.
 - Optional Products collection — customers, license revenue, releases — only if product work outgrows clientless projects and Library notes.

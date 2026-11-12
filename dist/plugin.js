@@ -2806,6 +2806,24 @@ const PRODUCT_AGENTS = [
         stage: 'validate',
         description: 'Maps direct, adjacent, and DIY competitors, tests demand signals, and rates early-platform bets on momentum, buyer readiness, supply gap, window, and defensibility.',
         prompt: 'Run a Platform Bet Assessment for [product] on [platform]: map the field, rate the platform, and give me a commit/probe/wait/avoid verdict.'
+    },
+    {
+        id: 'product-license-architect',
+        name: 'Product License Architect',
+        icon: '⚖️',
+        role: 'Licensing, terms & commercial model',
+        stage: 'commercialize',
+        description: 'Turns the free/paid boundary into a licence and terms of sale: EULA, marketplace rules, refunds, support, privacy, and the exact brief for a Swiss lawyer.',
+        prompt: 'Draft the licence and commercial model for [product]: what is free, what is paid, the terms of sale, refunds, support policy, and the questions for a Swiss lawyer.'
+    },
+    {
+        id: 'product-marketer',
+        name: 'Product Marketer',
+        icon: '📣',
+        role: 'Positioning, launch & channels',
+        stage: 'distribute',
+        description: 'Builds evidence-based positioning, registry and website copy, a launch sequence, and a 90-day channel plan for a solo founder.',
+        prompt: 'Build the go-to-market plan for [product]: positioning, registry listing, launch channels, and the first 30 days of content.'
     }
 ];
 

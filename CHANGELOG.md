@@ -4,7 +4,10 @@
 
 - **Product Bench (`src/ai.js`, `.agents/skills/`)**:
   - Add a separate `PRODUCT_AGENTS` bench alongside the 11 client-services personas.
-  - Ship `product-market-scout`: competitor teardown, demand signals, and early-platform Platform Bet Assessment with commit/probe/wait/avoid verdicts.
+  - Ship three product-bench personas:
+    - `product-market-scout` — competitor teardown, demand signals, and early-platform Platform Bet Assessment with commit/probe/wait/avoid verdicts.
+    - `product-license-architect` — free/paid boundary, licence and terms of sale, marketplace rules, refunds, support, privacy, and the lawyer brief.
+    - `product-marketer` — evidence-based positioning, registry and website copy, launch sequence, and a 90-day channel plan.
   - AI tab now renders **Client Services** and **Your Own Products** directory sections with a Product badge.
 - **Freelance OS Skill**:
   - Route product-validation questions to the product bench.

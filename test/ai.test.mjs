@@ -65,9 +65,14 @@ test('CORE_AGENTS contains exactly 11 core agency personas with complete metadat
 });
 
 test('PRODUCT_AGENTS ships product-bench personas with complete metadata and skill files', () => {
-    assert.ok(api.PRODUCT_AGENTS.length >= 1, 'Product bench must ship at least one persona');
+    assert.equal(api.PRODUCT_AGENTS.length, 3, 'Product bench must ship the three product personas');
+    const expectedIds = ['product-market-scout', 'product-license-architect', 'product-marketer'];
     const validStages = new Set(['validate', 'commercialize', 'distribute']);
     const coreIds = new Set(api.CORE_AGENTS.map(agent => agent.id));
+
+    for (const expectedId of expectedIds) {
+        assert.ok(api.PRODUCT_AGENTS.some(agent => agent.id === expectedId), `Missing product agent ${expectedId}`);
+    }
 
     for (const agent of api.PRODUCT_AGENTS) {
         assert.ok(agent.id, 'Product agent missing id');
@@ -221,6 +226,8 @@ test('renderAiTab renders section with bridge status, harness setup, directories
     assert.match(section.children[3].innerHTML, /Client Services Bench/);
     assert.match(section.children[4].innerHTML, /Your Own Products/);
     assert.match(section.children[4].innerHTML, /Product Market Scout/);
+    assert.match(section.children[4].innerHTML, /Product License Architect/);
+    assert.match(section.children[4].innerHTML, /Product Marketer/);
     assert.match(section.children[4].innerHTML, /os-ai-agent-badge/);
 });
 
