@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.6.0 — 2026-11-12
 
 - **Product Bench (`src/ai.js`, `.agents/skills/`)**:
   - Add a separate `PRODUCT_AGENTS` bench alongside the 11 client-services personas.
