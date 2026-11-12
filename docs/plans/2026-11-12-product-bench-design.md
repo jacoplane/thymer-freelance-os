@@ -1,6 +1,6 @@
 # Product Bench — design
 
-Status: approved 2026-11-12. Slice 1 in progress.
+Status: slice 1 implemented 2026-11-12; dogfood run pending.
 
 ## Problem
 

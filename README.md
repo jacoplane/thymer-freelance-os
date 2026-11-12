@@ -18,6 +18,7 @@
   <a href="#everyday-requests">Everyday requests</a> ·
   <a href="#how-it-works">How it works</a> ·
   <a href="#autonomous-operations-bench">Operations bench</a> ·
+  <a href="#product-bench">Product bench</a> ·
   <a href="#modular-trade-packs">Trade packs</a> ·
   <a href="#universal-coding-assistant-bridge">Coding harness bridge</a> ·
   <a href="#documentation">Documentation</a>
@@ -81,7 +82,7 @@ Click any preview below to open the full-resolution screenshot:
 | **Weekly Strategic Review** | [![Weekly Strategic Review](docs/images/weekly-review.png)](docs/images/weekly-review.png) | Guided 3-step review: clears carryover actions, surfaces completed deliverables, and formulates next week's big rocks directly into your native Journal. |
 | **Plan Next Week** | [![Plan Next Week](docs/images/plan-next-week.png)](docs/images/plan-next-week.png) | Carry forward uncompleted priorities, record weekly wins/observations, link outcomes to native project tasks, and commit to Journal. |
 | **AI Agents & MCP Bridge** | [![AI Agents & MCP Bridge](docs/images/ai-agents.png)](docs/images/ai-agents.png) | MCP server status, live telemetry, and instant setup commands across 7 supported coding harnesses (Antigravity, OpenCode, Codex, OMP, Claude Code, Cursor, and Other). |
-| **Operations Bench (11 Personas)** | [![Operations Bench](docs/images/ai-personas.png)](docs/images/ai-personas.png) | 11 specialized agent personas covering discovery, proposals, pricing, contract risk audits, task breakdown, kickoff, and collections. |
+| **Operations Bench (11 Personas)** | [![Operations Bench](docs/images/ai-personas.png)](docs/images/ai-personas.png) | 11 specialized client-services personas covering discovery, proposals, pricing, contract risk audits, task breakdown, kickoff, and collections, plus a product validation bench for self-owned software. |
 | **Modular Trade Packs** | [![Modular Trade Packs](docs/images/trade-packs.png)](docs/images/trade-packs.png) | 11 domain overlays with tailored project blueprints, milestones, and dedicated skills across engineering, creative, marketing, and consulting trades. |
 | **Workspace Settings** | [![Workspace Settings](docs/images/settings.png)](docs/images/settings.png) | Collection mappings, base currency selection (CHF, EUR, USD, GBP, CAD, AUD), and in-plugin self-updater with background auto-updates. |
 
@@ -165,6 +166,20 @@ Freelance OS equips your workspace with an autonomous bench of 11 business opera
 | 📬 **Receivables Diplomat** | Calibrated invoice recovery | 3-tier escalation reminders that protect cashflow & relationships | *"Check overdue invoices and draft the calibrated reminder"* |
 | 🪝 **Lead Gen Offer Architect** | Diagnostic entry offers | Low-friction diagnostic entry audits (performance teardowns) | *"Design a low-friction diagnostic audit to offer prospects"* |
 | 📡 **Outbound Strategist** | Signal-based B2B outreach | Identifies hiring surges & tech migrations for 3-touch outreach | *"Draft a 3-touch outreach sequence for [Company] with this signal"* |
+
+---
+
+<a id="product-bench"></a>
+
+## Product Bench (1 Specialist)
+
+For freelancers who also sell their own products, a separate product bench runs alongside the client-services personas. It ships in `.agents/skills/` like the rest of the bench and appears under **Your Own Products** in the AI Agents tab.
+
+| Persona | Stage | Core Directive | Trigger Prompt |
+| :--- | :--- | :--- | :--- |
+| 🛰️ **Product Market Scout** | Validate | Maps direct, adjacent, and DIY competitors, tests demand signals, and rates early-platform bets on momentum, buyer readiness, supply gap, window, and defensibility. | *"Run a Platform Bet Assessment for [product] on [platform] and give me a commit/probe/wait/avoid verdict"* |
+
+On a young platform, a thin competitor field is expected. The scout therefore switches from a conventional teardown to a **Platform Bet Assessment** and ends with a falsifiable bet thesis and cheap validation steps. Product work is stored as a clientless project (`fee_type: non_billable`) with research notes in Library. See [the design](docs/plans/2026-11-12-product-bench-design.md).
 
 ---
 

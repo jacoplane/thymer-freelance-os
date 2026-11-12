@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import vm from 'node:vm';
 
 const source = ['support-time.js', 'workflow.js', 'billing.js', 'ai.js', 'index.js'].map(file => fs.readFileSync(new URL(`../src/${file}`, import.meta.url), 'utf8')).join('\n');
-const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow, Billing, Ai); ({ Plugin, CORE_AGENTS, TRADE_PACKS, HARNESS_TOOLS, cloneWorkflowState, workflowDefaults, computeWatchdogAlerts });`, {
+const api = vm.runInNewContext(`${source.replace('export class Plugin', 'class Plugin')}; Object.assign(Plugin.prototype, Workflow, Billing, Ai); ({ Plugin, CORE_AGENTS, PRODUCT_AGENTS, TRADE_PACKS, HARNESS_TOOLS, cloneWorkflowState, workflowDefaults, computeWatchdogAlerts });`, {
     AppPlugin: class {},
     console,
     Date,
@@ -61,6 +61,27 @@ test('CORE_AGENTS contains exactly 11 core agency personas with complete metadat
         assert.ok(agent.role, `Agent ${expectedId} missing role`);
         assert.ok(agent.description, `Agent ${expectedId} missing description`);
         assert.ok(agent.prompt && agent.prompt.length > 20, `Agent ${expectedId} missing actionable prompt`);
+    }
+});
+
+test('PRODUCT_AGENTS ships product-bench personas with complete metadata and skill files', () => {
+    assert.ok(api.PRODUCT_AGENTS.length >= 1, 'Product bench must ship at least one persona');
+    const validStages = new Set(['validate', 'commercialize', 'distribute']);
+    const coreIds = new Set(api.CORE_AGENTS.map(agent => agent.id));
+
+    for (const agent of api.PRODUCT_AGENTS) {
+        assert.ok(agent.id, 'Product agent missing id');
+        assert.ok(!coreIds.has(agent.id), `Product agent ${agent.id} must not duplicate a core agent`);
+        assert.ok(agent.name, `Product agent ${agent.id} missing name`);
+        assert.ok(agent.icon, `Product agent ${agent.id} missing icon`);
+        assert.ok(agent.role, `Product agent ${agent.id} missing role`);
+        assert.ok(agent.description, `Product agent ${agent.id} missing description`);
+        assert.ok(agent.prompt && agent.prompt.length > 20, `Product agent ${agent.id} missing actionable prompt`);
+        assert.ok(validStages.has(agent.stage), `Product agent ${agent.id} has invalid stage`);
+        assert.ok(
+            fs.existsSync(new URL(`../.agents/skills/${agent.id}/SKILL.md`, import.meta.url)),
+            `Product agent ${agent.id} is missing .agents/skills/${agent.id}/SKILL.md`
+        );
     }
 });
 
@@ -185,17 +206,22 @@ test('HARNESS_TOOLS contains exactly 7 coding harnesses with complete setup step
     }
 });
 
-test('renderAiTab renders section with bridge status, harness setup, directory, trade packs, and settings', () => {
+test('renderAiTab renders section with bridge status, harness setup, directories, trade packs, and settings', () => {
     const plugin = new api.Plugin();
     plugin.workflowState = api.workflowDefaults();
     const section = plugin.renderAiTab({});
     assert.ok(section);
     assert.equal(section.className, 'os-workflow os-ai-view');
-    assert.equal(section.children.length, 6);
+    assert.equal(section.children.length, 7);
     assert.equal(section.children[2].className, 'os-ai-harness-section');
     assert.equal(section.children[3].className, 'os-ai-directory-section');
-    assert.equal(section.children[4].className, 'os-ai-packs-section');
-    assert.equal(section.children[5].className, 'os-ai-config-section');
+    assert.equal(section.children[4].className, 'os-ai-directory-section');
+    assert.equal(section.children[5].className, 'os-ai-packs-section');
+    assert.equal(section.children[6].className, 'os-ai-config-section');
+    assert.match(section.children[3].innerHTML, /Client Services Bench/);
+    assert.match(section.children[4].innerHTML, /Your Own Products/);
+    assert.match(section.children[4].innerHTML, /Product Market Scout/);
+    assert.match(section.children[4].innerHTML, /os-ai-agent-badge/);
 });
 
 test('computeWatchdogAlerts triggers overdue invoice alerts when daysOverdue >= 7', () => {

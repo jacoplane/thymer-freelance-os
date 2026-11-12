@@ -1,5 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- **Product Bench (`src/ai.js`, `.agents/skills/`)**:
+  - Add a separate `PRODUCT_AGENTS` bench alongside the 11 client-services personas.
+  - Ship `product-market-scout`: competitor teardown, demand signals, and early-platform Platform Bet Assessment with commit/probe/wait/avoid verdicts.
+  - AI tab now renders **Client Services** and **Your Own Products** directory sections with a Product badge.
+- **Freelance OS Skill**:
+  - Route product-validation questions to the product bench.
+  - Document clientless internal product projects (`client` unset, `fee_type: non_billable`, `status: in_progress`).
+  - Correct the Projects `status` choices to match the real schema (`backlog`, `in_progress`, `in_review`, `completed`, `archived`, `cancelled`).
+  - Add the Internal Product Project archetype and a boundary rule keeping product sales out of client Invoices.
+
 ## 0.5.4 — 2026-10-27
 
 - **Cold-Start Collection Sync & Settings Route Fix (`src/index.js`)**:

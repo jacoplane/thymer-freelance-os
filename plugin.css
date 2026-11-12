@@ -1191,6 +1191,19 @@ button.os-badge { border: 0; font-family: inherit; line-height: inherit; }
   color: var(--os-muted);
   display: block;
 }
+.os-ai-agent-badge {
+  margin-left: auto;
+  flex-shrink: 0;
+  padding: 2px 7px;
+  border: 1px solid var(--os-border);
+  border-radius: 999px;
+  background: var(--os-surface-hover);
+  color: var(--os-accent);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
 .os-ai-agent-desc {
   margin: 0;
   font-size: 12px;

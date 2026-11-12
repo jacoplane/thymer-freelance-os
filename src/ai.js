@@ -89,6 +89,18 @@ const CORE_AGENTS = [
     }
 ];
 
+const PRODUCT_AGENTS = [
+    {
+        id: 'product-market-scout',
+        name: 'Product Market Scout',
+        icon: '🛰️',
+        role: 'Competitor teardown & early-platform bets',
+        stage: 'validate',
+        description: 'Maps direct, adjacent, and DIY competitors, tests demand signals, and rates early-platform bets on momentum, buyer readiness, supply gap, window, and defensibility.',
+        prompt: 'Run a Platform Bet Assessment for [product] on [platform]: map the field, rate the platform, and give me a commit/probe/wait/avoid verdict.'
+    }
+];
+
 const TRADE_PACKS = [
     {
         id: 'pack-software-dev',
@@ -299,7 +311,7 @@ const HARNESS_TOOLS = [
         steps: [
             {
                 title: 'Sync Agent Skills',
-                desc: 'Download the 11 Core personas and modular trade skills into your project root:',
+                desc: 'Download the 11 agency personas, product bench, and trade skills into your project root:',
                 code: 'npx degit jacoplane/thymer-freelance-os/.agents .agents'
             },
             {
@@ -383,7 +395,7 @@ const HARNESS_TOOLS = [
         steps: [
             {
                 title: 'Sync Agent Skills',
-                desc: 'Pull the complete 11-persona agency bench and trade skills:',
+                desc: 'Pull the complete 11-persona agency bench, product bench, and trade skills:',
                 code: 'npx degit jacoplane/thymer-freelance-os/.agents .agents'
             },
             {
@@ -467,7 +479,7 @@ const HARNESS_TOOLS = [
         steps: [
             {
                 title: 'Sync Agent Skills',
-                desc: 'Download the 11 Core personas and modular trade skills into your workspace root:',
+                desc: 'Download the 11 agency personas, product bench, and trade skills into your workspace root:',
                 code: 'npx degit jacoplane/thymer-freelance-os/.agents .agents'
             },
             {
@@ -664,7 +676,7 @@ const Ai = {
             <div class="os-ai-status-card">
                 <div class="os-ai-status-top">
                     <span class="os-ai-status-icon">👥</span>
-                    <span class="os-badge badge-care-plan">11 Core Agents</span>
+                    <span class="os-badge badge-care-plan">${CORE_AGENTS.length + PRODUCT_AGENTS.length} Agent Skills</span>
                 </div>
                 <h4>Workspace Agent Skills</h4>
                 <p>Auto-discovered in <code>.agents/skills/</code> by Antigravity, OpenCode, Codex, OMP & native agent harnesses.</p>
@@ -791,7 +803,7 @@ const Ai = {
         const agentsSection = document.createElement('div');
         agentsSection.className = 'os-ai-directory-section';
         agentsSection.innerHTML = `
-            <h3>Universal Operations Bench (${CORE_AGENTS.length} Core Personas)</h3>
+            <h3>Client Services Bench (${CORE_AGENTS.length} Core Personas)</h3>
             <p class="os-action-meta">Trade-agnostic business specialists covering the entire client lifecycle: lead generation, discovery, pricing, proposals, kickoff, project management, and collections. Click "Copy prompt" to try one.</p>
             <div class="os-ai-agents-grid">
                 ${CORE_AGENTS.map(agent => `
@@ -827,6 +839,48 @@ const Ai = {
             });
         });
         section.appendChild(agentsSection);
+
+        // 3b. Product Bench (self-owned products)
+        const productSection = document.createElement('div');
+        productSection.className = 'os-ai-directory-section';
+        productSection.innerHTML = `
+            <h3>Your Own Products (${PRODUCT_AGENTS.length} Specialist${PRODUCT_AGENTS.length === 1 ? '' : 's'})</h3>
+            <p class="os-action-meta">For self-owned software and IP: validate demand, map competitors, and decide whether an early-platform bet is worth committing to.</p>
+            <div class="os-ai-agents-grid">
+                ${PRODUCT_AGENTS.map(agent => `
+                    <div class="os-ai-agent-card" data-agent-id="${escapeHtml(agent.id)}">
+                        <div class="os-ai-agent-top">
+                            <span class="os-ai-agent-icon">${agent.icon}</span>
+                            <div>
+                                <h4 class="os-ai-agent-name">${escapeHtml(agent.name)}</h4>
+                                <span class="os-ai-agent-role">${escapeHtml(agent.role)}</span>
+                            </div>
+                            <span class="os-ai-agent-badge">Product</span>
+                        </div>
+                        <p class="os-ai-agent-desc">${escapeHtml(agent.description)}</p>
+                        <div class="os-ai-prompt-box">
+                            <span class="os-ai-prompt-label">Example prompt:</span>
+                            <div class="os-ai-prompt-text">"${escapeHtml(agent.prompt)}"</div>
+                            <button type="button" class="os-card-action-btn os-ai-copy-prompt" data-prompt="${escapeHtml(agent.prompt)}">Copy prompt</button>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        `;
+
+        productSection.querySelectorAll('.os-ai-copy-prompt').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                const prompt = btn.getAttribute('data-prompt');
+                if (prompt) {
+                    this.copyAiSnippet(prompt, 'Agent prompt copied');
+                    const orig = btn.textContent;
+                    btn.textContent = '✓ Copied';
+                    setTimeout(() => { btn.textContent = orig; }, 1800);
+                }
+            });
+        });
+        section.appendChild(productSection);
 
         // 4. Modular Trade Packs Catalog
         const packsSection = document.createElement('div');

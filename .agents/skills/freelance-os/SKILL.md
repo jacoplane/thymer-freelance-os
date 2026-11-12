@@ -1,6 +1,6 @@
 ---
 name: freelance-os
-description: Autonomous agent operating system for freelancers. Manages clients, leads, projects, budgets, daily standups, task triage, time logging, and closed-loop invoicing in Thymer. Triggers on natural queries like "morning briefing", "what's on my plate?", "triage this email", "log time", or "draft invoice".
+description: Autonomous agent operating system for freelancers. Manages clients, leads, projects, own-product bets, budgets, daily standups, task triage, time logging, and closed-loop invoicing in Thymer. Triggers on natural queries like "morning briefing", "what's on my plate?", "triage this email", "log time", "draft invoice", or "is this product worth building".
 ---
 
 # Freelance OS — Agent-First Playbook
@@ -22,6 +22,7 @@ Activate the relevant workflow whenever the user asks in natural language:
 | **Effort / Time Logging** | *"Logged 2.5h on Bolt redesign fixing auth", "Spent 45m troubleshooting client SSL"* | **Workflow C: Effort & Retainer Tracking** |
 | **Invoicing & Billing** | *"Invoice Acme for project X", "Bill retainer for October", "Who owes me money?", "Draft invoice"* | **Workflow D: Invoicing & Swiss QR-Bill Bridge** |
 | **Weekly Review & Planning**| *"Let's do the weekly review", "Plan my priorities for the week", "Weekly review time"* | **Workflow E: Strategic Weekly Review** |
+| **Product Validation / Own IP** | *"Is my product worth building?", "Who competes with my plugin?", "Is this platform worth betting on?", "Should I keep investing in this?"* | **Product Bench → `product-market-scout`** |
 | **Proactive Watchdogs** | Run silently during any briefing or query | **Workflow F: Watchdogs & Smart Nudges** |
 
 ---
@@ -70,11 +71,13 @@ Single unified lifecycle for leads, active clients, and maintenance accounts:
 ### B. Projects Collection (`Projects`)
 Top-level projects (sub-pages are deliverables; native tasks live in page bodies):
 - `title`: Project name.
-- `client`: Record link to parent `Clients` record.
-- `status`: `active`, `completed`, `on_hold`, `cancelled`.
+- `client`: Record link to parent `Clients` record. **Optional:** leave unset for internal product work.
+- `status`: `backlog`, `in_progress`, `in_review`, `completed`, `archived`, `cancelled`. Active project queues index only `in_progress` and `in_review`; always supply `in_progress` when starting work.
 - `budget_chf`: Agreed financial fee cap or total project budget in CHF.
 - `fee_type`: `fixed`, `hourly`, `retainer`, `non_billable`.
 - `deadline`, `completed_date`: Key milestone dates.
+
+**Internal product convention:** A self-owned product is tracked as a clientless project (`client` unset, `fee_type: non_billable`, `status: in_progress`). Market research and competitive evidence live in a `Library` note linked to that project. Product sales are **not** client invoices and must not be recorded in `Invoices`; product revenue tracking is out of scope until a dedicated Products collection exists.
 
 ### C. Invoices Collection (`Invoices`)
 - `invoice_id`: Formal invoice reference (e.g., `INV-2026-042`).
@@ -145,6 +148,31 @@ Add one task per review. Name the deliverable, set the feedback due date, and ma
 ## Decisions & updates
 - **YYYY-MM-DD**: Project initialized.
 *(Tip: record client feedback, scope modifications, and architectural decisions below)*
+```
+
+### Internal Product Project Archetype
+- **Panel Header Actions:** `[+ Task]`
+```markdown
+## Product thesis
+[What we sell, to whom, why they switch, and what must be true for this bet to pay off.]
+
+## Market evidence
+- [[Competitive Teardown — Product — YYYY-MM-DD]](ref)
+- Verdict posture: Commit / Probe / Educate-wait / Avoid
+- Confidence: Low / Medium / High
+
+## License & pricing
+[Planned license model, tiers, marketplace terms, and open commercial questions.]
+
+## Release log
+- **YYYY-MM-DD**: v0.1.0 — [Shipped scope]
+
+## Next actions
+[+ Add task]
+- [ ] Validate [assumption] by [date]
+
+## Platform risks
+- [API churn / marketplace policy / distribution dependency] — [Mitigation]
 ```
 
 ### Client Page Archetypes
@@ -266,7 +294,7 @@ Scope of work, deliverables, and services covered under this invoice for [Client
 ### Workflow A: Executive Daily Standup
 *Trigger: "What's on my plate today?", "morning briefing", "daily standup"*
 
-1. **Scan Open Tasks:** Query tasks due today or overdue across active projects.
+1. **Scan Open Tasks:** Query tasks due today or overdue across active projects, including clientless internal product projects.
 2. **Scan Waiting Blockers:** Find tasks with status `waiting` or in the `## Waiting On Client` section.
 3. **Scan Invoices & Cashflow:**
    - Invoices with `status: sent` and `payment_status: unpaid` where `due < today` (Overdue).
